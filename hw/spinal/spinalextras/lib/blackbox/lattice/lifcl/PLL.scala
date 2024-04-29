@@ -2,6 +2,7 @@ package spinalextras.lib.blackbox.lattice.lifcl
 
 import spinal.core._
 import spinal.lib._
+import spinalextras.lib
 import spinalextras.lib.Config
 import spinalextras.lib.misc._
 import spinalextras.lib.tests.TestClockGen
@@ -519,18 +520,17 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     // Clock reference
     val REFCK = in Bool()
     // Primary (A) output clock
-    val CLKOP = out Bool()
+    val CLKOP = if(cfg.ENCLK_CLKOP) out Bool() else null
     // Secondary (B) output clock
-    // Secondary (B) output clock
-    val CLKOS = out Bool()
+    val CLKOS = if(cfg.ENCLK_CLKOS) out Bool() else null
     // Secondary (C) output clock
-    val CLKOS2 = out Bool()
+    val CLKOS2 = if(cfg.ENCLK_CLKOS2) out Bool() else null
     // Secondary (D) output clock
-    val CLKOS3 = out Bool()
+    val CLKOS3 = if(cfg.ENCLK_CLKOS3) out Bool() else null
     // Secondary (E) output clock
-    val CLKOS4 = out Bool()
+    val CLKOS4 = if(cfg.ENCLK_CLKOS4) out Bool() else null
     // Secondary (F) output clock
-    val CLKOS5 = out Bool()
+    val CLKOS5 = if(cfg.ENCLK_CLKOS5) out Bool() else null
     // Active HIGH; Enable A output (CLKOP); PLL CIB Input
     val ENCLKOP = in Bool() default (True)
     // Active HIGH; Enable B output (CLKOS); PLL CIB Input
@@ -543,7 +543,22 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     val ENCLKOS4 = in Bool() default (True)
     // Active HIGH; Enable F output (CLKOS5); PLL CIB Input
     val ENCLKOS5 = in Bool() default (True)
-    val FBKCK = in Bool() default (CLKOS5)
+    val FBKCK = in Bool() default (
+      cfg.SEL_FBK match {
+        case "DIVA" => INTFBKOP
+        case "DIVB" => INTFBKOS
+        case "DIVC" => INTFBKOS2
+        case "DIVD" => INTFBKOS3
+        case "DIVE" => INTFBKOS4
+        case "DIVF" => INTFBKOS5
+        case "FBKCLK0" => CLKOP
+        case "FBKCLK1" => CLKOS
+        case "FBKCLK2" => CLKOS2
+        case "FBKCLK3" => CLKOS3
+        case "FBKCLK4" => CLKOS4
+        case "FBKCLK5" => CLKOS5
+      }
+    )
     // PLL internal lock indicator; PLL CIB Output
     val INTLOCK = out Bool()
     // PLL Legacy mode signal; Active HIGH to enter the mode. Enabled by lmmi_legacy fuse. PLL CIB input
@@ -585,7 +600,7 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     // \desc = "", \pintype = "CONTROL"
     val BINACT = in Bits (2 bits) default (0)
 
-    val CLKS = Seq(CLKOP, CLKOS, CLKOS2, CLKOS3, CLKOS4, CLKOS5)
+    val CLKS = Seq(CLKOP, CLKOS, CLKOS2, CLKOS3, CLKOS4, CLKOS5).filter(_ != null)
   }
 
   val defParams = PLLConfig().Parameters
@@ -606,12 +621,6 @@ class PLL(cfg: PLLConfig) extends BlackBox {
   noIoPrefix()
   mapClockDomain(clock = io.REFCK, reset = io.PLLRESET)
 }
-
-
-case class ClockSpecification(freq : HertzNumber, phaseOffset: Double = 0, tolerance : Double = 0.01) {
-
-}
-
 
 case class IoI2(io: Double, i2: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int)
 case class NxPllParamPermutation(C1: Double, C2: Double, C3: Double, C4: Double, C5: Double, C6: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int, CSET: Double, CRIPPLE: Double, V2I_PP_RES: Int, IPI_CMP: Double)
@@ -1186,14 +1195,15 @@ object PLL extends App {
     new Component {
       val gen = new TestClockGen(41.6666667, 1)
 
+      val oscd = new OSCD(OSCDConfig.create(lib.misc.ClockSpecification(45 MHz, tolerance = .1), lib.misc.ClockSpecification(60 MHz, tolerance = .1)))
 
       val clockGenArea = new ClockingArea(new ClockDomain(gen.io.eclk, gen.io.reset)) {
-        val dut = new PLL(PLLConfig.create(ClockSpecification(24 MHz),
-          ClockSpecification(60.6 MHz),
-          ClockSpecification(101 MHz, tolerance = 0),
-          ClockSpecification(101 MHz, 90),
-          ClockSpecification(202 MHz, 25),
-          ClockSpecification(71.3 MHz, 135, .05),
+        val dut = new PLL(PLLConfig.create(lib.misc.ClockSpecification(24 MHz),
+          lib.misc.ClockSpecification(60.6 MHz),
+          lib.misc.ClockSpecification(101 MHz, tolerance = 0),
+          lib.misc.ClockSpecification(101 MHz, 90),
+          lib.misc.ClockSpecification(202 MHz, 25),
+          lib.misc.ClockSpecification(71.3 MHz, 135, .05),
           //ClockSpecification(90 MHz, 0, .05),
         ))
 
@@ -1211,8 +1221,6 @@ object PLL extends App {
           counter := counter + 1
         }
       })
-
-
     }.setDefinitionName("PLLTest")
   )
 }
