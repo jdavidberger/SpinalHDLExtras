@@ -11,13 +11,42 @@ import scala.language.postfixOps
 import scala.math._
 import scala.util.control.Breaks.{break, breakable}
 
+case class PLLClockConfig(
+                         VCO : HertzNumber = 0 MHz,
+                         CLKI_DIV : Int = 0,
+                         CLKFB_DIV : Int = 0,
+                         CLKFB_DIV_FRAC : Int = 0,
+                         CLK_REF: Int = 0,
+                         OUTPUTS: Seq[PLLOutputClockConfig] = Seq.empty,
+                         CLKFB_FRAC_MODE : Boolean = false,
+                         SPREAD_SPECTRUM : Boolean = false
+                         ) {
+
+  def print(actualOutputClocks : Seq[ClockSpecification]): Unit = {
+//
+//    if(actualOutputClocks.size != outputClocks.size && clkn != actualOutputClocks.size - 1) {
+//      configs = configs.dropRight(1)
+//      actualOutputClocks = actualOutputClocks.dropRight(1)
+//    }
+
+    println("Best clock settings")
+    println(s"ref_clk ${CLK_REF} fb_div ${CLKFB_DIV} ${CLKFB_DIV_FRAC}/4096 idiv ${CLKI_DIV} VCO ${VCO} frac mode: ${CLKFB_FRAC_MODE}")
+    OUTPUTS.zip(actualOutputClocks).foreach {
+      case (cfg, clkSpec) =>
+            println(s"Target freq ${clkSpec.freq.decomposeString} ${clkSpec.phaseOffset}deg  actual ${cfg.ACTUAL_FREQ} ${cfg.ACTUAL_PHASE}deg ${cfg}")
+    }
+  }
+}
+
 case class PLLOutputClockConfig(
                                  TRIM: Int = 0,
                                  DEL : Int = 0,
                                  DIV : Int = 1,
                                  PHI : Int = 0,
                                  ENABLE : Boolean = true,
-                                 TRIM_BYPASSED: Boolean = false
+                                 TRIM_BYPASSED: Boolean = false,
+                                 ACTUAL_FREQ : HertzNumber = 0 MHz,
+                                 ACTUAL_PHASE : Double = 0
                                )
 
 case class PLLConfig(
@@ -25,22 +54,22 @@ case class PLLConfig(
                       BW_CTL_BIAS: String = "0b0101",
 
                       /** \desc = "CLKOP output trim control bits", \otherValues = "{}", \infer = "No" */
-                      CLKOP_TRIM: Int = Integer.parseInt("0000", 2),
+                      CLKOP_TRIM: String = "0b0000",
 
                       /** \desc = "CLKOS output trim control bits", \otherValues = "{}", \infer = "No" */
-                      CLKOS_TRIM: Int = Integer.parseInt("0000", 2),
+                      CLKOS_TRIM: String = "0b0000",
 
                       /** \desc = "CLKOS2 output trim control bits", \otherValues = "{}", \infer = "No" */
-                      CLKOS2_TRIM: Int = Integer.parseInt("0000", 2),
+                      CLKOS2_TRIM: String = "0b0000",
 
                       /** \desc = "CLKOS3 output trim control bits", \otherValues = "{}", \infer = "No" */
-                      CLKOS3_TRIM: Int = Integer.parseInt("0000", 2),
+                      CLKOS3_TRIM: String = "0b0000",
 
                       /** \desc = "CLKOS4 output trim control bits", \otherValues = "{}", \infer = "No" */
-                      CLKOS4_TRIM: Int = Integer.parseInt("0000", 2),
+                      CLKOS4_TRIM: String = "0b0000",
 
                       /** \desc = "CLKOS5 output trim control bits", \otherValues = "{}", \infer = "No" */
-                      CLKOS5_TRIM: Int = Integer.parseInt("0000", 2),
+                      CLKOS5_TRIM: String = "0b0000",
 
                       /** \desc = "LPF cap control", \otherValues = "{1P,3P,7P,9P,11P,13P,15P}", \infer = "No" */
                       CRIPPLE: String = "5P",
@@ -49,7 +78,7 @@ case class PLLConfig(
                       CSET: String = "40P",
 
                       /** \desc = "Control signal to adjust the delay of the PFD; default 1b0 = 200ps; 1b1 = 300ps", \otherValues = "{300PS}", \infer = "No" */
-                      DELAY_CTRL: Int = 0,
+                      DELAY_CTRL: String = "200ps",
 
                       /** \desc = "Output divider phase shift (work with lmmi_diva)", \otherValues = "{}", \infer = "No" */
                       DELA: Int = 0,
@@ -91,7 +120,7 @@ case class PLLConfig(
                       DIVF: Int = 0,
 
                       /** \desc = "Select dynamic phase selection", \otherValues = "{}", \infer = "No" */
-                      DYN_SEL: Int = Integer.parseInt("000", 2),
+                      DYN_SEL: String = "0b000",
 
                       /** \desc = "1'b1 select CIB signals for dynamic phase shift", \otherValues = "{DYNAMIC}", \infer = "No" */
                       DYN_SOURCE: String = "STATIC",
@@ -124,13 +153,13 @@ case class PLLConfig(
                       V2I_1V_EN: Boolean = false,
 
                       /** \desc = "Bleeding current for PI to adjust the linearity", \otherValues = "{}", \infer = "No" */
-                      FBK_CUR_BLE: Int = Integer.parseInt("00000000", 2),
+                      FBK_CUR_BLE: String = "0b00000000",
 
                       /** \desc = "Select the positive or negative phase of PI output. 0: positive phase; 1: negative phase", \otherValues = "{NEGATIVE}", \infer = "No" */
                       FBK_EDGE_SEL: String = "POSITIVE",
 
                       /** \desc = "Interface timing control for feedback divider.", \otherValues = "{}", \infer = "No" */
-                      FBK_IF_TIMING_CTL: Int = Integer.parseInt("00", 2),
+                      FBK_IF_TIMING_CTL: String = "0b00",
 
                       /** \desc = "Enable the integer mode for feedback divider", \otherValues = "{ENABLED}", \infer = "No" */
                       FBK_INTEGER_MODE: Boolean = false,
@@ -142,22 +171,22 @@ case class PLLConfig(
                       FBK_MMD_DIG: Int = 8,
 
                       /** \desc = "Pulse width control for MMD output clock. If lmmi_fbk_mmd_puls_ctl[3:0]=4'b0110, it means that there's 6 VCO cycles in the MMD output clock.", \otherValues = "{}", \infer = "No" */
-                      FBK_MMD_PULS_CTL: Int = Integer.parseInt("0000", 2),
+                      FBK_MMD_PULS_CTL: String = "0b0000",
 
                       /** \desc = "Reserved floating control bits", \otherValues = "{}", \infer = "No" */
-                      FBK_MODE: Int = Integer.parseInt("00", 2),
+                      FBK_MODE: String = "0b00",
 
                       /** \desc = "PI bypass control bit. 0; PI not bypass, 1; PI bypass; it should be connected to lmmi_ssc_pi_bypass", \otherValues = "{BYPASSED}", \infer = "No" */
                       FBK_PI_BYPASS: String = "NOT_BYPASSED",
 
                       /** \desc = "RC time constant control in PI", \otherValues = "{0000}", \infer = "No" */
-                      FBK_PI_RC: Int = Integer.parseInt("1100", 2),
+                      FBK_PI_RC: String = "0b1100",
 
                       /** \desc = "Current control for PI to adjust the linearity", \otherValues = "{}", \infer = "No" */
-                      FBK_PR_CC: Int = Integer.parseInt("0000", 2),
+                      FBK_PR_CC: String = "0b0000",
 
                       /** \desc = "Bias current control for PI", \otherValues = "{0000}", \infer = "No" */
-                      FBK_PR_IC: Int = Integer.parseInt("1000", 2),
+                      FBK_PR_IC: String = "0b1000",
 
                       /** \desc = "Active HIGH to tri-state the ICP output.", \otherValues = "{ENABLED}", \infer = "No" */
                       FLOAT_CP: Boolean = false,
@@ -250,13 +279,13 @@ case class PLLConfig(
                       REF_MMD_DIG: Int = 8,
 
                       /** \desc = "MMD divider ratio setting for reference pre-divider when lmmi_ref_integer_mode=0", \otherValues = "{00000000}", \infer = "No" */
-                      REF_MMD_IN: Int = Integer.parseInt("00001000", 2),
+                      REF_MMD_IN: String = "0b00001000",
 
                       /** \desc = "Pulse width control for MMD output clock in reference pre-divider", \otherValues = "{}", \infer = "No" */
-                      REF_MMD_PULS_CTL: Int = Integer.parseInt("0000", 2),
+                      REF_MMD_PULS_CTL: String = "0b0000",
 
                       /** \desc = "Interface timing control for reference divider. Default to be 2b00.", \otherValues = "{}", \infer = "No" */
-                      REF_TIMING_CTL: Int = Integer.parseInt("00", 2),
+                      REF_TIMING_CTL: String = "0b00",
 
                       /** \desc = "Lmmi_refin_reset = 1b1 and with switching of REFin_SEL (either L-H or H-L) will generate a PLL reset", \otherValues = "{RESET}", \infer = "No" */
                       REFIN_RESET: String = "SET",
@@ -301,10 +330,10 @@ case class PLLConfig(
                       SSC_EN_SSC: Boolean = false,
 
                       /** \desc = "Fractional part of the feedback divider ratio", \otherValues = "{}", \infer = "No" */
-                      SSC_F_CODE: Int = Integer.parseInt("000000000000000", 2),
+                      SSC_F_CODE: String = "0b000000000000000",
 
                       /** \desc = "Integer part of the feedback divider ratio", \otherValues = "{000000000}", \infer = "No" */
-                      SSC_N_CODE: Int = Integer.parseInt("000010100", 2),
+                      SSC_N_CODE: String = "0b000010100",
 
                       /** \desc = "SDM order control bit; 0 - SDM order = 1; 1 - SDM order = 2", \otherValues = "{SDM_ORDER1}", \infer = "No" */
                       SSC_ORDER: String = "SDM_ORDER2",
@@ -313,16 +342,16 @@ case class PLLConfig(
                       SSC_PI_BYPASS: String = "NOT_BYPASSED",
 
                       /** \desc = "Weighting control bit for lmmi_ssc_step_in", \otherValues = "{}", \infer = "No" */
-                      SSC_REG_WEIGHTING_SEL: Int = Integer.parseInt("000", 2),
+                      SSC_REG_WEIGHTING_SEL: String = "0b000",
 
                       /** \desc = "Two-point FSK modulation control bit", \otherValues = "{ENABLED}", \infer = "No" */
                       SSC_SQUARE_MODE: Boolean = false,
 
                       /** \desc = "SSC modulation depth control bit", \otherValues = "{}", \infer = "No" */
-                      SSC_STEP_IN: Int = Integer.parseInt("0000000", 2),
+                      SSC_STEP_IN: String = "0b0000000",
 
                       /** \desc = "SSC modulation frequency control. The frequency should be 30-33kHz.", \otherValues = "{}", \infer = "No" */
-                      SSC_TBASE: Int = Integer.parseInt("000000000000", 2),
+                      SSC_TBASE: String = "0b000000000000",
 
                       /** \desc = "Enable STDBY CIB signal", \otherValues = "{ENABLED}", \infer = "No" */
                       STDBY_ATT: Boolean = false,
@@ -361,13 +390,13 @@ case class PLLConfig(
                       SEL_FBK: String = "DIVA",
 
                       /** \desc = "The internal path delay selection path", \otherValues = "{0000000}", \infer = "No" */
-                      DIV_DEL: Int = Integer.parseInt("0000001", 2),
+                      DIV_DEL: String = "0b0000001",
 
                       /** \desc = "The internal phase delay selection path", \otherValues = "{}", \infer = "No" */
-                      PHASE_SEL_DEL: Int = Integer.parseInt("000", 2),
+                      PHASE_SEL_DEL: String = "0b000",
 
                       /** \desc = "The internal phase delay selection path1", \otherValues = "{}", \infer = "No" */
-                      PHASE_SEL_DEL_P1: Int = Integer.parseInt("000", 2),
+                      PHASE_SEL_DEL_P1: String = "0b000",
 
                       /** \desc = "External divider value for feedback clock", \otherValues = "{}", \infer = "No" */
                       EXTERNAL_DIVIDE_FACTOR: Int = 0,
@@ -382,7 +411,7 @@ case class PLLConfig(
                       REF_OSC_CTRL: String = "3P2",
                       OUTPUT_CLKS : Seq[PLLOutputClockConfig] = Seq.empty[PLLOutputClockConfig]
                     ) {
-  require(OUTPUT_CLKS.size <= 5)
+  require(OUTPUT_CLKS.size <= 6)
 
   def Parameters : Map[String, Any] = {
     val rtn = new mutable.HashMap[String, Any]()
@@ -396,7 +425,7 @@ case class PLLConfig(
         case _ => rtn(f.getName) = v.toString
       }
     }
-    val n_to_l = Seq("P", "S", "S2", "S3", "S4")
+    val n_to_l = Seq("P", "S", "S2", "S3", "S4", "S5")
     for((c, idx) <- OUTPUT_CLKS.zipWithIndex) {
       val id = ('A' + idx).toChar
       val name = "O" + n_to_l(idx)
@@ -526,27 +555,106 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     val GRAYACT = in Bits (5 bits) default (0)
     // \desc = "", \pintype = "CONTROL"
     val BINACT = in Bits (2 bits) default (0)
+
+    val CLKS = Seq(CLKOP, CLKOS, CLKOS2, CLKOS3, CLKOS4, CLKOS5)
   }
 
   val defParams = PLLConfig().Parameters
   for ((name, value) <- cfg.Parameters.toList.sortBy(_._1)) {
-    if(value != defParams(name)) {
+    //if(value != defParams(name)) {
       addGeneric(name, value)
-    }
+    //}
   }
+
+  def ClockDomains = io.CLKS.map(clk => {
+    val clkArea = new ClockingArea(new ClockDomain(clk)) {
+      val reset = BufferCC(!io.LOCK)
+    }
+
+    new ClockDomain(clk, reset = clkArea.reset)
+  })
 
   noIoPrefix()
   mapClockDomain(clock = io.REFCK, reset = io.PLLRESET)
 }
 
 
-case class ClockSpecification(freq : HertzNumber, phaseOffset: Double = 0, tolerance : Double = 0) {
+case class ClockSpecification(freq : HertzNumber, phaseOffset: Double = 0, tolerance : Double = 0.01) {
 
 }
 
 
 case class IoI2(io: Double, i2: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int)
 case class NxPllParamPermutation(C1: Double, C2: Double, C3: Double, C4: Double, C5: Double, C6: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int, CSET: Double, CRIPPLE: Double, V2I_PP_RES: Int, IPI_CMP: Double)
+
+
+case class Rational(x: Long, y: Long) {
+
+  // require is used to enforce a precondition on the caller
+  require(y != 0, "denominator must be non-zero")
+
+  // define a greatest common divisor method we can use to simplify rationals
+  private def gcd(a: Long, b: Long): Long = Math.abs(if (b == 0) a else gcd(b, a % b))
+  //private def gcd(a: Long, b: Long): Long = BigLong(a).gcd(BigLong(b)).toLong//Math.abs(if (b == 0) a else gcd(b, a % b))
+  lazy val g = gcd(x, y)
+
+  lazy val numer = x / g
+  lazy val denom = y / g
+
+  // define a second constructor
+  def this(x: Long) = this(x, 1)
+
+  // define methods on this class
+  def add(r: Rational): Rational =
+    new Rational(numer * r.denom + r.numer * denom, denom * r.denom)
+  def add(r: Long): Rational = add(new Rational(r, 1))
+
+  def +(r: Rational): Rational = add(r)
+  def +(r: Long): Rational = add(Rational(r, 1))
+
+  // negation
+  def neg = new Rational(-numer, denom)
+  def unary_- : Rational = neg
+
+  def sub(r: Rational): Rational = add(r.neg)
+  def sub(r: Long): Rational = add(Rational(r, 1).neg)
+
+  def -(r: Rational): Rational = sub(r)
+  def -(r: Long): Rational = sub(r)
+  def abs : Rational = Rational(numer.abs, denom.abs)
+
+  def mult(r: Rational) =
+    new Rational(numer * r.numer, denom * r.denom)
+
+  def *(r: Rational): Rational = mult(r)
+
+  def *(r: Long): Rational = new Rational(numer * r, denom)
+
+  def div(r: Rational) =
+    new Rational(numer * r.denom, denom * r.numer)
+
+  def /(r: Rational): Rational = div(r)
+  def /(r: Long): Rational = new Rational(numer, denom * r)
+
+  def less(r: Rational): Boolean = numer * r.denom < r.numer * denom
+
+  def <(r: Rational): Boolean = less(r)
+
+  def more(r: Rational): Boolean = numer * r.denom > r.numer * denom
+
+  def >(r: Rational): Boolean = more(r)
+
+  def max(r: Rational): Rational = if (less(r)) r else this
+
+  def min(r: Rational): Rational = if (more(r)) r else this
+
+  def inv: Rational = new Rational(denom, numer)
+  def unary_/ : Rational = inv
+  def toDouble : Double = numer / denom.toDouble
+  def toBigDecimal : BigDecimal = BigDecimal(numer) / denom
+  override
+  def toString: String = numer + "/" + denom
+}
 
 case class Complex(re: Double, im: Double) extends Ordered[Complex] {
   private val modulus = sqrt(pow(re, 2) + pow(im, 2))
@@ -614,6 +722,8 @@ object PLLConfig {
   val clko_freq_range     = ( 6.25 MHz, 800 MHz)
   val vco_in_freq_range   = ( 10 MHz,   500 MHz)
   val vco_out_freq_range  = ( 800 MHz,  1600 MHz)
+
+  val idx_to_name = Seq("P", "S", "S2", "S3", "S4", "S5")
 
   val valid_io_i2_permutations : Iterable[IoI2] = {
     // Valid permutations of IPP_CTRL, BW_CTL_BIAS, IPP_SEL, and IPI_CMP paramters are constrained
@@ -855,7 +965,7 @@ object PLLConfig {
       }
     }
 
-    println("Done calculating analog parameters:")
+    println(s"Done calculating analog parameters: ${best3db}")
     //val HDLParams = numericalParamsToHDLParams(bestParams.get)
     //println(HDLParams)
     println(bestParams)
@@ -863,8 +973,14 @@ object PLLConfig {
     bestParams
   }
 
-  def create(inputClock : ClockSpecification, fb_div : Int, outputClocks : PLLOutputClockConfig*) : PLLConfig = {
-    val params = calcOptimalParams(inputClock.freq.toDouble, fb_div).get
+  def create(inputClock : ClockSpecification, clkConfig : PLLClockConfig) : PLLConfig = {
+    val fb_div = clkConfig.CLKFB_DIV
+    val fb_div_frac = clkConfig.CLKFB_DIV_FRAC
+    val clki_div = clkConfig.CLKI_DIV
+    val ref_clk = clkConfig.CLK_REF
+    val outputClocks = clkConfig.OUTPUTS
+
+    val params = calcOptimalParams(inputClock.freq.toDouble, fb_div + fb_div_frac / 4096.0, clki_div).get
     val IPP_SEL_LUT = Map(1 -> 1, 2 -> 3, 3 -> 7, 4 -> 15)
 
     val pp_map = Map(
@@ -877,7 +993,36 @@ object PLLConfig {
       9000 -> "9K"
     )
 
+    val has_spread_spectrum = clkConfig.SPREAD_SPECTRUM
+    val has_frac_n = clkConfig.CLKFB_FRAC_MODE
+
+    /*
+
+    localparam SSC_EN_SSC = ((SS_EN == 1) ? "ENABLED" : "DISABLED") ;
+    localparam SSC_EN_SDM = ((FRAC_N_EN || SS_EN) ? "ENABLED" : "DISABLED") ;
+    localparam SSC_ORDER = ((FRAC_N_EN || SS_EN) ? "SDM_ORDER2" : "SDM_ORDER1") ;
+    localparam SSC_DITHER = "DISABLED" ;
+    localparam SSC_N_CODE = ((FRAC_N_EN || SS_EN) ? SSC_N_CODE_STR : "0b000000000") ;
+    localparam SSC_F_CODE = ((FRAC_N_EN || SS_EN) ? SSC_F_CODE_STR : "0b000000000000000") ;
+    localparam SSC_PI_BYPASS = "NOT_BYPASSED" ;
+    localparam SSC_SQUARE_MODE = "DISABLED" ;
+    localparam SSC_EN_CENTER_IN = ((SSC_PROFILE == "CENTER") ? "CENTER_TRIANGLE" : "DOWN_TRIANGLE") ;
+    localparam SSC_TBASE = (SS_EN ? SSC_TBASE_STR : "0b000000000000") ;
+    localparam SSC_STEP_IN = (SS_EN ? SSC_STEP_IN_STR : "0b0000000") ;
+    localparam SSC_REG_WEIGHTING_SEL = (SS_EN ? SSC_REG_WEIGHTING_SEL_STR : "0b000") ;
+     */
+    def to_bin_string(x : Int, places : Int): String = {
+      s"0b" + x.toBinaryString
+    }
     PLLConfig(
+      SSC_EN_SSC        = has_spread_spectrum,
+      SSC_EN_SDM        = has_spread_spectrum || has_frac_n,
+      SSC_ORDER         = if (has_spread_spectrum || has_frac_n) "SDM_ORDER2" else "SDM_ORDER1",
+
+      FBK_MMD_PULS_CTL  = {
+        //localparam FBK_MMD_PULS_CTL = (FRAC_N_EN ? "0b0111" : (SS_EN ? "0b0101" : (((FBCLK_DIVIDER_ACTUAL_STR == "1") || (FBCLK_DIVIDER_ACTUAL_STR == "2")) ? "0b0000" : "0b0001"))) ;
+        if (has_frac_n) "0b0111" else if (has_spread_spectrum) "0b0101" else if (fb_div <= 2) "0b0000" else "0b0001"
+      },
       V2I_PP_ICTRL      = "0b11111", // Hard coded in all reference files
       IPI_CMPN          = "0b0011", // Hard coded in all reference files
 
@@ -888,17 +1033,24 @@ object PLLConfig {
       PLLPD_N           = "USED",
       PLLRESET_ENA      = true,
       REF_INTEGER_MODE  = true, // Ref manual has a discrepancy so lets always set this value just in case
-      REF_MMD_DIG       = 1, // Divider for the input clock, ie 'M'
+      REF_MMD_DIG       = clki_div, // Divider for the input clock, ie 'M'
 
-      SEL_FBK           = "FBKCLK5",
-      ENCLK_CLKOS5      = true,
-      DIVF              = fb_div - 1,
-      DELF              = fb_div - 1,
-      CLKMUX_FB         = "CMUX_CLKOS5",
+      SEL_FBK           = if(has_frac_n) "DIVA" else s"FBKCLK${ref_clk}",
+      CLKMUX_FB         = s"CMUX_CLKO${idx_to_name(ref_clk.max(0))}",
+      DIV_DEL           = if(has_frac_n) "0b0010011" else "0b0000001",
+      FBK_INTEGER_MODE  = !has_frac_n,
+      FBK_MASK          = if(has_frac_n) "0b00010000" else "0b00000000",
+      FBK_MMD_DIG       = fb_div,
 
-      FBK_INTEGER_MODE  = true,
-      FBK_MASK          = "0b00000000",
-      FBK_MMD_DIG       = 1,
+      //FBK_MMD_PULS_CTL = (has_frac_n ? "0b0111" : (SS_EN ? "0b0101" : (((FBCLK_DIVIDER_ACTUAL_STR == "1") || (FBCLK_DIVIDER_ACTUAL_STR == "2")) ? "0b0000" : "0b0001"))) ;
+
+      FBK_CUR_BLE = if (has_frac_n) "0b00001000" else "0b00000000",
+      FBK_PI_RC = if(has_frac_n) "0b0010" else "0b1100",
+      FBK_PR_CC = if(has_frac_n) "0b1000" else "0b0000",
+      FBK_PR_IC = if(has_frac_n) "0b1000" else "0b1000",
+
+    //localparam REF_MMD_PULS_CTL = (((CLKI_DIVIDER_ACTUAL_STR == "1") || (CLKI_DIVIDER_ACTUAL_STR == "2")) ? "0b0000" : "0b0001") ;
+      REF_MMD_PULS_CTL  = if (clki_div <= 2) "0b0000" else "0b0001",
 
       CRIPPLE = (params.CRIPPLE / 1e-12).toInt.toString + "P",
       CSET = ((params.CSET / 4e-12)*4).toInt.toString + "P",
@@ -907,47 +1059,217 @@ object PLLConfig {
       IPI_CMP = "0b%04d".format((params.IPI_CMP / .5e-6).round.toBinaryString.toInt),
       BW_CTL_BIAS = "0b%04d".format(params.BW_CTL_BIAS.round.toBinaryString.toInt),
       IPP_SEL = "0b%04d".format(IPP_SEL_LUT(params.IPP_SEL).toBinaryString.toInt),
-      OUTPUT_CLKS = outputClocks
+      OUTPUT_CLKS = outputClocks,
+
+      SSC_N_CODE        = if (has_spread_spectrum || has_frac_n) to_bin_string(fb_div, 9) else "0b000000000",
+      SSC_F_CODE        = if (has_spread_spectrum || has_frac_n) to_bin_string(fb_div_frac, 15) else "0b000000000000000",
+
     )
   }
-  def create_clock_config(vco_freq : HertzNumber, spec : ClockSpecification): Option[PLLOutputClockConfig] = {
-    for (d <- clko_div_range) {
-      val clk_freq = vco_freq/d
-      if ((clk_freq - spec.freq).abs <= spec.freq*spec.tolerance) {
-        val phasef = ((1+spec.phaseOffset/360) * d)
+
+  def create_clock_config(vco_freq : Rational, spec : ClockSpecification): (Double, Option[PLLOutputClockConfig]) = {
+    val lowest_freq = (spec.freq * (1 - spec.tolerance)).max(6.25 MHz)
+    val highest_freq = (spec.freq * (1 + spec.tolerance)).min(800 MHz)
+
+    val range_start = (vco_freq/highest_freq.toInt).toDouble.floor.toInt.min(128)
+    val range_end = (vco_freq/lowest_freq.toInt).toDouble.ceil.toInt.min(128)
+    val div_range = Array.range(range_start, range_end + 1)
+
+    val validOptions = div_range.map(d => {
+        val phasef = ((1 + spec.phaseOffset / 360) * d)
         val phase = phasef.round.toInt
         val actual_phase = ((phase.toDouble / d) - 1) * 360
 
-        println(s"Expected ${spec.freq} Actual ${clk_freq} Phase ${spec.phaseOffset} ${actual_phase}")
-        return Some(PLLOutputClockConfig(
-          ENABLE = true,
-          DIV = d - 1,
-          DEL = phase - 1
-        ))
+        val clk_freq = vco_freq / d
+        (
+          (clk_freq - spec.freq.toInt).abs.toDouble, (actual_phase - spec.phaseOffset).abs,
+          PLLOutputClockConfig(
+            ENABLE = true,
+            DIV = d - 1,
+            DEL = phase - 1,
+            ACTUAL_FREQ = HertzNumber(clk_freq.toBigDecimal),
+            ACTUAL_PHASE = actual_phase
+          )
+        )
+      })
+      .map(r => (r._1 * 1e-6 + r._2 / 360.0, r._3, r._1 <= (spec.freq * spec.tolerance).toDouble))
+      .sortBy(r => r._1)
+
+    (validOptions.head._1,
+      if(validOptions.head._3) Some(validOptions.head._2) else None)
+  }
+
+  def valid_fbclks(inputClock : ClockSpecification): Seq[Rational] = {
+    (for {
+      clki_div <- clki_div_range;
+      clkfb_div <- clkfb_div_range
+    } yield Rational((inputClock.freq * clkfb_div).toInt, clki_div)).filter(x => x.toDouble <= (800000000) && x.toDouble >= 6250000).distinct.sortBy[Double](-_.toDouble)
+  }
+
+  def valid_nonfrac_vcos(inputClock : ClockSpecification) : Seq[Rational] = {
+    val fbclks = valid_fbclks(inputClock)
+    (for {
+      fbclk <- fbclks;
+      clko_div <- clko_div_range
+    } yield fbclk * clko_div).filter(x => x.toDouble <= (1600000000) && x.toDouble >= (800000000)).distinct.sortBy[Double](-_.toDouble)
+  }
+
+  def valid_frac_vcos(inputClock : ClockSpecification) : Seq[(Rational, Int, Int, Int)] = {
+    val rtn = mutable.ArrayBuffer[(Rational, Int, Int, Int)]()
+    breakable {
+      for (clki_div <- clki_div_range) {
+        val phase_clk = Rational(inputClock.freq.toInt, clki_div)
+        if ((phase_clk.toBigDecimal Hz) < (18 MHz)) break
+
+        breakable {
+          for (clkfb_div <- clkfb_div_range) {
+            for (clkfb_frac_value <- 0 until 4096) {
+              val vco = phase_clk * Rational(clkfb_frac_value + clkfb_div * 4096, 4096)
+              if ((vco.toBigDecimal Hz) > ((1600 MHz))) {
+                break
+              }
+              if ((vco.toBigDecimal Hz) >= ((800 MHz))) {
+                rtn.append((vco, clki_div, clkfb_div, clkfb_frac_value))
+              }
+            }
+          }
+        }
+
       }
     }
 
-    None
+    rtn.distinct.sortBy[Double](-_._1.toDouble)
   }
-  def create(inputClock : ClockSpecification, outputClocks : ClockSpecification*): PLLConfig = {
-    var config = Map[String, Any]()
-    for (clki_div <- clki_div_range) {
-      config += ("clki_div" -> clki_div)
-      for (clkfb_div <- clkfb_div_range) {
-        var all_valid = true
-        val vco_freq = inputClock.freq/clki_div*clkfb_div
-        val (vco_freq_min, vco_freq_max) = vco_out_freq_range
-        if (vco_freq >= vco_freq_min && vco_freq <= vco_freq_max) {
 
-          val configs = outputClocks.map(x => create_clock_config(vco_freq, x))
-          val all_valid = configs.map(_.nonEmpty).fold(true)((a,b) => a & b)
-          if(all_valid) {
-            return create(inputClock, clkfb_div, configs.map(_.get):_*)
+  // Clk #, idiv, fbdiv, fractional
+  def find_ref_clock(inputClock : ClockSpecification, outputClocks : PLLOutputClockConfig*) : Option[PLLClockConfig] = {
+
+    def find_valid_settings_for_clk(clk : PLLOutputClockConfig): Option[PLLClockConfig] = {
+      breakable {
+        for (clki_div <- clki_div_range) {
+          val phase_detect_freq = inputClock.freq / clki_div
+          if (phase_detect_freq < (18 MHz)) {
+            break()
+          }
+          else if ((phase_detect_freq <= (500 MHz))) {
+            val clkfb_div = (clk.ACTUAL_FREQ * clki_div / inputClock.freq).toDouble
+            if (clk.ACTUAL_PHASE == 0 && clkfb_div.round == clkfb_div && clkfb_div < (128)) {
+              return Some(PLLClockConfig(CLKI_DIV = clki_div, CLKFB_DIV = clkfb_div.toInt))
+            }
           }
         }
       }
+      None
     }
-    throw new IllegalArgumentException("No PLL config found")
+
+    outputClocks.map(find_valid_settings_for_clk).zipWithIndex.map(x => x._1.map(_.copy(CLK_REF=x._2)))
+      .find(x => x.nonEmpty).flatten
+
+  }
+
+  def solve_non_fractional(inputClock : ClockSpecification, actualOutputClocks : ClockSpecification*): Option[PLLClockConfig] = {
+    var bestError = Double.MaxValue
+    var bestIsValid = false
+    var best : Option[PLLClockConfig] = None //(HertzNumber, Int, Int, Int, Int, Seq[Option[PLLOutputClockConfig]]) = (0 MHz, 0, 0, 0, 0, Seq.empty)
+
+    val vcos = valid_nonfrac_vcos(inputClock)
+
+    for (vco_freq <- vcos) {
+      val configs = actualOutputClocks.map(x => create_clock_config(vco_freq, x))
+      val error = configs.map(x => x._1).sum
+
+      val all_valid = configs.map(_._2.nonEmpty).fold(true)((a,b) => a & b)
+
+      if((all_valid) && bestError > error) {
+
+        val refClks = find_ref_clock(inputClock, configs.map(_._2.get):_*)
+        if(refClks.nonEmpty) {
+          bestError = error
+          best = Some(refClks.get.copy(VCO = vco_freq.toBigDecimal Hz, OUTPUTS = configs.map(_._2.get)))
+          bestIsValid = all_valid
+        }
+      }
+    }
+
+    best
+  }
+  def find_frac_params(inputClock : ClockSpecification, vco : Rational ) : PLLClockConfig = {
+    for (clki_div <- clki_div_range;
+         clkfb_div <- clkfb_div_range;
+         clkfb_frac_value <- 0 until 4096) {
+      val calc_vco = ((Rational(clkfb_frac_value, 4095) + clkfb_div) * inputClock.freq.toInt / clki_div)
+      if(calc_vco == vco) {
+        return PLLClockConfig(vco.toBigDecimal Hz, clki_div, clkfb_div, clkfb_frac_value, -1)
+      }
+    }
+    null
+  }
+
+  def solve_fractional(inputClock : ClockSpecification, actualOutputClocks : ClockSpecification*): Option[PLLClockConfig] = {
+    var bestError = Double.MaxValue
+    var bestIsValid = false
+    var best : Option[PLLClockConfig] = None //(HertzNumber, Int, Int, Int, Int, Seq[Option[PLLOutputClockConfig]]) = (0 MHz, 0, 0, 0, 0, Seq.empty)
+
+    val vcos = valid_frac_vcos(inputClock)
+
+    for ((vco_freq, clki_div, clkfb_div, clkfb_frac_value) <- vcos) {
+      val configs = actualOutputClocks.map(x => create_clock_config(vco_freq, x))
+      val error = configs.map(x => x._1).sum
+
+      val all_valid = configs.map(_._2.nonEmpty).fold(true)((a,b) => a & b)
+
+      if((all_valid) && bestError > error) {
+        val params = PLLClockConfig(VCO = vco_freq.toBigDecimal Hz, CLKI_DIV = clki_div, CLKFB_DIV = clkfb_div, CLKFB_DIV_FRAC = clkfb_frac_value, CLK_REF = -1, CLKFB_FRAC_MODE = true)
+        bestError = error
+        best = Some(params.copy(OUTPUTS = configs.map(_._2.get)))
+        bestIsValid = all_valid
+      }
+    }
+
+    best
+  }
+
+  def create(inputClock : ClockSpecification, outputClocks : ClockSpecification*): PLLConfig = {
+    var config = Map[String, Any]()
+
+    var actualOutputClocks = outputClocks
+
+    // The clock system here works by using the inputClock to establish a VCO between 800 and 1600. Each output clock
+    // is tuned according to
+    // F_on = VCO / On
+    // F_on is the output freq
+    // F_i is the input clock freq
+    // M is the input divider
+    // On is the divider for the Nth clock
+    // N is the FB divider
+    // Additionally, there must exist a ref clock with no phase shift for which
+    // F_o = F_i * N / M
+    // VCO / Oref = F_i * N / M
+    // VCO = F_i * Oref * N / M
+    //
+    // Additionally, we want to maximize VCO (to minimize jitter) and also minimize clock / phase error
+    // If we only need < 6 of the available 6 clock inputs, we can just say solve around everything else and use
+    // unused clock outputs as the VCO
+    //
+    // Otherwise we can more or less brute force it
+    // F_i is known
+    // F_on... are to be optimized
+    // N, M, On, R are unknowns
+    //
+    // For fractional mode, the PLL works differently
+    // VCO = F_i / N * M
+    // And it seems like the ref clock is internally driven
+
+    var solution = solve_non_fractional(inputClock, actualOutputClocks:_*)
+    if(solution.isEmpty) {
+      solution = solve_fractional(inputClock, actualOutputClocks: _*)
+    }
+    if(solution.isEmpty) {
+      throw new IllegalArgumentException("No PLL config found")
+    }
+
+    solution.get.print(actualOutputClocks)
+    create(inputClock, solution.get)
   }
 }
 
@@ -957,15 +1279,30 @@ object PLL extends App {
       val gen = new TestClockGen(41.6666667, 1)
 
 
-      new ClockingArea(new ClockDomain(gen.io.eclk, gen.io.reset)) {
+      val clockGenArea = new ClockingArea(new ClockDomain(gen.io.eclk, gen.io.reset)) {
         val dut = new PLL(PLLConfig.create(ClockSpecification(24 MHz),
-          ClockSpecification(60 MHz),
-          ClockSpecification(100 MHz),
-          ClockSpecification(100 MHz, 90),
-          ClockSpecification(200 MHz, 25),
-          ClockSpecification(75 MHz, 150),
+          ClockSpecification(60.6 MHz),
+          ClockSpecification(101 MHz, tolerance = 0),
+          ClockSpecification(101 MHz, 90),
+          ClockSpecification(202 MHz, 25),
+          ClockSpecification(71.3 MHz, 135, .05),
+          //ClockSpecification(90 MHz, 0, .05),
         ))
+
+        val counter = Reg(UInt(32 bits)) init(0)
+        when(~dut.io.LOCK) {
+          counter := 0
+        } otherwise {
+          counter := counter + 1
+        }
       }
+
+      val clockAreas = clockGenArea.dut.ClockDomains.map(cd => {
+        new ClockingArea(cd) {
+          val counter = Reg(UInt(32 bits)) init(0)
+          counter := counter + 1
+        }
+      })
 
 
     }.setDefinitionName("PLLTest")
