@@ -3,6 +3,7 @@ package spinalextras.lib.blackbox.lattice.lifcl
 import spinal.core._
 import spinal.lib._
 import spinalextras.lib.Config
+import spinalextras.lib.misc._
 import spinalextras.lib.tests.TestClockGen
 
 import scala.collection.mutable
@@ -21,6 +22,20 @@ case class PLLClockConfig(
                          CLKFB_FRAC_MODE : Boolean = false,
                          SPREAD_SPECTRUM : Boolean = false
                          ) {
+
+  override def equals(o: Any) = o match {
+    case other : PLLClockConfig => {
+      VCO == other.VCO &&
+        CLKI_DIV == other.CLKI_DIV &&
+        CLKFB_DIV == other.CLKFB_DIV &&
+        CLKFB_DIV_FRAC == other.CLKFB_DIV_FRAC &&
+        CLK_REF == other.CLK_REF &&
+        CLKFB_FRAC_MODE == other.CLKFB_FRAC_MODE &&
+        SPREAD_SPECTRUM == other.SPREAD_SPECTRUM &&
+        OUTPUTS == other.OUTPUTS
+    }
+    case _ => false
+  }
 
   def print(actualOutputClocks : Seq[ClockSpecification]): Unit = {
 //
@@ -47,7 +62,21 @@ case class PLLOutputClockConfig(
                                  TRIM_BYPASSED: Boolean = false,
                                  ACTUAL_FREQ : HertzNumber = 0 MHz,
                                  ACTUAL_PHASE : Double = 0
-                               )
+                               ) {
+  override def equals(o: Any) = {
+    o match {
+      case other : PLLOutputClockConfig => {
+        TRIM == other.TRIM &&
+          DEL == other.DEL &&
+          DIV == other.DIV &&
+          PHI == other.PHI &&
+          ENABLE == other.ENABLE &&
+          TRIM_BYPASSED == other.TRIM_BYPASSED
+      }
+      case _ => false
+    }
+  }
+}
 
 case class PLLConfig(
                       /** \desc = "Input control signal to tune the bias current of ppath cp, when the bit increase, the bias current increase. This current branch is combined with the Ivco_fb current.", \otherValues = "{0000}", \infer = "No" */
@@ -587,131 +616,6 @@ case class ClockSpecification(freq : HertzNumber, phaseOffset: Double = 0, toler
 case class IoI2(io: Double, i2: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int)
 case class NxPllParamPermutation(C1: Double, C2: Double, C3: Double, C4: Double, C5: Double, C6: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int, CSET: Double, CRIPPLE: Double, V2I_PP_RES: Int, IPI_CMP: Double)
 
-
-case class Rational(x: Long, y: Long) {
-
-  // require is used to enforce a precondition on the caller
-  require(y != 0, "denominator must be non-zero")
-
-  // define a greatest common divisor method we can use to simplify rationals
-  private def gcd(a: Long, b: Long): Long = Math.abs(if (b == 0) a else gcd(b, a % b))
-  //private def gcd(a: Long, b: Long): Long = BigLong(a).gcd(BigLong(b)).toLong//Math.abs(if (b == 0) a else gcd(b, a % b))
-  lazy val g = gcd(x, y)
-
-  lazy val numer = x / g
-  lazy val denom = y / g
-
-  // define a second constructor
-  def this(x: Long) = this(x, 1)
-
-  // define methods on this class
-  def add(r: Rational): Rational =
-    new Rational(numer * r.denom + r.numer * denom, denom * r.denom)
-  def add(r: Long): Rational = add(new Rational(r, 1))
-
-  def +(r: Rational): Rational = add(r)
-  def +(r: Long): Rational = add(Rational(r, 1))
-
-  // negation
-  def neg = new Rational(-numer, denom)
-  def unary_- : Rational = neg
-
-  def sub(r: Rational): Rational = add(r.neg)
-  def sub(r: Long): Rational = add(Rational(r, 1).neg)
-
-  def -(r: Rational): Rational = sub(r)
-  def -(r: Long): Rational = sub(r)
-  def abs : Rational = Rational(numer.abs, denom.abs)
-
-  def mult(r: Rational) =
-    new Rational(numer * r.numer, denom * r.denom)
-
-  def *(r: Rational): Rational = mult(r)
-
-  def *(r: Long): Rational = new Rational(numer * r, denom)
-
-  def div(r: Rational) =
-    new Rational(numer * r.denom, denom * r.numer)
-
-  def /(r: Rational): Rational = div(r)
-  def /(r: Long): Rational = new Rational(numer, denom * r)
-
-  def less(r: Rational): Boolean = numer * r.denom < r.numer * denom
-
-  def <(r: Rational): Boolean = less(r)
-
-  def more(r: Rational): Boolean = numer * r.denom > r.numer * denom
-
-  def >(r: Rational): Boolean = more(r)
-
-  def max(r: Rational): Rational = if (less(r)) r else this
-
-  def min(r: Rational): Rational = if (more(r)) r else this
-
-  def inv: Rational = new Rational(denom, numer)
-  def unary_/ : Rational = inv
-  def toDouble : Double = numer / denom.toDouble
-  def toBigDecimal : BigDecimal = BigDecimal(numer) / denom
-  override
-  def toString: String = numer + "/" + denom
-}
-
-case class Complex(re: Double, im: Double) extends Ordered[Complex] {
-  private val modulus = sqrt(pow(re, 2) + pow(im, 2))
-
-  // Constructors
-  def this(re: Double) = this(re, 0)
-
-  // Unary operators
-  def unary_+ = this
-  def unary_- = new Complex(-re, -im)
-  def unary_~ = new Complex(re, -im) // conjugate
-  def unary_! = modulus
-
-  // Comparison
-  def compare(that: Complex) = !this compare !that
-  def magnitude = Math.sqrt(re*re + im*im)
-  def abs = magnitude
-  def phase = Math.atan2(im, re)
-
-  // Arithmetic operations
-  def +(c: Complex) = new Complex(re + c.re, im + c.im)
-  def -(c: Complex) = this + -c
-  def *(c: Complex) =
-    new Complex(re * c.re - im * c.im, im * c.re + re * c.im)
-  def /(c: Complex) = {
-    require(c.re != 0 || c.im != 0)
-    val d = pow(c.re, 2) + pow(c.im, 2)
-    new Complex((re * c.re + im * c.im) / d, (im * c.re - re * c.im) / d)
-  }
-
-  // String representation
-  override def toString() =
-    this match {
-      case Complex.i => "i"
-      case Complex(re, 0) => re.toString
-      case Complex(0, im) => im.toString + "*i"
-      case _ => asString
-    }
-  private def asString =
-    re + (if (im < 0) "-" + -im else "+" + im) + "*i"
-}
-
-object Complex {
-  // Constants
-  val i = new Complex(0, 1)
-
-  // Factory methods
-  def apply(re: Double) = new Complex(re)
-
-  // Implicit conversions
-  implicit def fromDouble(d: Double) = new Complex(d)
-  implicit def fromFloat(f: Float) = new Complex(f)
-  implicit def fromLong(l: Long) = new Complex(l)
-  implicit def fromInt(i: Int) = new Complex(i)
-  implicit def fromShort(s: Short) = new Complex(s)
-}
-
 // Adapted from https://github.com/enjoy-digital/litex/blob/master/litex/soc/cores/clock/lattice_nx.py
 object PLLConfig {
   val nclkouts_max        = 5
@@ -1229,7 +1133,7 @@ object PLLConfig {
     best
   }
 
-  def create(inputClock : ClockSpecification, outputClocks : ClockSpecification*): PLLConfig = {
+  def createClockConfig(inputClock : ClockSpecification, outputClocks : ClockSpecification*): PLLClockConfig = {
     var config = Map[String, Any]()
 
     var actualOutputClocks = outputClocks
@@ -1269,7 +1173,11 @@ object PLLConfig {
     }
 
     solution.get.print(actualOutputClocks)
-    create(inputClock, solution.get)
+    solution.get
+  }
+
+  def create(inputClock : ClockSpecification, outputClocks : ClockSpecification*): PLLConfig = {
+    create(inputClock, createClockConfig(inputClock, outputClocks:_*))
   }
 }
 
