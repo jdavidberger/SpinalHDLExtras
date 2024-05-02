@@ -1,6 +1,6 @@
 package spinalextras.lib.misc
 
-import spinal.core.{Analog, BaseType, Bundle, Component, Data, cloneOf, in, inout, out}
+import spinal.core.{Analog, BaseType, Bundle, ClockDomain, ClockingArea, Component, Data, cloneOf, in, inout, out}
 import spinal.lib.{IMasterSlave, growableAnyPimped}
 
 import scala.collection.mutable
@@ -62,10 +62,13 @@ object AutoInterconnect {
 
   }
   def apply(name: String, contents: () => Iterator[Component],
-            renames: Map[String, String] = Map.empty): Component = {
+            renames: Map[String, String] = Map.empty, clockDomain : => ClockDomain = ClockDomain.current): Component = {
+    lazy val customClockDomain = clockDomain
     new Component {
-      val io = new Bundle { }
-      buildInterconnect(contents().toIterable, io, renames)
+      val io = new Bundle {}
+      val cdArea = new ClockingArea(clockDomain = customClockDomain) {
+        buildInterconnect(contents().toIterable, io, renames)
+      }
     }.setDefinitionName(name).setName(name)
   }
 }

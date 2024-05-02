@@ -48,7 +48,7 @@ class GenericODDR(input_per_output : Int = 2, latency : Int = 1) extends ODDR(in
         Mux((g + 1) >= input_per_output, g + 1 - input_per_output, g + 1).resized)
     }
 
-    val cp, cnp = Reg(Bool()) init(False).addTag(crossClockDomain)
+    val cp, cnp = Reg(Bool()) init(False) addTag(crossClockDomain)
     when(IN.valid) {
       assert(idx0.expand < IN.payload.getWidth)
       assert(idx1.expand < IN.payload.getWidth)
@@ -82,11 +82,11 @@ class GenericIDDR(output_per_input : Int = 2, latency : Int = 1) extends IDDR(ou
 
 
   val pArea = new ClockingArea(pclock) {
-    val c = RegNext(io.IN.payload)// Reg(Bool()).addTag(crossClockDomain)
+    val c = RegNext(io.IN.payload).addTag(crossClockDomain)// Reg(Bool()).addTag(crossClockDomain)
   }
 
   val nArea = new ClockingArea(nclock) {
-    val c = RegNext(io.IN.payload)
+    val c = RegNext(io.IN.payload).addTag(crossClockDomain)
   }
 
   var OUT = io.OUT.payload.clone()

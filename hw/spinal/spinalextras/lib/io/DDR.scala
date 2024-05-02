@@ -20,7 +20,7 @@ abstract class IDDR(output_per_input : Int = 2) extends Component with Component
   }
 
   val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
-    val valid = Reg(Bits(latency() bits)) init (0)
+    val valid = Reg(Bits(latency() bits)) init (0) addTag(crossClockDomain)
     valid := ((valid << 1) | io.IN.valid.asBits.resized).resized
     io.OUT.valid := valid.msb
   }
@@ -41,7 +41,7 @@ abstract class ODDR(val input_per_output : Int = 2) extends Component with Compo
   }
 
   val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
-    val valid = Reg(Bits(latency() bits)) init(0)
+    val valid = Reg(Bits(latency() bits)) init(0) addTag(crossClockDomain)
     valid := ((valid << 1) | io.IN.valid.asBits.resized).resized
     io.OUT.valid := valid.msb
 
@@ -172,7 +172,7 @@ case class IODDRArray[T <: BitVector](payloadType : HardType[T], gear : Int = 2)
   tristates.io.output <> data_in.io.IN.payload
   tristates.io.output_enable <> data_out.io.OUT.valid
 
-  override val latency: Int = data_out.oddrs.head.latency
+  override val latency: Int = data_out.oddrs.head.latency()
 }
 
 object ODDRArraySim extends App {

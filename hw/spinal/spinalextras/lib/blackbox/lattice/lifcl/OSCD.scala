@@ -25,8 +25,8 @@ case class OSCDConfig(
       "LF_FABRIC_EN" -> asEnabled(LF_FABRIC_EN),
       "DEBUG_N" -> asEnabled(DEBUG_N),
       "HF_OSC_EN"-> asEnabled(HF_DIV.nonEmpty || HF_SED_SEC_DIV.nonEmpty),
-      "HF_CLK_DIV" -> HF_DIV.getOrElse(0).toString,
-      "HF_SED_SEC_DIV" -> HF_SED_SEC_DIV.getOrElse(0).toString
+      "HF_CLK_DIV" -> HF_DIV.getOrElse(1).toString,
+      "HF_SED_SEC_DIV" -> HF_SED_SEC_DIV.getOrElse(1).toString
     )
   }
 }

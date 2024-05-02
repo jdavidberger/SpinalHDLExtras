@@ -8,7 +8,7 @@ val spinalLib = "com.github.spinalhdl" %% "spinalhdl-lib" % spinalVersion
 
 val spinalIdslPlugin = compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % spinalVersion)
 
-lazy val fpgadepth = (project in file("."))
+lazy val SpinalHDLExtras = (project in file("."))
   .settings(
     Compile / scalaSource := baseDirectory.value / "hw" / "spinal",
     Test / scalaSource := baseDirectory.value / "hw" / "spinal",

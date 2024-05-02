@@ -27,7 +27,18 @@ case class USB23_IO() extends Bundle with IMasterSlave {
   }
 }
 
-case class USB23() extends BlackBox {
+object USB23 extends Enumeration {
+  type Modes = Value
+  val USB3, USB2, USB23 = Value
+}
+
+case class USB23(GSR: Boolean = false) extends BlackBox {
+  val usb_mode : USB23.Modes = USB23.USB3
+  val generic = new Generic {
+    val USB_MODE = USB23.this.usb_mode
+    val GSR = if(USB23.this.GSR) "ENABLED" else "DISABLED"
+  }
+
   val io = new Bundle {
     val PHY    = master(USB23_IO())
     PHY.setPartialName("")
@@ -108,7 +119,7 @@ case class USB23() extends BlackBox {
   noIoPrefix()
 }
 
-object USB23 extends App {
+object USB23App extends App {
   Config.spinal.generateVerilog(
     new Component {
       val PHY = master(USB23_IO())

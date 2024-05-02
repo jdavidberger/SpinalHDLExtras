@@ -4,13 +4,13 @@ import spinal.core._
 import spinal.lib._
 import spinalextras.lib
 import spinalextras.lib.Config
+import spinalextras.lib.blackbox.lattice.lifcl.PLLConfig.to_bin_string
 import spinalextras.lib.misc._
 import spinalextras.lib.tests.TestClockGen
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
-import scala.math._
 import scala.util.control.Breaks.{break, breakable}
 
 case class PLLClockConfig(
@@ -108,7 +108,7 @@ case class PLLConfig(
                       CSET: String = "40P",
 
                       /** \desc = "Control signal to adjust the delay of the PFD; default 1b0 = 200ps; 1b1 = 300ps", \otherValues = "{300PS}", \infer = "No" */
-                      DELAY_CTRL: String = "200ps",
+                      DELAY_CTRL: String = "200PS",
 
                       /** \desc = "Output divider phase shift (work with lmmi_diva)", \otherValues = "{}", \infer = "No" */
                       DELA: Int = 0,
@@ -464,8 +464,8 @@ case class PLLConfig(
         s"DEL${id}" -> c.DEL.toString,
         s"PHI${id}" -> c.PHI.toString,
         s"ENCLK_CLK${name}" -> (if (c.ENABLE) "ENABLED" else "DISABLED"),
-        s"CLK${name}_TRIM" -> c.TRIM.toString,
-        s"TRIM${name}_BYPASS_N" -> (if(!c.TRIM_BYPASSED) "ENABLED" else "DISABLED")
+        s"CLK${name}_TRIM" -> to_bin_string(c.TRIM, 4),
+        s"TRIM${name}_BYPASS_N" -> (if(!c.TRIM_BYPASSED) "BYPASSED" else "USED")
       )
     }
     rtn.toMap
@@ -520,17 +520,18 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     // Clock reference
     val REFCK = in Bool()
     // Primary (A) output clock
-    val CLKOP = if(cfg.ENCLK_CLKOP) out Bool() else null
+
+    val CLKOP = out Bool()
     // Secondary (B) output clock
-    val CLKOS = if(cfg.ENCLK_CLKOS) out Bool() else null
+    val CLKOS = out Bool()
     // Secondary (C) output clock
-    val CLKOS2 = if(cfg.ENCLK_CLKOS2) out Bool() else null
+    val CLKOS2 = out Bool()
     // Secondary (D) output clock
-    val CLKOS3 = if(cfg.ENCLK_CLKOS3) out Bool() else null
+    val CLKOS3 = out Bool()
     // Secondary (E) output clock
-    val CLKOS4 = if(cfg.ENCLK_CLKOS4) out Bool() else null
+    val CLKOS4 = out Bool()
     // Secondary (F) output clock
-    val CLKOS5 = if(cfg.ENCLK_CLKOS5) out Bool() else null
+    val CLKOS5 = out Bool()
     // Active HIGH; Enable A output (CLKOP); PLL CIB Input
     val ENCLKOP = in Bool() default (True)
     // Active HIGH; Enable B output (CLKOS); PLL CIB Input
@@ -600,7 +601,7 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     // \desc = "", \pintype = "CONTROL"
     val BINACT = in Bits (2 bits) default (0)
 
-    val CLKS = Seq(CLKOP, CLKOS, CLKOS2, CLKOS3, CLKOS4, CLKOS5).filter(_ != null)
+    val CLKS = cfg.OUTPUT_CLKS.zip(Seq(CLKOP, CLKOS, CLKOS2, CLKOS3, CLKOS4, CLKOS5).filter(_ != null))
   }
 
   val defParams = PLLConfig().Parameters
@@ -610,12 +611,13 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     //}
   }
 
-  def ClockDomains = io.CLKS.map(clk => {
+  lazy val ClockDomains = io.CLKS.map(cfg_clk => {
+    val (cfg, clk) = cfg_clk
     val clkArea = new ClockingArea(new ClockDomain(clk)) {
       val reset = BufferCC(!io.LOCK)
     }
 
-    new ClockDomain(clk, reset = clkArea.reset)
+    new ClockDomain(clk, reset = clkArea.reset, frequency = FixedFrequency(cfg.ACTUAL_FREQ))
   })
 
   noIoPrefix()
@@ -627,6 +629,11 @@ case class NxPllParamPermutation(C1: Double, C2: Double, C3: Double, C4: Double,
 
 // Adapted from https://github.com/enjoy-digital/litex/blob/master/litex/soc/cores/clock/lattice_nx.py
 object PLLConfig {
+
+  def to_bin_string(x : Int, places : Int): String = {
+    s"0b" + x.toBinaryString.reverse.padTo(places, '0').reverse
+  }
+
   val nclkouts_max        = 5
   val clki_div_range      = Array.range( 1, 128+1)
   val clkfb_div_range     = Array.range( 1, 128+1)
@@ -924,9 +931,6 @@ object PLLConfig {
     localparam SSC_STEP_IN = (SS_EN ? SSC_STEP_IN_STR : "0b0000000") ;
     localparam SSC_REG_WEIGHTING_SEL = (SS_EN ? SSC_REG_WEIGHTING_SEL_STR : "0b000") ;
      */
-    def to_bin_string(x : Int, places : Int): String = {
-      s"0b" + x.toBinaryString
-    }
     PLLConfig(
       SSC_EN_SSC        = has_spread_spectrum,
       SSC_EN_SDM        = has_spread_spectrum || has_frac_n,
@@ -948,7 +952,7 @@ object PLLConfig {
       REF_INTEGER_MODE  = true, // Ref manual has a discrepancy so lets always set this value just in case
       REF_MMD_DIG       = clki_div, // Divider for the input clock, ie 'M'
 
-      SEL_FBK           = if(has_frac_n) "DIVA" else s"FBKCLK${ref_clk}",
+      SEL_FBK           = if(has_frac_n) "DIVA" else s"DIV${('A' + ref_clk.min(0)).toChar}",
       CLKMUX_FB         = s"CMUX_CLKO${idx_to_name(ref_clk.max(0))}",
       DIV_DEL           = if(has_frac_n) "0b0010011" else "0b0000001",
       FBK_INTEGER_MODE  = !has_frac_n,
