@@ -984,7 +984,7 @@ object PLLConfig {
     )
   }
 
-  def create_clock_config(vco_freq : Rational, spec : ClockSpecification): (Double, Option[PLLOutputClockConfig]) = {
+  def create_clock_config(vco_freq : Rational, vco_tolerance : Double, spec : ClockSpecification): (Double, Option[PLLOutputClockConfig]) = {
     val lowest_freq = (spec.freq * (1 - spec.tolerance)).max(6.25 MHz)
     val highest_freq = (spec.freq * (1 + spec.tolerance)).min(800 MHz)
 
@@ -1009,7 +1009,7 @@ object PLLConfig {
           )
         )
       })
-      .map(r => (r._1 * 1e-6 + r._2 / 360.0, r._3, r._1 <= (spec.freq * spec.tolerance).toDouble))
+      .map(r => (r._1 * 1e-6 + r._2 / 360.0, r._3, r._1 <= (spec.freq * spec.tolerance * vco_tolerance).toDouble))
       .sortBy(r => r._1)
 
     (validOptions.head._1,
@@ -1017,6 +1017,9 @@ object PLLConfig {
   }
 
   def valid_fbclks(inputClock : ClockSpecification): Seq[Rational] = {
+    val vco_max = 1600000000
+    val vco_min = 800000000
+
     (for {
       clki_div <- clki_div_range;
       clkfb_div <- clkfb_div_range
@@ -1025,9 +1028,21 @@ object PLLConfig {
 
   def valid_nonfrac_vcos(inputClock : ClockSpecification) : Seq[Rational] = {
     val fbclks = valid_fbclks(inputClock)
+
+    val vco_max = 1600000000
+    val vco_min = 800000000
+
+    def in_range(fbclk : Rational): Seq[Int] = {
+      val clko_div_range_start = Math.max((vco_min / fbclk.toDouble).ceil.toInt, clko_div_range.head)
+      val clko_div_range_end = Math.min((vco_max / fbclk.toDouble).floor.toInt, clko_div_range.last)
+      Array.range(clko_div_range_start, clko_div_range_end + 1)
+    }
+    // fbclk * clko_div <= 1600000000
+    // fbclk * clko_div <=  800000000
+
     (for {
       fbclk <- fbclks;
-      clko_div <- clko_div_range
+      clko_div <- in_range(fbclk)
     } yield fbclk * clko_div).filter(x => x.toDouble <= (1600000000) && x.toDouble >= (800000000)).distinct.sortBy[Double](-_.toDouble)
   }
 
@@ -1036,16 +1051,16 @@ object PLLConfig {
     breakable {
       for (clki_div <- clki_div_range) {
         val phase_clk = Rational(inputClock.freq.toInt, clki_div)
-        if ((phase_clk.toBigDecimal Hz) < (18 MHz)) break
+        if ((phase_clk.toDouble Hz) < (18 MHz)) break
 
         breakable {
           for (clkfb_div <- clkfb_div_range) {
             for (clkfb_frac_value <- 0 until 4096) {
               val vco = phase_clk * Rational(clkfb_frac_value + clkfb_div * 4096, 4096)
-              if ((vco.toBigDecimal Hz) > ((1600 MHz))) {
+              if ((vco.toDouble Hz) > ((1600 MHz))) {
                 break
               }
-              if ((vco.toBigDecimal Hz) >= ((800 MHz))) {
+              if ((vco.toDouble Hz) >= ((800 MHz))) {
                 rtn.append((vco, clki_div, clkfb_div, clkfb_frac_value))
               }
             }
@@ -1092,7 +1107,7 @@ object PLLConfig {
     val vcos = valid_nonfrac_vcos(inputClock)
 
     for (vco_freq <- vcos) {
-      val configs = actualOutputClocks.map(x => create_clock_config(vco_freq, x))
+      val configs = actualOutputClocks.map(x => create_clock_config(vco_freq, inputClock.tolerance, x))
       val error = configs.map(x => x._1).sum
 
       val all_valid = configs.map(_._2.nonEmpty).fold(true)((a,b) => a & b)
@@ -1130,7 +1145,7 @@ object PLLConfig {
     val vcos = valid_frac_vcos(inputClock)
 
     for ((vco_freq, clki_div, clkfb_div, clkfb_frac_value) <- vcos) {
-      val configs = actualOutputClocks.map(x => create_clock_config(vco_freq, x))
+      val configs = actualOutputClocks.map(x => create_clock_config(vco_freq, inputClock.tolerance, x))
       val error = configs.map(x => x._1).sum
 
       val all_valid = configs.map(_._2.nonEmpty).fold(true)((a,b) => a & b)

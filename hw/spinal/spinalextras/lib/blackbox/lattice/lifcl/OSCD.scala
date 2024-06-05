@@ -1,7 +1,7 @@
 package spinalextras.lib.blackbox.lattice.lifcl
 
 import spinal.core._
-import spinalextras.lib.misc
+import spinalextras.lib.{FixedFrequencyWithError, misc}
 import spinalextras.lib.misc.ClockSpecification
 
 import scala.language.postfixOps
@@ -29,6 +29,10 @@ case class OSCDConfig(
       "HF_SED_SEC_DIV" -> HF_SED_SEC_DIV.getOrElse(1).toString
     )
   }
+
+  val hf_frequency = HF_DIV.map(d => FixedFrequencyWithError((450 MHz) / (d + 1.0), 0.10))
+  val hf_sed_frequency = HF_SED_SEC_DIV.map(d => FixedFrequencyWithError((450 MHz) / (d + 1.0), 0.10))
+  val lf_frequency = if (LF_OUTPUT_EN) Some(FixedFrequencyWithError(32 kHz, .10)) else None
 }
 
 object OSCDConfig {
@@ -84,4 +88,8 @@ class OSCD(cfg: OSCDConfig) extends BlackBox {
   }
 
   noIoPrefix()
+
+  val hf_clk = cfg.hf_frequency.map(f => ClockDomain(io.HFCLKOUT, frequency = f))
+  val hf_sed_clk = cfg.hf_sed_frequency.map(f => ClockDomain(io.HFSDCOUT, frequency = f))
+  val lf_clk = cfg.lf_frequency.map(f => ClockDomain(io.LFCLKOUT, frequency = f))
 }
