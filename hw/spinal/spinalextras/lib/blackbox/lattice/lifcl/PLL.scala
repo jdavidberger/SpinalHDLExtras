@@ -3,7 +3,7 @@ package spinalextras.lib.blackbox.lattice.lifcl
 import spinal.core._
 import spinal.lib._
 import spinalextras.lib
-import spinalextras.lib.Config
+import spinalextras.lib.{Config, FixedRangeFrequency}
 import spinalextras.lib.blackbox.lattice.lifcl.PLLConfig.to_bin_string
 import spinalextras.lib.misc._
 import spinalextras.lib.tests.TestClockGen
@@ -611,13 +611,19 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     //}
   }
 
+  val min_ref_clk = ClockDomain.current.frequency.getMin
+  val ref_clk = ClockDomain.current.frequency.getValue
+  val max_ref_clk = ClockDomain.current.frequency.getMax
+
   lazy val ClockDomains = io.CLKS.map(cfg_clk => {
     val (cfg, clk) = cfg_clk
     val clkArea = new ClockingArea(new ClockDomain(clk)) {
       val reset = BufferCC(!io.LOCK)
     }
 
-    new ClockDomain(clk, reset = clkArea.reset, frequency = FixedFrequency(cfg.ACTUAL_FREQ))
+    val scale = cfg.ACTUAL_FREQ / ref_clk
+
+    new ClockDomain(clk, reset = clkArea.reset || io.PLLRESET, frequency = FixedRangeFrequency(min_ref_clk * scale, max_ref_clk * scale))
   })
 
   noIoPrefix()

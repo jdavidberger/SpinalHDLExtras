@@ -89,7 +89,7 @@ class OSCD(cfg: OSCDConfig) extends BlackBox {
 
   noIoPrefix()
 
-  val hf_clk = cfg.hf_frequency.map(f => ClockDomain(io.HFCLKOUT, frequency = f))
-  val hf_sed_clk = cfg.hf_sed_frequency.map(f => ClockDomain(io.HFSDCOUT, frequency = f))
-  val lf_clk = cfg.lf_frequency.map(f => ClockDomain(io.LFCLKOUT, frequency = f))
+  def hf_clk() = cfg.hf_frequency.map(f => ClockDomain(io.HFCLKOUT, reset = ClockDomain.current.readResetWire, frequency = f))
+  def hf_sed_clk() = cfg.hf_sed_frequency.map(f => ClockDomain(io.HFSDCOUT, reset = ClockDomain.current.readResetWire, frequency = f))
+  def lf_clk() = cfg.lf_frequency.map(f => ClockDomain(io.LFCLKOUT, reset = ClockDomain.current.readResetWire, frequency = f))
 }
