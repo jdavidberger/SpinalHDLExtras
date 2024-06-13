@@ -59,6 +59,11 @@ object ODDR {
   def factory = new ImplementationSpecificFactory[ODDR, Int] {
     simulationHandler = {case _ => (input_per_output => new GenericODDR(input_per_output))}
     AddHandler { case Device("lattice", "lifcl", name, resetKind) => { input_per_output => new LatticeODDR(input_per_output)}}
+    AddHandler { case _ => input_per_output => {
+      println(s"Warning: Using simulation driver for ODDR since no device matches found.")
+      new GenericODDR(input_per_output)
+    }}
+
   }
 
   def apply(input_per_output : Int = 2) = factory(input_per_output)
@@ -69,6 +74,10 @@ object IDDR {
   def factory = new ImplementationSpecificFactory[IDDR, Int] {
     simulationHandler = {case _ => (output_per_input => new GenericIDDR(output_per_input))}
     AddHandler { case Device("lattice", "lifcl", name, resetKind) => { output_per_input => new LatticeIDDR(output_per_input)}}
+    AddHandler { case _ => output_per_input => {
+      println(s"Warning: Using simulation driver for IDDR since no device matches found.")
+      new GenericIDDR(output_per_input)
+    }}
   }
   def apply(output_per_input : Int = 2) = factory(output_per_input)
 }

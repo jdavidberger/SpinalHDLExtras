@@ -16,18 +16,19 @@ class ImplementationSpecificFactory[T >: Null, Args] {
   }
 
   def apply(args: Args): T = {
-    val checkHandlers =
+    val checkHandlers : Seq[HandlerFunction] =
       if (spinal.core.GlobalData.get.config.flags.contains(GenerationFlags.simulation))
-        handlers += simulationHandler
+        Array(simulationHandler) ++ handlers
       else
         handlers
 
-    for (handler <- checkHandlers.reverse) {
+    for (handler <- checkHandlers) {
       val factoryFunc = handler.lift(spinal.core.GlobalData.get.config.device)
       if (factoryFunc.nonEmpty) {
         return (factoryFunc.get)(args)
       }
     }
+
     null
   }
 }
