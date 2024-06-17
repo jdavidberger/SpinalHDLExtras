@@ -55,6 +55,12 @@ case class VerifyODDRTestBench(ddr_factor : Int = 4, ODDRFactory : (Int) => ODDR
     valid.addTag(crossClockDomain)
     val goddr = sclkArea.goddr
     val loddr = sclkArea.loddr
+    val ecounter = Counter(255)
+    ecounter.increment()
+    when(!goddr.io.IN.valid) {
+      ecounter.clear()
+    }
+
     when(goddr.io.OUT.valid) {
       valid := goddr.io.OUT.asBits === loddr.io.OUT.asBits
     } otherwise {

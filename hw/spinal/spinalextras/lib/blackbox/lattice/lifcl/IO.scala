@@ -122,6 +122,8 @@ case class IDDRX2() extends BlackBox {
 
     val Q = Seq(Q0, Q1, Q2, Q3)
 
+    // Shifts word alignment by one bit.
+    val ALIGNWD = in(Bool()) default(False)
     val SCLK = in(Bool())
     val ECLK = in(Bool())
     val RST = in(Bool())
@@ -146,6 +148,8 @@ case class IDDRX4() extends BlackBox {
 
     val Q = Seq(Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7)
 
+    // Shifts word alignment by one bit.
+    val ALIGNWD = in(Bool()) default(False)
     val ECLK = in(Bool())
     val SCLK = in(Bool())
     val RST = in(Bool())
@@ -173,6 +177,8 @@ case class IDDRX5() extends BlackBox {
 
     val Q = Seq(Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9)
 
+    // Shifts word alignment by one bit.
+    val ALIGNWD = in(Bool()) default(False)
     val ECLK = in(Bool())
     val SCLK = in(Bool())
     val RST = in(Bool())
@@ -196,6 +202,8 @@ case class IDDR71() extends BlackBox {
 
     val Q = Seq(Q0, Q1, Q2, Q3, Q4, Q5, Q6)
 
+    // Shifts word alignment by one bit.
+    val ALIGNWD = in(Bool()) default(False)
     val ECLK = in(Bool())
     val SCLK = in(Bool())
     val RST = in(Bool())

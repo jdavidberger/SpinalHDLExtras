@@ -7,7 +7,7 @@ import spinal.lib.io._
 import spinalextras.lib.Config
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.io.lattice.{LatticeIDDR, LatticeODDR}
-import spinalextras.lib.misc.ComponentWithKnownLatency
+import spinalextras.lib.misc.{ComponentWithKnownLatency, DelayedSignal}
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -41,15 +41,15 @@ abstract class ODDR(val input_per_output : Int = 2) extends Component with Compo
   }
 
   val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
-    val valid = Reg(Bits(latency() bits)) init(0) addTag(crossClockDomain)
-    valid := ((valid << 1) | io.IN.valid.asBits.resized).resized
-    io.OUT.valid := valid.msb
+    val valid = DelayedSignal(latency(), crossClockDomain = true)
+    valid.io.input := io.IN.valid
+    io.OUT.valid := valid.io.output
 
-    io.BUSY := valid =/= 0
-    if(valid.high == 0) {
+    io.BUSY := valid.io.pipe =/= 0
+    if(valid.io.pipe.high == 0) {
       io.LAST_SEND := ~io.IN.valid
     } else {
-      io.LAST_SEND := valid.msb && ~valid(valid.high - 1)
+      io.LAST_SEND := valid.io.output && ~valid.io.pipe(valid.io.pipe.high - 1)
     }
   }
 
