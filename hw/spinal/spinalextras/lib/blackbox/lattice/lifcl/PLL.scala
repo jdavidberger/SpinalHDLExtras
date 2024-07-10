@@ -472,7 +472,7 @@ case class PLLConfig(
   }
 }
 
-class PLL(cfg: PLLConfig) extends BlackBox {
+class PLL(val cfg: PLLConfig) extends BlackBox {
   val io = new Bundle {
     // \desc = "", \pintype = "INTFBK"
     val INTFBKOP = out Bool()
@@ -572,7 +572,7 @@ class PLL(cfg: PLLConfig) extends BlackBox {
     // PFD UP output signal to PLL CIB port
     val PFDUP = out Bool()
     // Active HIGH to reset PLL; PLL CIB Input, Enabled by MC1_PLLRESET; PLL CIB input
-    val PLLRESET = in Bool()
+    val PLLRESET = in Bool() default(False)
     // PLL STANDBY signal; Active HIGH to put PLL clocks in Low (Not used)
     val STDBY = in Bool() default (False)
     // The output of Reference CLK mux output; PLL CIB Output
@@ -623,11 +623,15 @@ class PLL(cfg: PLLConfig) extends BlackBox {
 
     val scale = cfg.ACTUAL_FREQ / ref_clk
 
-    new ClockDomain(clk, reset = clkArea.reset || io.PLLRESET, frequency = FixedRangeFrequency(min_ref_clk * scale, max_ref_clk * scale))
+    new ClockDomain(clk, reset = clkArea.reset, frequency = FixedRangeFrequency(min_ref_clk * scale, max_ref_clk * scale))
   })
 
   noIoPrefix()
-  mapClockDomain(clock = io.REFCK, reset = io.PLLRESET)
+  if(ClockDomain.current.reset != null) {
+    mapClockDomain(clock = io.REFCK, reset = io.PLLRESET)
+  } else {
+    mapClockDomain(clock = io.REFCK)
+  }
 }
 
 case class IoI2(io: Double, i2: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int)

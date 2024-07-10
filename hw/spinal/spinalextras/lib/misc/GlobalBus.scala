@@ -15,13 +15,17 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
   var masters = mutable.ArrayBuffer[(T, Set[String])]()
   var slaves = mutable.ArrayBuffer[(T, AddressMapping, Set[String])]()
 
+
   var topComponent = {
     val topComponent = Component.toplevel
 
-    topComponent.addPrePopTask(() => {
-      this.build()
+    var built = false
+    Component.toplevel.addPrePopTask(() => {
+      if(!built) {
+        this.build()
+      }
+      built = true
     })
-
     topComponent
   }
 
@@ -30,14 +34,14 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
   def create_bus() : T
   def create_directed_bus(name : String, dir : direction_function): T = {
     var bus = create_bus().setName(name)
-    if (Component.current != topComponent) {
+    if (Component.current != Component.toplevel) {
       bus = dir(bus)
     }
     bus
   }
 
   def add_interface(name : String, dir : T => T ): (T, T) = {
-    if(Component.current == topComponent) {
+    if(Component.current == Component.toplevel) {
       var new_bus = create_bus().setName(name)
       return (new_bus,new_bus)
     }
@@ -60,7 +64,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
       intermediate_bus = Some(next_bus)
       ctx.restore()
       c = c.parent
-    } while(c != topComponent && c != null)
+    } while(c != Component.toplevel && c != null)
     assert(c != null)
 
     (intermediate_bus.get, new_bus.get)
@@ -141,7 +145,13 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     rtn
   }
 
-  def build() : Unit
+  val preBuildTasks = new mutable.ArrayBuffer[() => Unit]()
+  def addPreBuildTask(task : () => Unit) {
+    preBuildTasks.append(task)
+  }
+  def build(): Unit = {
+    preBuildTasks.foreach(_())
+  }
 }
 
 trait GlobalBusFactory[T <: IMasterSlave with Nameable with Bundle] {
@@ -159,13 +169,21 @@ trait GlobalBusFactory[T <: IMasterSlave with Nameable with Bundle] {
 case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone] {
 
   override def create_bus(): Wishbone = {
-    Wishbone(config)
+    val x = Wishbone(config)
+    if (Component.current == Component.toplevel) {
+      if(x.ERR != null) {
+        x.ERR := False
+        x.ERR.allowOverride()
+      }
+    }
+    x
   }
 
   override def bus_interface(port : Wishbone, mapping: SizeMapping) = WishboneBusInterface(port, mapping)
   override def slave_factory(port : Wishbone) = WishboneSlaveFactory(port)
 
-  def build(): Unit = {
+  override def build(): Unit = {
+    super.build()
     println("System Bus Masters")
 
     if(masters.isEmpty) {
@@ -182,11 +200,24 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
     val ctx = Component.push(Component.toplevel)
     val wbInterconn = WishboneInterconFactory()
 
+    val spec = interconnect_spec()
+    val valid_slave_busses = spec.flatMap(_._2).toSet
     for((topBus, mapping, tags) <- slaves) {
-      wbInterconn.addSlave(topBus, mapping)
+      if(valid_slave_busses.contains(topBus))
+        wbInterconn.addSlave(topBus, mapping)
+      else {
+        topBus.DAT_MOSI.assignDontCare()
+        topBus.ADR.assignDontCare()
+        topBus.CYC := False
+        topBus.STB := False
+        topBus.SEL.assignDontCare()
+        topBus.WE.assignDontCare()
+        if(topBus.CTI != null) topBus.CTI.assignDontCare()
+        if(topBus.BTE != null) topBus.BTE.assignDontCare()
+      }
     }
 
-    wbInterconn.addMasters(interconnect_spec():_*)
+    wbInterconn.addMasters(spec:_*)
 
     ctx.restore()
   }
@@ -206,6 +237,7 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
 
   override def build(): Unit = {
     println("System Bus Masters")
+    super.build()
 
     val ctx = Component.push(Component.toplevel)
     val interconn = PipelinedMemoryBusInterconnect()
