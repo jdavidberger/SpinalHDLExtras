@@ -61,13 +61,13 @@ class GlobalLogger {
       return
     }
     built = true;
-
     if(logger_port.isEmpty) {
       println("No outputs defined for the global logger; not including it.")
     }
     logger_port.foreach(x => {
       val ctx = Component.push(Component.toplevel)
       val logger = FlowLogger(this.signals)
+      logger.setName("GlobalLogger")
       logger.codeDefinitions()
       logger.create_logger_port(x._1, x._2, x._3)
       ctx.restore()

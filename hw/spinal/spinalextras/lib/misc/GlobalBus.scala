@@ -31,6 +31,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
 
   type direction_function = T => T
 
+  def addr_width() : Int
   def create_bus() : T
   def create_directed_bus(name : String, dir : direction_function): T = {
     var bus = create_bus().setName(name)
@@ -82,7 +83,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     val newMapping = mapping match {
       case SizeMapping(base, size) => {
         if((base & (size - 1)) == 0) {
-          MaskMapping(base, 0xffffffffL & ~(size - 1))
+          MaskMapping(base, ((1 << addr_width()) - 1) & ~(size - 1))
         } else {
           mapping
         }
@@ -168,6 +169,8 @@ trait GlobalBusFactory[T <: IMasterSlave with Nameable with Bundle] {
 
 case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone] {
 
+  def addr_width() = config.addressWidth
+
   override def create_bus(): Wishbone = {
     val x = Wishbone(config)
     if (Component.current == Component.toplevel) {
@@ -234,6 +237,8 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
 
 case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends GlobalBus[PipelinedMemoryBus] {
   override def create_bus(): PipelinedMemoryBus = PipelinedMemoryBus(config)
+
+  def addr_width() = config.addressWidth
 
   override def build(): Unit = {
     println("System Bus Masters")

@@ -46,7 +46,7 @@ object SignalLogger {
   def flows(signals: Data*): Seq[(Data, Flow[Bits])] = {
     val signalWidth = signals.map(_.getBitsWidth).max
     signals.map(signal => {
-      val stream = Flow(Bits(signalWidth bits))
+      val stream = Flow(Bits(signal.getBitsWidth bits))
       val lastValue = RegNext(signal)
       stream.payload := signal.asBits
       stream.valid := signal =/= lastValue
