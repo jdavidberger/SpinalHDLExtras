@@ -61,11 +61,18 @@ class GlobalLogger {
       return
     }
     built = true;
-    val ctx = Component.push(Component.toplevel)
-    val logger = FlowLogger(this.signals)
-    logger.codeDefinitions()
-    logger_port.foreach(x => logger.create_logger_port(x._1, x._2, x._3))
-    ctx.restore()
+
+    if(logger_port.isEmpty) {
+      println("No outputs defined for the global logger; not including it.")
+    }
+    logger_port.foreach(x => {
+      val ctx = Component.push(Component.toplevel)
+      val logger = FlowLogger(this.signals)
+      logger.codeDefinitions()
+      logger.create_logger_port(x._1, x._2, x._3)
+      ctx.restore()
+    })
+
   }
 
   var logger_port : Option[(GlobalBus_t, BigInt, Int)] = None
@@ -151,9 +158,12 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
   var minimum_time_bits = logBits
   val encoded_streams = {
     for ((stream, idx) <- flows()) yield {
-      val output_stream = Flow(stream.payload.clone())
-      output_stream.payload := stream.payload
-      output_stream.valid := (!io.inactive_channels(idx) && stream.valid) || (io.manual_trigger.fire && io.manual_trigger.payload(idx) === True)
+      val output_stream = {
+        val r = Flow(stream.payload.clone())
+        r.payload := stream.payload
+        r.valid := (!io.inactive_channels(idx) && stream.valid) || (io.manual_trigger.fire && io.manual_trigger.payload(idx) === True)
+        r.stage()
+      }
       val time_bits = logBits - output_stream.payload.getBitsWidth - index_size
       require(time_bits > 0)
 
@@ -250,6 +260,7 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
 
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int): Unit = {
     val fifo = StreamFifo(cloneOf(io.log.payload), depth)
+
     fifo.io.push <> io.log
 
     val stream = fifo.io.pop.stage()
