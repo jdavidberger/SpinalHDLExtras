@@ -259,11 +259,11 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
   }
 
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int): Unit = {
-    val fifo = StreamFifo(cloneOf(io.log.payload), depth)
+    val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
 
-    fifo.io.push <> io.log
+    loggerFifo.io.push <> io.log
 
-    val stream = fifo.io.pop.stage()
+    val stream = loggerFifo.io.pop.stage()
     val checksum = RegInit(B(0, 32 bits))
 
     when(stream.fire) {
@@ -277,10 +277,10 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
     logger_port.readStreamNonBlocking(stream, address + 8)
     logger_port.createReadOnly(Bits(32 bits), address + 20) := checksum
     logger_port.createReadOnly(Bits(32 bits), address + 24) := io.sysclk.resize(32).asBits
-    logger_port.createReadOnly(UInt(32 bits), address + 28) := RegNext(fifo.io.occupancy).resized
+    logger_port.createReadOnly(UInt(32 bits), address + 28) := RegNext(loggerFifo.io.occupancy).resized
 
-    fifo.io.flush := False
-    logger_port.onWrite(address + 28)(fifo.io.flush := True)
+    loggerFifo.io.flush := False
+    logger_port.onWrite(address + 28)(loggerFifo.io.flush := True)
 
     logger_port.driveFlow(io.manual_trigger, address + 32)
     io.inactive_channels := logger_port.createReadAndWrite(io.inactive_channels, address + 36) init (0)
