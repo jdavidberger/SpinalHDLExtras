@@ -9,4 +9,5 @@ class GSR extends BlackBox {
   }
 
   noIoPrefix()
+  mapCurrentClockDomain(io.CLK, io.GSR_N, resetActiveLevel = LOW)
 }

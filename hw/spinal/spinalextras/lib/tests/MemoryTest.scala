@@ -5,8 +5,11 @@ import spinal.core._
 import spinal.core.sim.{SimBitVectorPimper, SimClockDomainHandlePimper, SimTimeout}
 import spinal.lib._
 import spinal.lib.bus.simple._
-import spinalextras.lib.misc.AutoInterconnect
+import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, GSR, OSCD, OSCDConfig, PDPSC512K_Mem}
+import spinalextras.lib.misc.{AutoInterconnect, ClockSpecification}
 import spinalextras.lib.{Config, HardwareMemory, Memories, MemoryRequirement, MemoryRequirementBits, PipelinedMemoryBusMemory, StackedHardwareMemory, WideHardwareMemory}
+
+import scala.language.postfixOps
 
 
 class AddressMaskHash(width : Int = 12, dataWidth : Int = 32) extends Component {
@@ -226,6 +229,30 @@ class MemMemoryTest extends AnyFunSuite {
     }
   }
 
+}
 
 
+case class LatticeMemoryTest() extends Component {
+  var osc = new ResetArea(False, false) {
+    val GSR_INST = new GSR().setName("GSR_INST")
+    val osc = new OSCD(OSCDConfig.create(ClockSpecification(45 MHz, tolerance = .1)))
+  }.osc
+
+  val rst_counter = new ClockingArea(new ClockDomain(clock = osc.io.HFCLKOUT, config = ClockDomain.current.config.copy(resetKind = BOOT))) {
+    val rst_counter = new Timeout(128)
+  }.rst_counter
+
+  new ClockingArea(osc.hf_clk().get.copy(reset = !rst_counter)) {
+      val mem = new PDPSC512K_Mem()
+      val tb = MemoryTestBench(mem.config)
+      val pmbs = mem.pmbs()
+      tb.io.bus <> pmbs.head
+  }
+
+}
+
+object LatticeMemoryTest extends App {
+  Config.spinalConfig.copy(device = Device("lattice", "lifcl")).generateVerilog(
+    new LatticeMemoryTest()
+  )
 }

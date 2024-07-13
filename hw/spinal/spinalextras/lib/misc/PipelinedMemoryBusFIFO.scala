@@ -1,9 +1,13 @@
 package spinalextras.lib.misc
 
+import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
+import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.misc.DefaultMapping
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
+import spinal.lib.bus.simple._
+import spinal.lib.sim._
+import spinalextras.lib._
 import spinalextras.lib.testing.test_funcs
 
 case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : Int, baseAddress : Int = 0) extends Component {
@@ -104,9 +108,80 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
       cmd.address := (write_counter.value + baseAddress).resized
       cmd.data := wrd.asBits
       cmd
-    }).haltWhen(full) >> writeBus.cmd
+    }).haltWhen(full | io.flush) >> writeBus.cmd
 
     val empty = ramOccupancy === 0 && inFlight.value === 0 // && readFifo.io.occupancy === 0
     io.empty := empty
   }
 }
+
+case class MemoryFifo[T <: Data](dataType : HardType[T], depth : Int,
+                                 technologyKind: MemTechnologyKind = auto,
+                                 mem_factory : (MemoryRequirement[T], MemTechnologyKind) => HardwareMemory[T] = Memories.apply[T] _) extends Component {
+  val io = new Bundle {
+    val push = slave Stream(dataType)
+    val pop = master Stream(dataType)
+    val empty = out Bool()
+
+    val flush = in Bool() default(False)
+    val occupancy    = out UInt (log2Up(depth + 1) bits)
+    val availability = out UInt (log2Up(depth + 1) bits)
+  }
+
+  val mem = mem_factory(MemoryRequirement(dataType, depth, 0, 1, 1), technologyKind)
+  val fifo = PipelinedMemoryBusFIFO(dataType, depth = depth)
+  fifo.io.bus <> mem.pmbs().head
+  fifo.io.push <> io.push
+  fifo.io.pop <> io.pop
+  fifo.io.empty <> io.empty
+  fifo.io.flush <> io.flush
+  fifo.io.occupancy <> io.occupancy
+  fifo.io.availability <> io.availability
+}
+
+class MemMemoryTest extends AnyFunSuite {
+  def doTest[T <: BitVector](dataType : HardType[T], depth : Int): Unit = {
+    Config.sim.doSim(
+      new MemoryFifo(dataType, depth)
+    ) { dut =>
+      SimTimeout(5000 us)
+      dut.io.push.valid #= false
+      dut.io.pop.ready #= false
+      dut.io.flush #= false
+      dut.clockDomain.forkStimulus(100 MHz)
+      dut.clockDomain.waitSampling(10)
+
+      val sco = new ScoreboardInOrder[BigInt]()
+
+      StreamMonitor(dut.io.pop, dut.clockDomain) {
+        datum => {
+          println(s"Got ${datum.toBigInt}")
+          sco.pushDut(datum.toBigInt)
+        }
+      }
+      dut.io.pop.ready #= true
+
+      for(i <- 0 until depth * 3) {
+        dut.io.push.valid #= true
+        val randValue = simRandom.nextLong().abs
+        sco.pushRef(randValue)
+        println(s"Pushing ${randValue}")
+        dut.io.push.payload #= randValue
+        dut.clockDomain.waitSamplingWhere(dut.io.push.ready.toBoolean)
+      }
+      dut.io.push.valid #= false
+
+      while(dut.io.occupancy.toBigInt > 0) {
+        dut.clockDomain.waitSampling()
+      }
+
+      sco.checkEmptyness()
+    }
+  }
+
+  test("basic") {
+    doTest(Bits(95 bits), 1000)
+    doTest(Bits(96 bits), 1000)
+  }
+}
+

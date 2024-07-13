@@ -59,5 +59,5 @@ class PDPSC512K_Mem extends HardwareMemory[Bits]() {
   mem.io.ADW := write.cmd.payload.address.asBits
   mem.io.DI := write.cmd.data
   mem.io.WE := write.cmd.valid
-  mem.io.BYTEEN_N := write.cmd.mask
+  mem.io.BYTEEN_N := ~write.cmd.mask
 }

@@ -29,14 +29,14 @@ class DPSC512K(
     val CEB = in Bool() default(True)
     val WEA = in Bool()
     val WEB = in Bool()
-    val CSA = in Bool()
-    val CSB = in Bool()
+    val CSA = in Bool() default(True)
+    val CSB = in Bool() default(True)
     val RSTA = in Bool() default(ClockDomain.current.readResetWire)
     val RSTB = in Bool() default(ClockDomain.current.readResetWire)
     val BENA_N = in Bits(4 bits)
     val BENB_N = in Bits(4 bits)
-    val CEOUTA = in Bool()
-    val CEOUTB = in Bool()
+    val CEOUTA = in Bool() default(True)
+    val CEOUTB = in Bool() default(True)
 
     val DOA = out Bits(32 bits)
     val DOB = out Bits(32 bits)
@@ -67,7 +67,7 @@ class DPSC512K_Mem extends HardwareMemory[Bits]() {
     adr := port.cmd.address.asBits
     we := port.cmd.write
     cs := port.cmd.valid
-    benb := port.cmd.mask
+    benb := ~port.cmd.mask
 
     port.rsp.data := dout
     port.rsp.valid := RegNext(RegNext(port.cmd.valid))

@@ -358,7 +358,7 @@ object LatticeMemories {
     val shouldUseLRam = memKind.technologyKind.toLowerCase == "lram" || allocationSize > (3 KiB)
     val lram_factory = find_lram(requirements)
 
-    if(shouldUseLRam && lram_factory.isDefined) {
+    if(false && shouldUseLRam && lram_factory.isDefined) {
       new StackedHardwareMemory(requirements, lram_factory.get)
     } else {
       new MemBackedHardwardMemory[T](requirements)
