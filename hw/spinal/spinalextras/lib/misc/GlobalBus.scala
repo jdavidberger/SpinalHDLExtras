@@ -71,6 +71,9 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     (intermediate_bus.get, new_bus.get)
   }
 
+  def add_master(name : String, tags : String*) : T = {
+    add_master(name, Set(tags:_*))
+  }
   def add_master(name : String, tags : Set[String] = Set()) : T = {
     val (topBus, rtn) = add_interface(name, master_direction)
     masters.append((topBus, tags))
@@ -83,7 +86,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     val newMapping = mapping match {
       case SizeMapping(base, size) => {
         if((base & (size - 1)) == 0) {
-          MaskMapping(base, ((1 << addr_width()) - 1) & ~(size - 1))
+          MaskMapping(base, ((1L << addr_width()) - 1) & ~(size - 1))
         } else {
           mapping
         }
@@ -182,7 +185,7 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
     x
   }
 
-  override def bus_interface(port : Wishbone, mapping: SizeMapping) = WishboneBusInterface(port, mapping)
+  override def bus_interface(port : Wishbone, mapping: SizeMapping) : WishboneBusInterface = WishboneBusInterface(port, mapping)
   override def slave_factory(port : Wishbone) = WishboneSlaveFactory(port)
 
   override def build(): Unit = {

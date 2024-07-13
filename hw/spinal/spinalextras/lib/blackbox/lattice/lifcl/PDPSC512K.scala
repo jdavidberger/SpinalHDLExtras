@@ -1,0 +1,63 @@
+package spinalextras.lib.blackbox.lattice.lifcl
+
+import spinal.lib._
+import spinal.core._
+import spinalextras.lib.{HardwareMemory, MemoryRequirement}
+
+class PDPSC512K(
+                 OUTREG : Boolean = false,
+                 GSR : Boolean = true,
+                 ASYNC_RESET : Boolean = false,
+                 ASYNC_RESET_RELEASE : Boolean = false,
+                 ENABLE_ECC : Boolean = false //Enable ECC or Byte-enable support
+               ) extends BlackBox {
+
+  addGeneric("OUTREG", if(OUTREG) "OUT_REG" else "NO_REG")
+  addGeneric("GSR", if(GSR) "ENABLED" else "DISABLED")
+  addGeneric("RESETMODE", if(ASYNC_RESET) "ASYNC" else "SYNC")
+  addGeneric("ASYNC_RESET_RELEASE", if(ASYNC_RESET_RELEASE) "ASYNC" else "SYNC")
+  addGeneric("ECC_BYTE_SEL", if(ENABLE_ECC) "ECC_EN" else "BYTE_EN")
+
+  val io = new Bundle {
+    val CLK = in Bool()
+
+    val DI = in Bits(32 bits)
+    val ADW = in Bits(14 bits)
+    val ADR = in Bits(14 bits)
+    val CEW = in Bool() default(True)
+    val CER = in Bool() default(True)
+    val WE = in Bool()
+    val CSW = in Bool() default(True)
+    val CSR = in Bool() default(True)
+    val RSTR = in Bool()
+    val BYTEEN_N = !ENABLE_ECC generate (in Bits(4 bits))
+
+    val DO = out Bits(32 bits)
+    val ERRDECA = ENABLE_ECC generate (out Bits(2 bits))
+    val ERRDECB = ENABLE_ECC generate (out Bits(2 bits))
+  }
+  noIoPrefix()
+
+  // Map the generic clock
+  mapCurrentClockDomain(clock=io.CLK, reset=io.RSTR)
+}
+
+class PDPSC512K_Mem extends HardwareMemory[Bits]() {
+  override val requirements = MemoryRequirement(
+    Bits(32 bits), (1 << 14), 0, 1, 1
+  )
+
+  val mem = new PDPSC512K(OUTREG = true)
+  var latency = 2
+
+  val read = io.readPorts.head
+  mem.io.ADR := read.cmd.payload.asBits
+  read.rsp.data := mem.io.DO
+  read.rsp.valid := RegNext(RegNext(read.cmd.valid))
+
+  val write = io.writePorts.head
+  mem.io.ADW := write.cmd.payload.address.asBits
+  mem.io.DI := write.cmd.data
+  mem.io.WE := write.cmd.valid
+  mem.io.BYTEEN_N := write.cmd.mask
+}

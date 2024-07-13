@@ -4,6 +4,7 @@ import spinal.core.sim.SimPublic
 import spinal.core._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib._
+import spinalextras.lib.{Memories, MemoryRequirement}
 import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
 import scala.collection.mutable
@@ -259,9 +260,15 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
   }
 
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int): Unit = {
-    val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
-
+    //val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
+    val loggerFifo = PipelinedMemoryBusFIFO(cloneOf(io.log.payload), depth)
+    loggerFifo.setName(s"loggerFifo_${depth}")
     loggerFifo.io.push <> io.log
+
+    val mem = Memories.apply(MemoryRequirement(
+      dataType = Bits(95 bits), num_elements = 16000, numReadWritePorts = 0, numReadPorts = 1, numWritePorts = 1
+    ))
+    mem.pmbs().head <> loggerFifo.io.bus
 
     val stream = loggerFifo.io.pop.stage()
     val checksum = RegInit(B(0, 32 bits))
@@ -282,7 +289,9 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
     loggerFifo.io.flush := False
     logger_port.onWrite(address + 28)(loggerFifo.io.flush := True)
 
-    logger_port.driveFlow(io.manual_trigger, address + 32)
+    val manual_trigger = io.manual_trigger.clone()
+    logger_port.driveFlow(manual_trigger, address + 32)
+    io.manual_trigger <> manual_trigger.stage()
     io.inactive_channels := logger_port.createReadAndWrite(io.inactive_channels, address + 36) init (0)
   }
 }

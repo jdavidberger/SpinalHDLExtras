@@ -30,6 +30,7 @@ object AutoInterconnect {
           unhandled_ios.remove(name)
         } else {
           //println(s"Queueing ${name}")
+          require(name != null && io != null)
           unhandled_ios.addRet(name, io)
         }
       }
@@ -58,6 +59,9 @@ object AutoInterconnect {
 
       signal.parent = io
       signal.setName(unhandled_io.name) <> unhandled_io
+      signal.flatten.zip(unhandled_io.flatten).foreach(
+        x => x._1.setName(x._2.getName())
+      )
     }
 
   }
