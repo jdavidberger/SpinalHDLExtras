@@ -6,7 +6,7 @@ import spinal.core.internals.Expression
 import spinal.core.sim.{SimBaseTypePimper, SimBoolPimper, SimClockDomainHandlePimper, SimPublic, SimTimeout}
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4Shared}
 import spinal.lib._
-import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.misc.{AddressMapping, AllMapping, SizeMapping}
 import spinal.lib.bus.wishbone._
 import spinal.lib.misc.Timer
 import spinal.lib.sim.StreamMonitor
@@ -26,7 +26,7 @@ case class WishboneTx(config : WishboneConfig) extends Bundle {
   val SEL       = if(config.useSEL)   Bits(config.selWidth bits) else null
 }
 object WishboneBusLogger {
-  def flows(wishbone: Wishbone*): Seq[(Data, Flow[Bits])] = {
+  def flows(addressMapping: AddressMapping, wishbone: Wishbone*): Seq[(Data, Flow[Bits])] = {
     wishbone.map(wb => {
       val wbLog = WishboneTx(wb.config)
       wbLog.ADR := wb.ADR
@@ -36,9 +36,12 @@ object WishboneBusLogger {
 
       val stream = Flow(Bits(wbLog.getBitsWidth bits)).setName(wb.name)
       stream.payload := wbLog.asBits
-      stream.valid := wb.isResponse
+      stream.valid := wb.isResponse && addressMapping.hit(wb.ADR)
       (wbLog.setName(wb.name), stream)
     })
+  }
+  def flows(wbs: Wishbone*): Seq[(Data, Flow[Bits])] = {
+    flows(AllMapping, wbs:_*)
   }
 }
 

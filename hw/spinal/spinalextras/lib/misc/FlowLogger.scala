@@ -7,12 +7,13 @@ import spinal.lib._
 import spinalextras.lib.{Memories, MemoryRequirement}
 import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
+import java.io.PrintWriter
 import scala.collection.mutable
 import scala.language.postfixOps
 
 class GlobalLogger {
 
-  val signals = new mutable.ArrayBuffer[(Data, Flow[Bits])]()
+  val signals = new mutable.ArrayBuffer[(Data, Flow[Bits], ClockDomain)]()
 
   var built = false
   var topComponent = {
@@ -54,7 +55,7 @@ class GlobalLogger {
   }
 
   def add(s: (Data, Flow[Bits])*): Unit = {
-    signals.appendAll(s.map(x => (x._1, topify(x._2))))
+    signals.appendAll(s.map(x => (x._1, topify(x._2), ClockDomain.current)))
   }
 
   def build(): Unit = {
@@ -101,9 +102,10 @@ object GlobalLogger {
   }
 }
 
-class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
+class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Component {
+  val signature = datas.map(_.toString()).hashCode().abs
   val io = new Bundle {
-    val flows = datas.map(b => slave Flow (Bits(b.getBitsWidth bits)))
+    val flows = datas.map(b => slave Flow (Bits(b._1.getBitsWidth bits)))
 
     val log = master(Stream(Bits(logBits bits)))
 
@@ -122,7 +124,7 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
   val index_size: Int = log2Up(flows().map(_._2).max + 1 + 1)
 
   datas.zip(io.flows).zipWithIndex.foreach(x => {
-    val ((inp, port), idx) = x
+    val (((inp, cd), port), idx) = x
     if (inp.name != null)
       port.setName(inp.getName())
     println(s"${port} ${idx} has ${port.payload.getWidth} bits ${port.payload.getWidth + index_size} total")
@@ -177,7 +179,7 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
       }
 
       val stamped_stream = output_stream.map(p => syscnt.resize(time_bits bits) ## p ## B(idx, index_size bits))
-      val encoded_fifo = StreamFifo(stamped_stream.payload.clone(), 8)
+      val encoded_fifo = StreamFifoCC(stamped_stream.payload.clone(), 8, pushClock = datas(idx)._2, popClock = ClockDomain.current)
       encoded_fifo.io.push.payload := stamped_stream.payload
       encoded_fifo.io.push.valid := stamped_stream.valid && encoded_fifo.io.push.ready
       when(stamped_stream.valid && !encoded_fifo.io.push.ready) {
@@ -195,73 +197,222 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
   io.log <> StreamArbiterFactory.lowerFirst.noLock.on(encoded_streams ++ Seq(syscnt_stream.stage()))
 
   def codeDefinitions(): Unit = {
-    def getTypeName(d: Data): String = {
+    def getTypeName(d_clk: (Data, ClockDomain)): String = {
+      val (d, cd) = d_clk
       d match {
         case b: Bundle => b.getTypeString
         case _ => d.getName()
       }
     }
 
-    datas.foreach(d => {
-      var bitOffset = 0
-      if(d.parent != null) {
-        d match {
-          case b: Bundle => {
-            b.elements.foreach(x => {
-              val prefix = s"${b.parent.name}_${x._1}"
-              println(s"#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}")
-              println(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${x._2.getBitsWidth}")
-              bitOffset += x._2.getBitsWidth
-            })
-          }
-          case _ => {
-            val prefix = s"${d.getName()}"
-            println(s"#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}")
-            println(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${d.getBitsWidth}")
-          }
+    def getCType(data: Data): String = {
+      val sizes = Seq(8, 16, 32, 64, 128)
+      val pow2 = sizes.filter(_ >= (1 << (log2Up(data.getBitsWidth)))).head
+      data match {
+        case u : UInt => s"uint${pow2}_t"
+        case s : SInt => s"int${pow2}_t"
+        case b : Bool => "bool"
+        case b : Bits => s"uint${pow2}_t"
+        case _ => assert(false); ""
+      }
+    }
+
+    val file = new PrintWriter(s"${getName()}.h")
+    def emit(s : String): Unit = {
+      file.write(s)
+      file.write("\n");
+      file.flush()
+      //println(s)
+    }
+
+    emit(s"""
+               |#define ${this.name}_INDEX_BITS ${index_size}
+               |#define ${this.name}_SIGNATURE 0x${signature.toHexString}
+               |typedef struct ${getName()}_info_t {
+               |   uint32_t dropped_events;
+               |   uint32_t captured_events;
+               |   uint32_t checksum;
+               |   uint32_t sysclk_lsb;
+               |   uint32_t fifo_occupancy;
+               |   uint32_t inactive_mask;
+               |   uint32_t signature;
+               |} ${getName()}_info_t;
+               |
+               |static GlobalLogger_info_t GlobalLogger_info_get(volatile uint32_t* base) {
+               |  return (GlobalLogger_info_t) {
+               |    .dropped_events = base[0],
+               |    .captured_events = base[1],
+               |    .checksum = base[5],
+               |    .sysclk_lsb = base[6],
+               |    .fifo_occupancy = base[7],
+               |    .inactive_mask = base[8],
+               |    .signature = base[10]
+               |  };
+               |}
+               |
+               |typedef struct ${getName()}_transaction {
+               |  uint32_t l[3];
+               |} ${getName()}_transaction;
+               |
+               |void ${getName()}_handle(const struct ${getName()}_transaction* tx);
+               |static bool ${getName()}_poll(volatile uint32_t* ip_location) {
+               |  struct ${getName()}_transaction tx = {0};
+               |  tx.l[0] = ip_location[2 + 0];
+               |  if((tx.l[0] & 1) == 1) {
+               |      tx.l[1] = ip_location[2 + 1];
+               |      tx.l[2] = ip_location[2 + 2];
+               |
+               |      //SHELL_OR_LOG(0, "Data %08x %08x %08x", tx.l[2], tx.l[1], tx.l[0]);
+               |
+               |    ${getName()}_handle(&tx);
+               |    return true;
+               |  }
+               |  return false;
+               |}
+               |
+               |static uint64_t shift(uint64_t d, int16_t shift) {
+               |  if(shift >= 0) {
+               |    return d >> shift;
+               |  }
+               |  return d << (-shift);
+               |}
+               |static uint64_t ${getName()}_parse_field(const struct ${getName()}_transaction* tx, int8_t bit_offset, int8_t bit_width) {
+               |    if(bit_width == 0) {
+               |        return 0;
+               |    }
+               |  uint64_t l0 = tx->l[0];
+               |  uint64_t l1 = tx->l[1];
+               |  uint64_t l2 = tx->l[2];
+               |  uint64_t mask = bit_width == 64 ? 0xffffffffffffffffll : ((1ll << bit_width) - 1);
+               |  return (shift(l0, bit_offset) |
+               |     shift(l1, bit_offset-32) |
+               |     shift(l2, bit_offset-64)) & mask;
+               |}
+               |
+               |
+               |uint64_t ${getName}_full_time(const struct ${getName()}_transaction* tx, uint64_t gtime, uint8_t time_bit_width) {
+               |  uint64_t time_part = ${getName()}_parse_field(tx, 96 - time_bit_width, 64);
+               |  if(time_bit_width >= 64) {
+               |      return time_part;
+               |  }
+               |  uint64_t mask_bits = time_bit_width;
+               |  uint64_t next_incr = (1LL << mask_bits);
+               |  uint64_t mask = next_incr - 1;
+               |  uint64_t time_reconstruction = (gtime & ~mask) | time_part;
+               |    //SHELL_OR_LOG(g_shell, "T %d %llx %llx %llx %llx", time_bit_width, mask, (gtime & ~mask), gtime, time_part);
+               |  if(time_reconstruction < gtime) {
+               |      return time_reconstruction + next_incr;
+               |  }
+               |  return time_reconstruction;
+               |}
+               |
+               |""".stripMargin)
+
+    val defined = new mutable.HashMap[String, mutable.ArrayBuffer[(Flow[Bits], Int)]]()
+    for ((flow, idx) <- flows()) {
+      val key = getTypeName(datas(idx))
+      emit(s"#define ${flow.getName().toUpperCase}_ID ${idx}")
+      defined.getOrElseUpdate(key, new mutable.ArrayBuffer[(Flow[Bits], Int)]) += ((flow, idx))
+    }
+
+    for(key <- defined.keys) {
+      val exemplar = datas(defined(key).head._2)._1
+      exemplar match {
+        case b : Bundle => {
+          emit(s"typedef struct ${getName()}_${key}_t {")
+          b.elements.foreach(x => {
+            val prefix = s"${x._1}"
+            emit(s"\t${getCType(x._2)} ${prefix};")
+          })
+          emit(s"} ${getName()}_${key}_t;")
+        }
+        case _ => {
+          emit(s"typedef ${getCType(exemplar)} ${getName()}_${key}_t;")
         }
       }
+
+//      if(defined.size != 1 || defined(key).head._1.getName() != key) {
+//        emit(s"""|${getName()}_${key}_t ${getName()}_parse_${key}(const ${getName()}_transaction* tx, int id) {
+//                    |     switch(id) {""".stripMargin)
+//        for((flow, idx) <- defined(key)) {
+//          emit(s"         case ${flow.getName().toUpperCase}_ID: return ${getName()}_parse_${flow.getName()}(tx);")
+//        }
+//        emit("     }")
+//        emit(s"     return (${getName()}_${key}_t){ 0 };")
+//        emit("}")
+//      }
+    }
+
+    datas.foreach(d_clk => {
+      val (d, cd) = d_clk
+      var bitOffset = 0
+      val time_bits = logBits - d.getBitsWidth - index_size
+      emit(s"#define ${d.getName()}_TIME_BIT_WIDTH ${time_bits}")
+        d match {
+          case b: Bundle => {
+            var parent_name = if(d.parent != null) d.parent.name else s"${d.name}"
+            b.elements.foreach(x => {
+              val prefix = s"${parent_name}_${x._1}"
+              emit(s"#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}")
+              emit(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${x._2.getBitsWidth}")
+              bitOffset += x._2.getBitsWidth
+            })
+//              emit(s"struct ${b.parent.name}_t {")
+//              b.elements.foreach(x => {
+//                val prefix = s"${x._1}"
+//                emit(s"\t${getCType(x._2)} ${prefix};")
+//                bitOffset += x._2.getBitsWidth
+//              })
+//              emit(s"}")
+            emit(s"${getName()}_${getTypeName(d_clk)}_t ${getName()}_parse_${parent_name}(const ${getName()}_transaction* tx) {")
+            emit(s"\treturn (${getName()}_${getTypeName(d_clk)}_t) {")
+            b.elements.foreach(x => {
+              val prefix = s"${parent_name}_${x._1}"
+              emit(s"\t\t.${x._1} = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH),")
+            })
+            emit("\t};")
+            emit("}")
+
+          }
+          case _ => {
+            val time_bits = logBits - d.getBitsWidth - index_size
+            val prefix = s"${d.getName()}"
+            emit(s"#define ${prefix}_TIME_BIT_WIDTH ${time_bits}")
+
+            emit(s"#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}")
+            emit(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${d.getBitsWidth}")
+            emit(s"${getCType(d)} ${getName()}_parse_${d.getName()}(const ${getName()}_transaction* tx) {")
+            emit(s"\treturn ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH);")
+            emit("}")
+          }
+        }
     })
 
-    var defined = new mutable.HashSet[String]()
-    println(s"#define ${this.name}_INDEX_BITS ${index_size}")
-    for ((flow, idx) <- flows()) {
-      val time_bits = logBits - flow.payload.getBitsWidth - index_size
-      val key = getTypeName(datas(idx))
-      if (!defined.contains(key)) {
-        println(s"#define ${key.toUpperCase}_TIME_BIT_WIDTH ${time_bits}")
-        defined.add(key)
-      }
-    }
-
-    for ((flow, idx) <- flows()) {
-      println(s"#define ${flow.getName().toUpperCase}_ID ${idx}")
-    }
-
+    emit(s"void ${getName()}_handle_transaction(uint8_t id, const struct ${getName()}_transaction* tx);")
     for (t <- datas.map(getTypeName).toSet[String]) {
-      println(s"void ${getName()}_handle_${t}(uint64_t time, uint8_t id, const struct axi_transaction* tx) {")
-      println("}")
+      emit(s"void ${getName()}_handle_${t} (uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt);")
     }
-    println(s"uint8_t ${getName()}_get_id(const struct axi_transaction* tx){ return axi_field(tx, 1, ${index_size}); }")
-    println(s"void ${getName()}_handle(const struct axi_transaction* tx){")
-    println(s"   static uint64_t gtime = 0;")
-    println(s"   uint8_t id = ${getName()}_get_id(tx);")
-    println(s"   switch(id) {")
+    emit(s"uint8_t ${getName()}_get_id(const struct ${getName()}_transaction* tx){ return ${getName()}_parse_field(tx, 1, ${index_size}); }")
+    emit(s"void ${getName()}_handle(const struct ${getName()}_transaction* tx){")
+    emit(s"   static uint64_t gtime = 0;")
+    emit(s"   uint8_t id = ${getName()}_get_id(tx);")
+    emit(s"   ${getName()}_handle_transaction(id, tx);")
+    emit(s"   switch(id) {")
     for ((flow, idx) <- flows()) {
-      println(s"   case ${flow.getName().toUpperCase}_ID: {\n" +
-        s"      gtime = logger_full_time(tx, gtime, ${getTypeName(datas(idx)).toUpperCase}_TIME_BIT_WIDTH); \n" +
-        s"      ${getName()}_handle_${getTypeName(datas(idx))}(gtime, id, tx);")
-      println(s"      break;\n    }")
+      emit(s"   case ${flow.getName().toUpperCase}_ID: {\n" +
+        s"      gtime = ${getName}_full_time(tx, gtime, ${flow.getName()}_TIME_BIT_WIDTH); \n" +
+        s"      ${getName()}_handle_${getTypeName(datas(idx))}(gtime, id, ${getName()}_parse_${flow.getName()}(tx));")
+      emit(s"      break;\n    }")
     }
-    println(s"   case ${(1 << index_size) - 1}: gtime = axi_field(tx, 1 + ${this.name}_INDEX_BITS, 64); break;")
-    println("   default: LOG_WARN(\"Unknown id %d\", id);")
-    println(s"  }")
-    println(s"}")
+    emit(s"   case ${(1 << index_size) - 1}: gtime = ${getName()}_parse_field(tx, 1 + ${this.name}_INDEX_BITS, 64); break;")
+    emit("   default: LOG_WRN(\"Unknown id %d\", id);")
+    emit(s"  }")
+    emit(s"}")
   }
 
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int): Unit = {
     //val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
-    val loggerFifo = MemoryFifo(cloneOf(io.log.payload), depth)
+    val loggerFifo = new MemoryBackedFifo(cloneOf(io.log.payload), depth)
     loggerFifo.setName(s"loggerFifo_${depth}")
     loggerFifo.io.push <> io.log
 
@@ -288,12 +439,17 @@ class FlowLogger(datas: Seq[Data], logBits: Int = 95) extends Component {
     logger_port.driveFlow(manual_trigger, address + 32)
     io.manual_trigger <> manual_trigger.stage()
     io.inactive_channels := logger_port.createReadAndWrite(io.inactive_channels, address + 36) init (0)
+
+    logger_port.createReadOnly(Bits(32 bits), address + 40) := signature
   }
 }
 
 object FlowLogger {
-  def apply(signals: Seq[(Data, Flow[Bits])]*): FlowLogger = {
-    new FlowLogger(signals.flatten.map(_._1)).assign(signals.flatten.map(_._2))
+  def apply(signals: Seq[(Data, Flow[Bits], ClockDomain)]*): FlowLogger = {
+    new FlowLogger(signals.flatten.map(x => (x._1, x._3))).assign(signals.flatten.map(_._2))
+  }
+  def apply(signals: Seq[(Data, Flow[Bits])]*)(implicit ev: DummyImplicit): FlowLogger = {
+    new FlowLogger(signals.flatten.map(x => (x._1, ClockDomain.current))).assign(signals.flatten.map(_._2))
   }
 
   def asFlow[T <: Bundle](s: Stream[T]): (Data, Flow[Bits]) = {
@@ -316,13 +472,6 @@ object FlowLogger {
   }
 
   def asBundleBits[T <: Bundle](t: T): Bits = {
-    var bitOffset = 1
-    t.elements.foreach(x => {
-      val prefix = s"${t.parent.name}_${x._1}"
-      println(s"#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}")
-      println(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${x._2.getBitsWidth}")
-      bitOffset += x._2.getBitsWidth
-    })
     t.asBits
   }
 }

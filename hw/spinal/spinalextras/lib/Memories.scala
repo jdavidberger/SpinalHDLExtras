@@ -11,6 +11,7 @@ import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.misc.ComponentWithKnownLatency
 
 import scala.language.postfixOps
+import scala.reflect.ClassTag
 
 object HardwareMemory {
   type HardwareMemoryReadWriteConfig = PipelinedMemoryBusConfig
@@ -274,6 +275,7 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
 
     mem_readWritePorts(hit_idx).cmd.valid := port.cmd.valid
     mem_readWritePorts(hit_idx).cmd.payload.address := addr
+    mem_readWritePorts(hit_idx).cmd.payload.data := port.cmd.data
     mem_readWritePorts(hit_idx).cmd.payload.write := port.cmd.write
     if(port.cmd.mask != null)
       mem_readWritePorts(hit_idx).cmd.payload.mask := port.cmd.mask
@@ -296,6 +298,7 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
 
     mem_writePorts(hit_idx).cmd.valid := port.cmd.valid
     mem_writePorts(hit_idx).cmd.payload.address := addr
+    mem_writePorts(hit_idx).cmd.payload.data := port.cmd.data
     if(port.cmd.mask != null)
       mem_writePorts(hit_idx).cmd.payload.mask := port.cmd.mask
 
@@ -305,6 +308,11 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
 case class MemBackedHardwardMemory[T <: Data](override val requirements : MemoryRequirement[T]) extends
   HardwareMemory[T]() {
   val mem = Mem[T](dataType, num_elements)
+  if (globalData.config.flags.contains(GenerationFlags.simulation)) {
+    //mem.randBoot()
+    mem.init((0 until num_elements.toInt).map(idx => B(0).as(dataType) ))
+  }
+
   io.readWritePorts.foreach(port => {
     val mask_width = if(port.cmd.mask != null) port.cmd.mask.getWidth else -1
     val mem_port = mem.readWriteSyncPort(maskWidth = mask_width)
@@ -358,7 +366,7 @@ object LatticeMemories {
     val shouldUseLRam = memKind.technologyKind.toLowerCase == "lram" || allocationSize > (3 KiB)
     val lram_factory = find_lram(requirements)
 
-    if(false && shouldUseLRam && lram_factory.isDefined) {
+    if(shouldUseLRam && lram_factory.isDefined) {
       new StackedHardwareMemory(requirements, lram_factory.get)
     } else {
       new MemBackedHardwardMemory[T](requirements)
@@ -376,7 +384,9 @@ object Memories {
     AddHandler { case _ => args => MemBackedHardwardMemory[T](args._1) }
   }
 
-  def apply[T <: Data](reqs : MemoryRequirement[T], technologyKind: MemTechnologyKind = auto) = factory(reqs, technologyKind)
+  def apply[T <: Data](reqs : MemoryRequirement[T], technologyKind: MemTechnologyKind = auto): HardwareMemory[T] = factory(reqs, technologyKind)
+
+  def applyAuto[T <: Data](reqs: MemoryRequirement[T]): HardwareMemory[T] = apply(reqs, auto)
 }
 
 case class PipelinedMemoryBusMemory[T <: Data](reqs : MemoryRequirement[T], technologyKind: MemTechnologyKind = auto,

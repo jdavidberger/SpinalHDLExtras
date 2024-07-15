@@ -2,14 +2,14 @@ package spinalextras.lib.tests
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
-import spinal.core.sim.{SimBitVectorPimper, SimClockDomainHandlePimper, SimTimeout}
+import spinal.core.sim.{SimBitVectorPimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout}
 import spinal.lib._
 import spinal.lib.bus.simple._
 import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, GSR, OSCD, OSCDConfig, PDPSC512K_Mem}
 import spinalextras.lib.misc.{AutoInterconnect, ClockSpecification}
 import spinalextras.lib.{Config, HardwareMemory, Memories, MemoryRequirement, MemoryRequirementBits, PipelinedMemoryBusMemory, StackedHardwareMemory, WideHardwareMemory}
 
-import scala.language.postfixOps
+import scala.language.{existentials, postfixOps}
 
 
 class AddressMaskHash(width : Int = 12, dataWidth : Int = 32) extends Component {
@@ -134,12 +134,14 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   }
 
   expected_value := AddressHash(responseAddress, dataWidth).resized
+
   val outstanding_count = CounterUpDown((1L << 32), incWhen = io.bus.cmd.fire && ~io.bus.cmd.write, decWhen = io.bus.rsp.fire)
   assert(~outstanding_count.msb)
 
+  val masked_data = access.rsp.data & byteMask
   when(access.rsp.valid) {
     responseAddress := responseAddress + incPerOp
-    val valid_value = ((expected_value).asBits & byteMask) === (access.rsp.data & byteMask)
+    val valid_value = ((expected_value).asBits & byteMask) === masked_data
     io.valid := (io.valid && valid_value)// && ~timeout_counter.willOverflowIfInc)
     when(~valid_value) {
       io.valid_count := 0
@@ -176,10 +178,15 @@ class MemMemoryTest extends AnyFunSuite {
     ) { dut =>
       SimTimeout(5000 us)
       dut.clockDomain.forkStimulus(100 MHz)
+      dut.clockDomain.waitSampling(10)
+
       val valid_count = dut.getAllIo.find(_.name == "io_valid_count").get.asInstanceOf[UInt]
+      val valid = dut.getAllIo.find(_.name == "io_valid").get.asInstanceOf[Bool]
 
       while(valid_count.toBigInt < 2 * reqs.num_elements) {
+        println(s"Valids: ${valid_count.toBigInt} ${valid.toBoolean}")
         dut.clockDomain.waitSampling(100)
+        assert(valid.toBoolean)
       }
 
     }
@@ -217,6 +224,8 @@ class MemMemoryTest extends AnyFunSuite {
   }
 
   for(reqs <- Seq(
+    (new MemoryRequirementBits(95, 16000, 0, 1, 1), 32, 1 << 14),
+    (new MemoryRequirementBits(95, 16000, 1, 0, 0), 32, 1 << 14),
     (new MemoryRequirementBits(32, 1000, 1, 0, 0), 32, 1 << 9),
 
     (new MemoryRequirementBits(95, 1000, 1, 0, 0), 32, 1 << 8),
