@@ -315,6 +315,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       defined.getOrElseUpdate(key, new mutable.ArrayBuffer[(Flow[Bits], Int)]) += ((flow, idx))
     }
 
+    emit(s"#define ${getName().toUpperCase}_FULL_TIME_ID 0x${((1 << index_size) - 1).toHexString}")
+
     for(key <- defined.keys) {
       val exemplar = datas(defined(key).head._2)._1
       exemplar match {

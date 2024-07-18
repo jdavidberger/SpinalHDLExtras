@@ -11,7 +11,10 @@ object AutoInterconnect {
     for (c <- components) {
 
       def hasAssignments(io: Data): Boolean = {
-        if(io.isInput) {
+        if(io.isInstanceOf[Bundle]) {
+          val assigned = io.asInstanceOf[Bundle].elements.map(_._2).filter(x => x.isInput || x.isInstanceOf[Bundle]).map(hasAssignments)
+          assigned.headOption.getOrElse(false)
+        } else if(io.isInput) {
           io match {
             case baseType: BaseType => !baseType.dlcIsEmpty
             case _ => false
