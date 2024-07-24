@@ -70,12 +70,14 @@ object AutoInterconnect {
   }
   def apply(name: String, contents: () => Iterator[Component],
             renames: Map[String, String] = Map.empty, clockDomain : => ClockDomain = ClockDomain.current): Component = {
+    val componentName = name
     lazy val customClockDomain = clockDomain
     new Component {
+      setName(componentName)
       val io = new Bundle {}
       val cdArea = new ClockingArea(clockDomain = customClockDomain) {
         buildInterconnect(contents().toIterable, io, renames)
       }
-    }.setDefinitionName(name).setName(name)
+    }.setDefinitionName(name)
   }
 }

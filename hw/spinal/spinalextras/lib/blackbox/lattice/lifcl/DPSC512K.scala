@@ -57,7 +57,7 @@ class DPSC512K_Mem extends HardwareMemory[Bits]() {
   val (port_a, port_b) = (io.readWritePorts(0), io.readWritePorts(1))
 
   val mem = new DPSC512K(OUTREG = true)
-  var latency = 2
+  override lazy val latency = 2
 
   val mem_port_a = (mem.io.DIA, mem.io.ADA, mem.io.WEA, mem.io.CSA, mem.io.BENA_N, mem.io.DOA)
   val mem_port_b = (mem.io.DIB, mem.io.ADB, mem.io.WEB, mem.io.CSB, mem.io.BENB_N, mem.io.DOB)

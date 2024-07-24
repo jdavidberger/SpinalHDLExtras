@@ -189,6 +189,14 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
   override def slave_factory(port : Wishbone) = WishboneSlaveFactory(port)
 
   override def build(): Unit = {
+    {
+      val ctx = Component.push(Component.toplevel)
+      GlobalLogger(
+        WishboneBusLogger.flows(InvertMapping(SizeMapping(0xb9000000L, 1 KiB)), masters.map(_._1): _*),
+      )
+      ctx
+    }.restore()
+
     super.build()
     println("System Bus Masters")
 

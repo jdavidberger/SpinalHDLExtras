@@ -18,10 +18,6 @@ class GlobalLogger {
   var built = false
   var topComponent = {
     val topComponent = Component.toplevel
-
-    Component.toplevel.addPrePopTask(() => {
-        this.build()
-    })
     topComponent
   }
 
@@ -55,32 +51,29 @@ class GlobalLogger {
   }
 
   def add(s: (Data, Flow[Bits])*): Unit = {
+    assert(!built)
     signals.appendAll(s.map(x => (x._1, topify(x._2), ClockDomain.current)))
   }
 
-  def build(): Unit = {
+  def build(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String): Unit = {
     if(built) {
       return
     }
     built = true;
-    if(logger_port.isEmpty) {
-      println("No outputs defined for the global logger; not including it.")
-    }
-    logger_port.foreach(x => {
-      val ctx = Component.push(Component.toplevel)
-      val logger = FlowLogger(this.signals)
-      logger.setName("GlobalLogger")
-      logger.codeDefinitions()
-      logger.create_logger_port(x._1, x._2, x._3)
-      ctx.restore()
-    })
+    val ctx = Component.push(Component.toplevel)
+    val logger = FlowLogger(this.signals)
+    logger.setName(name)
+    logger.codeDefinitions()
+    logger.create_logger_port(sysBus, address, depth)
+    ctx.restore()
 
   }
 
-  var logger_port : Option[(GlobalBus_t, BigInt, Int)] = None
-  def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int): Unit = {
-    logger_port = Some((sysBus, address, depth))
-    sysBus.addPreBuildTask(() => build())
+  def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String): Unit = {
+    sysBus.addPreBuildTask(() => build(sysBus, address, depth, name))
+    Component.toplevel.addPrePopTask(() => {
+      this.build(sysBus, address, depth, name)
+    })
   }
 }
 
@@ -97,8 +90,8 @@ object GlobalLogger {
   def apply(signals: Seq[(Data, Flow[Bits])]*): Unit = {
     signals.foreach(x => get().add(x:_*))
   }
-  def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int): Unit = {
-    get().create_logger_port(sysBus, address, depth)
+  def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String = Component.toplevel.name + "Logger"): Unit = {
+    get().create_logger_port(sysBus, address, depth, name = name)
   }
 }
 
@@ -144,7 +137,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
   io.captured_events.setAsReg() init (0)
   when(io.log.fire) {
-    io.captured_events := io.captured_events + 1
+      io.captured_events := io.captured_events + 1
   }
 
   val dropped_events = Reg(UInt(32 bits)) init (0)
@@ -200,7 +193,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     def getTypeName(d_clk: (Data, ClockDomain)): String = {
       val (d, cd) = d_clk
       d match {
-        case b: Bundle => b.getTypeString
+        case b: Bundle => if(b.getTypeString.contains("$")) d.getName() else b.getTypeString
         case _ => d.getName()
       }
     }
@@ -238,8 +231,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |   uint32_t signature;
                |} ${getName()}_info_t;
                |
-               |static GlobalLogger_info_t GlobalLogger_info_get(volatile uint32_t* base) {
-               |  return (GlobalLogger_info_t) {
+               |static ${getName()}_info_t ${getName()}_info_get(volatile uint32_t* base) {
+               |  return (${getName()}_info_t) {
                |    .dropped_events = base[0],
                |    .captured_events = base[1],
                |    .checksum = base[5],
@@ -327,6 +320,14 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
             emit(s"\t${getCType(x._2)} ${prefix};")
           })
           emit(s"} ${getName()}_${key}_t;")
+
+          emit(s"#define ${getName()}_${key}_FIELDS(HANDLE_FIELD) \\")
+          b.elements.foreach(x => {
+            val prefix = s"${x._1}"
+            emit(s"\tHANDLE_FIELD(${prefix}) \\")
+          })
+          emit("")
+
         }
         case _ => {
           emit(s"typedef ${getCType(exemplar)} ${getName()}_${key}_t;")
@@ -344,6 +345,15 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 //        emit("}")
 //      }
     }
+
+    emit(s"const char* ${getName()}_get_id_name(int id) {")
+    emit(s"   switch(id) {")
+    for ((flow, idx) <- flows()) {
+      emit(s"   case ${flow.getName().toUpperCase}_ID: return ${'"' + flow.getName() + '"'};")
+    }
+    emit("    }")
+    emit("    return \"UNKNOWN\";")
+    emit("}")
 
     datas.foreach(d_clk => {
       val (d, cd) = d_clk

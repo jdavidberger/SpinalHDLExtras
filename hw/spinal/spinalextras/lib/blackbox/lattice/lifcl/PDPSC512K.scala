@@ -42,18 +42,23 @@ class PDPSC512K(
   mapCurrentClockDomain(clock=io.CLK, reset=io.RSTR)
 }
 
-class PDPSC512K_Mem extends HardwareMemory[Bits]() {
+class PDPSC512K_Mem(latency : Int = 2) extends HardwareMemory[Bits]() {
   override val requirements = MemoryRequirement(
     Bits(32 bits), (1 << 14), 0, 1, 1
   )
-
-  val mem = new PDPSC512K(OUTREG = true)
-  var latency = 2
+  assert(latency == 2 || latency == 1)
+  val outreg = latency == 2
+  val mem = new PDPSC512K(OUTREG = outreg)
 
   val read = io.readPorts.head
   mem.io.ADR := read.cmd.payload.asBits
   read.rsp.data := mem.io.DO
-  read.rsp.valid := RegNext(RegNext(read.cmd.valid))
+
+  if(latency == 2) {
+    read.rsp.valid := RegNext(RegNext(read.cmd.valid))
+  } else {
+    read.rsp.valid := RegNext(read.cmd.valid)
+  }
 
   val write = io.writePorts.head
   mem.io.ADW := write.cmd.payload.address.asBits

@@ -10,6 +10,8 @@ import spinal.lib.sim._
 import spinalextras.lib._
 import spinalextras.lib.testing.test_funcs
 
+import scala.language.postfixOps
+
 class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
                                   val depth: Int,
                                   val allowExtraMsb : Boolean = true,
@@ -54,6 +56,8 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
   }
   val logic = (depth > 1) generate new Area {
     val ram = mem_factory(MemoryRequirement(dataType, depth, 0, 1, 1))
+    assert(ram.io.writePorts.size >= 1)
+    assert(ram.io.readPorts.size >= 1)
 
     val ptr = new Area{
       val doPush, doPop = Bool()
@@ -152,9 +156,9 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
         val readPort = ram.io.readPorts.head
         readPort.cmd := addressGen.toFlowFire
 
-        io.pop.payload.assignFromBits(readPort.rsp.data)
-        io.pop.valid := readPort.rsp.valid
-        readArbitation.ready := io.pop.ready
+        val overflow = Bool()
+        io.pop <> readPort.rsp.map(_.data.as(dataType)).toStream(overflow, fifoSize = (ram.latency + 1), overflowOccupancyAt = ram.latency)
+        readArbitation.ready := io.pop.ready && !overflow
 
         val popReg = RegNextWhen(ptr.pop, readArbitation.fire) init(0)
         ptr.popOnIo := popReg

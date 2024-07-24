@@ -20,6 +20,11 @@ import scala.reflect.ClassTag
 
 
 case class WishboneTx(config : WishboneConfig) extends Bundle {
+  val CYC       = Bool()
+  val STB       = Bool()
+  val ACK       = Bool()
+  val STALL     = if(config.useSTALL) Bool()                     else null
+
   val ADR       = UInt(config.addressWidth bits)
   val WE        = Bool()
   val DAT  = Bits(config.dataWidth bits)
@@ -29,6 +34,11 @@ object WishboneBusLogger {
   def flows(addressMapping: AddressMapping, wishbone: Wishbone*): Seq[(Data, Flow[Bits])] = {
     wishbone.map(wb => {
       val wbLog = WishboneTx(wb.config)
+      wbLog.CYC := wb.CYC
+      wbLog.STB := wb.STB
+      wbLog.ACK := wb.ACK
+      if(wbLog.STALL != null)
+        wbLog.STALL := wb.STALL
       wbLog.ADR := wb.ADR
       wbLog.WE := wb.WE
       wbLog.DAT := Mux(wb.WE, wb.DAT_MOSI, wb.DAT_MISO)
@@ -56,7 +66,16 @@ object SignalLogger {
       (signal, stream.setName(signal.name))
     })
   }
-
+  def concat(name : String, signals: Data*): Seq[(Data, Flow[Bits])] = {
+    val bundle = new Bundle {
+      elements.append(signals.map(x => (x.getName(), x)):_*)
+    }.setName(s"${name}")
+    val bundleFlow = Flow(bundle.asBits.clone())
+    bundleFlow.payload.assignFromBits(bundle.asBits)
+    bundleFlow.valid := bundle.asBits =/= RegNext(bundle.asBits)
+    bundleFlow.setName(s"${name}")
+    Seq((bundle, bundleFlow))
+  }
 }
 
 class SignalLoggerTest extends AnyFunSuite {

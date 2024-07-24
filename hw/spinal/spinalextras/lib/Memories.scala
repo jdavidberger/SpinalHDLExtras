@@ -69,7 +69,7 @@ object HardwareMemory {
 
 }
 
-case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : BigInt, numReadWritePorts : Int, numReadPorts : Int, numWritePorts : Int) {
+case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : BigInt, numReadWritePorts : Int, numReadPorts : Int, numWritePorts : Int, needsMask : Boolean = false) {
   lazy val allocationSize = dataType.getBitsWidth * num_elements
   lazy val numPorts = numReadWritePorts + numReadPorts + numWritePorts
 
@@ -92,6 +92,7 @@ class MemoryRequirementBits(dataWidth : Int, num_elements : BigInt, numReadWrite
 
 abstract class HardwareMemory[T <: Data]() extends Component {
   def requirements : MemoryRequirement[T] = ???
+  lazy val latency : Int = 1
   lazy val num_elements = requirements.num_elements
   lazy val dataType = requirements.dataType
 
@@ -308,6 +309,7 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
 case class MemBackedHardwardMemory[T <: Data](override val requirements : MemoryRequirement[T]) extends
   HardwareMemory[T]() {
   val mem = Mem[T](dataType, num_elements)
+
   if (globalData.config.flags.contains(GenerationFlags.simulation)) {
     //mem.randBoot()
     mem.init((0 until num_elements.toInt).map(idx => B(0).as(dataType) ))
@@ -354,7 +356,7 @@ object LatticeMemories {
     if(requirements.numPorts > 2) return None
 
     (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
-      case (1, 1, 0) => Some(() => new PDPSC512K_Mem())
+      case (1, 1, 0) => Some(() => new PDPSC512K_Mem(latency = 1))
       case (0, 0, 1) => Some(() => new DPSC512K_Mem())
       case (0, 0, 2) => Some(() => new DPSC512K_Mem())
     }
