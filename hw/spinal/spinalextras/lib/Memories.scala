@@ -306,10 +306,10 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
   })
 }
 
-case class MemBackedHardwardMemory[T <: Data](override val requirements : MemoryRequirement[T]) extends
+case class MemBackedHardwardMemory[T <: Data](override val requirements : MemoryRequirement[T], extra_latency : Int = 1) extends
   HardwareMemory[T]() {
   val mem = Mem[T](dataType, num_elements)
-
+  override lazy val latency = 1 + extra_latency
   if (globalData.config.flags.contains(GenerationFlags.simulation)) {
     //mem.randBoot()
     mem.init((0 until num_elements.toInt).map(idx => B(0).as(dataType) ))
@@ -321,23 +321,37 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
     if(port.cmd.mask != null)
       mem_port.mask := port.cmd.mask
     mem_port.address := port.cmd.address
+    assert(port.cmd.address < num_elements)
     mem_port.enable := port.cmd.valid
     mem_port.write := port.cmd.write
     mem_port.wdata.assignFromBits(port.cmd.data)
 
-    port.rsp.valid := RegNext(port.cmd.valid && !port.cmd.write)
-    port.rsp.data := mem_port.rdata.asBits
+    var rspFlow = cloneOf(port.rsp)
+    rspFlow.valid := RegNext(port.cmd.valid && !port.cmd.write)
+    rspFlow.data := mem_port.rdata.asBits
+    for(i <- 0 to extra_latency)
+      rspFlow = rspFlow.stage()
+
+    port.rsp <> rspFlow.stage()
   })
 
   io.readPorts.foreach(port => {
-    port.rsp.data := mem.readSync(
+    var rspFlow = cloneOf(port.rsp)
+    assert(port.cmd.payload < num_elements)
+    rspFlow.data := mem.readSync(
       address = port.cmd.payload,
       enable = port.cmd.valid,
     ).asBits
-    port.rsp.valid := RegNext(port.cmd.valid)
+    rspFlow.valid := RegNext(port.cmd.valid)
+
+    for(i <- 0 to extra_latency)
+      rspFlow = rspFlow.stage()
+
+    port.rsp <> rspFlow.stage()
   })
 
   io.writePorts.foreach(port => {
+    assert(port.cmd.address < num_elements)
     mem.write(address = port.cmd.address,
       data = port.cmd.data.as(dataType),
       enable = port.cmd.valid,
@@ -356,7 +370,7 @@ object LatticeMemories {
     if(requirements.numPorts > 2) return None
 
     (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
-      case (1, 1, 0) => Some(() => new PDPSC512K_Mem(latency = 1))
+      case (1, 1, 0) => Some(() => new PDPSC512K_Mem(latency = 2))
       case (0, 0, 1) => Some(() => new DPSC512K_Mem())
       case (0, 0, 2) => Some(() => new DPSC512K_Mem())
     }

@@ -108,7 +108,9 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
 
   def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
     val port = add_slave(name, mapping, tags:_*)
-    bus_interface(port, mapping)
+    val busIf = bus_interface(port, mapping)
+    busIf.regPtrReAnchorAt(mapping.base)
+    busIf
   }
 
   def add_slave_factory(name: String, mapping: SizeMapping, tags: String*): BusSlaveFactory = {

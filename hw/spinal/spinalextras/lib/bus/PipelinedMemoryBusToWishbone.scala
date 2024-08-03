@@ -44,31 +44,26 @@ object WishbonePipelinedHelpers {
   }
 }
 
-case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, wbConfig: WishboneConfig, rspQueue : Int = 8) extends Component{
-  assert(wbConfig.dataWidth == pipelinedMemoryBusConfig.dataWidth)
-
+case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, wbConfig: WishboneConfig, rspQueue : Int = 8, addressMap : (UInt => UInt) = identity) extends Component{
   val io = new Bundle {
     val wb = slave(Wishbone(wbConfig))
     val pmb = master(PipelinedMemoryBus(pipelinedMemoryBusConfig))
   }
 
-  //FwbSlave(io.wb)
-  //FwbMaster(io.wb)
-
   val (readyForNewReq, hasOutstandingReq, reqWasWE) =
     WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,
       if(wbConfig.isPipelined) rspQueue else 1)
 
-  io.pmb.cmd.payload.address := io.wb.byteAddress().resized
+  io.pmb.cmd.payload.address := addressMap(io.wb.byteAddress()).resized
   io.pmb.cmd.payload.write := io.wb.WE
-  io.pmb.cmd.payload.data := io.wb.DAT_MOSI
+  io.pmb.cmd.payload.data := io.wb.DAT_MOSI.resized
   io.pmb.cmd.valid := io.wb.CYC && io.wb.STB && readyForNewReq
 
   if(io.wb.ERR != null)
     io.wb.ERR := False
 
   if(io.wb.SEL != null)
-    io.pmb.cmd.mask := io.wb.SEL
+    io.pmb.cmd.mask := io.wb.SEL.resized
   else
     io.pmb.cmd.mask.setAll()
 
@@ -76,7 +71,7 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
     io.wb.STALL := !readyForNewReq || !io.pmb.cmd.ready
   }
 
-  io.wb.DAT_MISO := io.pmb.rsp.data
+  io.wb.DAT_MISO := io.pmb.rsp.data.resized
   io.wb.ACK := False
   when(hasOutstandingReq) {
     io.wb.ACK := reqWasWE || io.pmb.rsp.valid
@@ -97,8 +92,8 @@ object WishboneToPipelinedMemoryBus {
 }
 
 case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, rspQueue : Int = 8) extends Component{
-  assert(wbConfig.dataWidth == pipelinedMemoryBusConfig.dataWidth)
-  1
+  //assert(wbConfig.dataWidth == pipelinedMemoryBusConfig.dataWidth)
+
   val io = new Bundle {
     val pmb = slave(PipelinedMemoryBus(pipelinedMemoryBusConfig))
     val wb = master(Wishbone(wbConfig))
@@ -115,7 +110,7 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
   io.wb.WE := io.pmb.cmd.payload.write
   io.wb.CYC := io.pmb.cmd.valid || hasOutstandingReq
   io.wb.STB := io.pmb.cmd.valid && readyForNewReq
-  io.wb.DAT_MOSI := io.pmb.cmd.data
+  io.wb.DAT_MOSI := io.pmb.cmd.data.resized
 
   if(io.wb.SEL != null)
     io.wb.SEL := io.pmb.cmd.mask
@@ -130,7 +125,7 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
 
   assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
   io.pmb.rsp.valid := !reqWasWE & io.wb.ACK
-  io.pmb.rsp.payload.data := io.wb.DAT_MISO
+  io.pmb.rsp.payload.data := io.wb.DAT_MISO.resized
 }
 
 object PipelinedMemoryBusToWishbone {
@@ -138,21 +133,28 @@ object PipelinedMemoryBusToWishbone {
     apply(bus, rspQueue, WishboneConfig(addressWidth = bus.config.addressWidth, dataWidth = bus.config.dataWidth, useSTALL = true, addressGranularity = AddressGranularity.WORD))
   }
   def apply(bus : PipelinedMemoryBus, rspQueue : Int, config : WishboneConfig): Wishbone = {
+    apply(bus, rspQueue, config, identity)
+  }
+  def apply(bus : PipelinedMemoryBus, rspQueue : Int, config : WishboneConfig, addressMap : (UInt => UInt)): Wishbone = {
     val wb = Wishbone(config)
-    if(bus.isMasterInterface) {
+    if(bus.isMasterInterface ^ (bus.component == Component.current)) {
       val adapter = new PipelinedMemoryBusToWishbone(config, bus.config, rspQueue)
       adapter.io.pmb <> bus
       adapter.io.wb <> wb
     } else {
-      val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, rspQueue)
+      val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, rspQueue, addressMap = addressMap)
       adapter.io.pmb <> bus
       adapter.io.wb <> wb
     }
     wb
   }
-  def apply(bus : PipelinedMemoryBus, config : WishboneConfig): Wishbone = {
-    apply(bus, 0, config)
+  def apply(bus : PipelinedMemoryBus, config : WishboneConfig, addressMap : (UInt => UInt)): Wishbone = {
+    apply(bus, 0, config, addressMap = addressMap)
   }
+  def apply(bus : PipelinedMemoryBus, config : WishboneConfig): Wishbone = {
+    apply(bus, 0, config, addressMap = identity)
+  }
+
 }
 
 import org.scalatest.funsuite.AnyFunSuite

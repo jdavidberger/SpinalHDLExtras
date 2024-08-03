@@ -4,6 +4,7 @@ import spinal.core.sim.SimPublic
 import spinal.core._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib._
+import spinal.lib.bus.regif.RegInst
 import spinalextras.lib.{Memories, MemoryRequirement}
 import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
@@ -102,7 +103,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
     val log = master(Stream(Bits(logBits bits)))
 
-    val inactive_channels = in(Bits(datas.length bits))
+    val inactive_channels = in(Bits(datas.length bits)).addTag(crossClockDomain)
     val manual_trigger = slave Flow (UInt(datas.length bits))
 
     val dropped_events = out(UInt(32 bits))
@@ -154,11 +155,22 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
   var minimum_time_bits = logBits
   val encoded_streams = {
     for ((stream, idx) <- flows()) yield {
+
       val output_stream = {
         val r = Flow(stream.payload.clone())
         r.payload := stream.payload
-        r.valid := (!io.inactive_channels(idx) && stream.valid) || (io.manual_trigger.fire && io.manual_trigger.payload(idx) === True)
-        r.stage()
+        var manual_trigger =  io.manual_trigger.fire && io.manual_trigger.payload(idx) === True
+        if(ClockDomain.current != datas(idx)._2) {
+          new ClockingArea(datas(idx)._2) {
+            manual_trigger = BufferCC(manual_trigger)
+          }
+        }
+        r.valid := (!io.inactive_channels(idx) && stream.valid) || manual_trigger
+        if(ClockDomain.current == datas(idx)._2) {
+          r.stage().toStream
+        } else {
+          r.toStream.queue(4, pushClock = datas(idx)._2, popClock = ClockDomain.current)
+        }
       }
       val time_bits = logBits - output_stream.payload.getBitsWidth - index_size
       require(time_bits > 0)
@@ -172,7 +184,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       }
 
       val stamped_stream = output_stream.map(p => syscnt.resize(time_bits bits) ## p ## B(idx, index_size bits))
-      val encoded_fifo = StreamFifoCC(stamped_stream.payload.clone(), 8, pushClock = datas(idx)._2, popClock = ClockDomain.current)
+      stamped_stream.ready := True
+      val encoded_fifo = StreamFifo(stamped_stream.payload.clone(), 8)
       encoded_fifo.io.push.payload := stamped_stream.payload
       encoded_fifo.io.push.valid := stamped_stream.valid && encoded_fifo.io.push.ready
       when(stamped_stream.valid && !encoded_fifo.io.push.ready) {
@@ -238,7 +251,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |    .checksum = base[5],
                |    .sysclk_lsb = base[6],
                |    .fifo_occupancy = base[7],
-               |    .inactive_mask = base[8],
+               |    .inactive_mask = base[9],
                |    .signature = base[10]
                |  };
                |}
@@ -313,7 +326,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     for(key <- defined.keys) {
       val exemplar = datas(defined(key).head._2)._1
       exemplar match {
-        case b : Bundle => {
+        case b : MultiData => {
           emit(s"typedef struct ${getName()}_${key}_t {")
           b.elements.foreach(x => {
             val prefix = s"${x._1}"
@@ -361,7 +374,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       val time_bits = logBits - d.getBitsWidth - index_size
       emit(s"#define ${d.getName()}_TIME_BIT_WIDTH ${time_bits}")
         d match {
-          case b: Bundle => {
+          case b: MultiData => {
             var parent_name = if(d.parent != null) d.parent.name else s"${d.name}"
             b.elements.foreach(x => {
               val prefix = s"${parent_name}_${x._1}"
@@ -471,9 +484,23 @@ object FlowLogger {
   def asFlow[T <: Data](s: Flow[T]): (Data, Flow[Bits]) = {
     (s.payload.setName(s.getName()), s.setName(s.getName()).map(FlowLogger.asBits).setName(s.getName()))
   }
+  def asFlow(reg : RegInst): (Data, Flow[Bits])  = {
+    val map = new HardMap().setName(reg.name)
+    reg.getFields.foreach(f => {
+      map.add(NamedType(f.hardbit).setName(f.name))
+    })
+    val flow = Flow(reg.readBits.clone())
+    flow.valid := RegNext(reg.readBits) =/= reg.readBits
+    flow.payload := reg.readBits
+    (map, flow)
+  }
 
   def flows[T <: Data](flows: Flow[T]*): Seq[(Data, Flow[Bits])] = {
     flows.map(x => FlowLogger.asFlow(x))
+  }
+
+  def regs(regs: RegInst*): Seq[(Data, Flow[Bits])] = {
+    regs.map(x => FlowLogger.asFlow(x))
   }
 
   def asBits[T <: Data](t: T): Bits = {

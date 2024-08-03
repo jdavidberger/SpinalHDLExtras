@@ -154,11 +154,16 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
       val sync = new Area{
         val readArbitation = addressGen.m2sPipe(flush = io.flush)
         val readPort = ram.io.readPorts.head
-        readPort.cmd := addressGen.toFlowFire
+        readPort.cmd := addressGen.toFlowFire.map(_.resize(readPort.cmd.payload.getBitsWidth))
 
         val overflow = Bool()
-        io.pop <> readPort.rsp.map(_.data.as(dataType)).toStream(overflow, fifoSize = (ram.latency + 1), overflowOccupancyAt = ram.latency)
-        readArbitation.ready := io.pop.ready && !overflow
+        assert(!overflow)
+        val readStream = readPort.rsp.map(_.data.as(dataType)).toStream(overflow)
+        val qSize = ram.latency + 2
+        val (pop, occ) = readStream.queueWithOccupancy(qSize, latency = 0)
+        val shouldRead = True
+        io.pop <> pop
+        readArbitation.ready := io.pop.ready && shouldRead
 
         val popReg = RegNextWhen(ptr.pop, readArbitation.fire) init(0)
         ptr.popOnIo := popReg
@@ -252,7 +257,7 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     when(writeBus.cmd.fire) {
       ramOccupancy.increment()
     }
-    io.occupancy := ramOccupancy
+    io.occupancy := ramOccupancy.resized
     io.availability := depth - ramOccupancy.value
 
     ramBackedBuffer.io.pop <> io.pop
@@ -323,22 +328,39 @@ class MemMemoryTest extends AnyFunSuite {
         datum => {
           println(s"Got ${datum.toBigInt}")
           sco.pushDut(datum.toBigInt)
+          dut.io.pop.ready #= false
         }
       }
-      dut.io.pop.ready #= true
+      dut.io.pop.ready #= false
 
       for(i <- 0 until depth * 3) {
         dut.io.push.valid #= true
-        val randValue = simRandom.nextLong().abs
+        val randValue = i //simRandom.nextLong().abs
         sco.pushRef(randValue)
-        println(s"Pushing ${randValue}")
+        println(s"Pushing ${randValue} / ${i}")
         dut.io.push.payload #= randValue
-        dut.clockDomain.waitSamplingWhere(dut.io.push.ready.toBoolean)
+        if(!dut.io.pop.ready.toBoolean) {
+          dut.io.pop.ready.randomize()
+        }
+        assert(dut.io.push.ready.toBoolean)
+
+        dut.clockDomain.waitSampling()
+        while(!dut.io.push.ready.toBoolean) {
+          if(!dut.io.pop.ready.toBoolean) {
+            dut.io.pop.ready.randomize()
+          }
+          dut.clockDomain.waitSampling()
+        }
+
       }
       dut.io.push.valid #= false
 
       while(dut.io.occupancy.toBigInt > 0) {
+        println(s"Finish: ${dut.io.occupancy.toBigInt}")
         dut.clockDomain.waitSampling()
+        //if(!dut.io.pop.ready.toBoolean)
+        // dut.io.pop.ready.randomize()
+        dut.io.pop.ready #= true
       }
 
       sco.checkEmptyness()
