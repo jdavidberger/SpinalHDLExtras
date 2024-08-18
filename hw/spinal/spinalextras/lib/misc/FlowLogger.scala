@@ -260,8 +260,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |  uint32_t l[3];
                |} ${getName()}_transaction;
                |
-               |void ${getName()}_handle(const struct ${getName()}_transaction* tx);
-               |static bool ${getName()}_poll(volatile uint32_t* ip_location) {
+               |void ${getName()}_handle(const struct ${getName()}_transaction* tx, uint32_t mask);
+               |static bool ${getName()}_poll(volatile uint32_t* ip_location, uint32_t mask) {
                |  struct ${getName()}_transaction tx = {0};
                |  tx.l[0] = ip_location[2 + 0];
                |  if((tx.l[0] & 1) == 1) {
@@ -270,7 +270,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |
                |      //SHELL_OR_LOG(0, "Data %08x %08x %08x", tx.l[2], tx.l[1], tx.l[0]);
                |
-               |    ${getName()}_handle(&tx);
+               |    ${getName()}_handle(&tx, mask);
                |    return true;
                |  }
                |  return false;
@@ -418,9 +418,10 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       emit(s"void ${getName()}_handle_${t} (uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt);")
     }
     emit(s"uint8_t ${getName()}_get_id(const struct ${getName()}_transaction* tx){ return ${getName()}_parse_field(tx, 1, ${index_size}); }")
-    emit(s"void ${getName()}_handle(const struct ${getName()}_transaction* tx){")
+    emit(s"void ${getName()}_handle(const struct ${getName()}_transaction* tx, uint32_t mask){")
     emit(s"   static uint64_t gtime = 0;")
     emit(s"   uint8_t id = ${getName()}_get_id(tx);")
+    emit(s"   if(mask & (1 << id)) return;")
     emit(s"   ${getName()}_handle_transaction(id, tx);")
     emit(s"   switch(id) {")
     for ((flow, idx) <- flows()) {
@@ -487,7 +488,7 @@ object FlowLogger {
   def asFlow(reg : RegInst): (Data, Flow[Bits])  = {
     val map = new HardMap().setName(reg.name)
     reg.getFields.foreach(f => {
-      map.add(NamedType(f.hardbit).setName(f.name))
+      map.add(NamedType(f.hardbit).setName(f.name.replace("--", "reserved")))
     })
     val flow = Flow(reg.readBits.clone())
     flow.valid := RegNext(reg.readBits) =/= reg.readBits

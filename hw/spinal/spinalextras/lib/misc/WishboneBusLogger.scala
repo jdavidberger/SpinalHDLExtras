@@ -70,11 +70,14 @@ object SignalLogger {
     val bundle = new Bundle {
       elements.append(signals.map(x => (x.getName(), x)):_*)
     }.setName(s"${name}")
-    val bundleFlow = Flow(bundle.asBits.clone())
+    val bundleFlow = Flow(Bits(bundle.getBitsWidth bits)).setName(s"${name}Flow")
     bundleFlow.payload.assignFromBits(bundle.asBits)
     bundleFlow.valid := bundle.asBits =/= RegNext(bundle.asBits)
     bundleFlow.setName(s"${name}")
     Seq((bundle, bundleFlow))
+  }
+  def concatCC(name : String, signals: Data*): Seq[(Data, Flow[Bits])] = {
+    concat(name, signals:_*)
   }
 }
 
