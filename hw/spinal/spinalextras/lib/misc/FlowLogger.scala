@@ -219,6 +219,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         case s : SInt => s"int${pow2}_t"
         case b : Bool => "bool"
         case b : Bits => s"uint${pow2}_t"
+        case e : SpinalEnum => s"uint${pow2}_t"
+        case e : SpinalEnumCraft[SpinalEnum] => s"uint${pow2}_t"
         case _ => assert(false); ""
       }
     }
