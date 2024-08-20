@@ -26,7 +26,7 @@ class GlobalLogger {
     if(Component.current == Component.toplevel) {
       return signal
     }
-
+    var name = signal.name
     var intermediate_bus = signal
     var new_bus : Option[Flow[Bits]] = None
 
@@ -34,7 +34,7 @@ class GlobalLogger {
     do {
       val ctx = Component.push(c)
 
-      val next_bus = master(signal.clone())
+      val next_bus = master(signal.clone()).setName(s"logger_${name}")
 
       if(new_bus.isEmpty) {
         new_bus = Some(next_bus)

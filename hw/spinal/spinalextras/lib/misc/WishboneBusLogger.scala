@@ -72,7 +72,7 @@ object SignalLogger {
     }.setName(s"${name}")
     val bundleFlow = Flow(Bits(bundle.getBitsWidth bits)).setName(s"${name}Flow")
     bundleFlow.payload.assignFromBits(bundle.asBits)
-    bundleFlow.valid := bundle.asBits =/= RegNext(bundle.asBits)
+    bundleFlow.valid := bundle.asBits =/= RegNext(bundle.asBits).setName(name + "_prior")
     bundleFlow.setName(s"${name}")
     Seq((bundle, bundleFlow))
   }
