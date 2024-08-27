@@ -55,6 +55,11 @@ class GlobalLogger {
     signals.appendAll(s.map(x => (x._1, topify(x._2), ClockDomain.current)))
   }
 
+  var output_path = "."
+  def set_output_path(fn : String): Unit = {
+    output_path = fn
+  }
+
   def build(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String, outputStream : Option[Stream[Bits]] = None): Unit = {
     if(built) {
       return
@@ -63,8 +68,8 @@ class GlobalLogger {
     val ctx = Component.push(Component.toplevel)
     val logger = FlowLogger(this.signals)
     logger.setName(name)
-    logger.codeDefinitions()
-    logger.sqliteHandlers()
+    logger.codeDefinitions(output_path)
+    logger.sqliteHandlers(output_path)
     logger.create_logger_port(sysBus, address, depth, outputStream)
     ctx.restore()
 
@@ -90,6 +95,9 @@ object GlobalLogger {
 
   def apply(signals: Seq[(Data, Flow[Bits])]*): Unit = {
     signals.foreach(x => get().add(x:_*))
+  }
+  def set_output_path(fn : String): Unit = {
+    get().set_output_path(fn)
   }
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String = Component.toplevel.name + "Logger",
                          outputStream : Option[Stream[Bits]] = None): Unit = {
@@ -211,8 +219,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     }
   }
 
-  def sqliteHandlers(): Unit = {
-    val file = new PrintWriter(s"${getName()}_sqlite.c")
+  def sqliteHandlers(output_path : String): Unit = {
+    val file = new PrintWriter(s"${output_path}/${getName()}_sqlite.c")
     def emit(s : String): Unit = {
       file.write(s)
       file.write("\n");
@@ -293,7 +301,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     }
 
   }
-  def codeDefinitions(): Unit = {
+  def codeDefinitions(output_path : String): Unit = {
     def getCType(data: Data): String = {
       val sizes = Seq(8, 16, 32, 64, 128)
       val pow2 = sizes.filter(_ >= (1 << (log2Up(data.getBitsWidth)))).head
@@ -308,7 +316,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       }
     }
 
-    val file = new PrintWriter(s"${getName()}.h")
+    val file = new PrintWriter(s"${output_path}/${getName()}.h")
     def emit(s : String): Unit = {
       file.write(s)
       file.write("\n");
