@@ -5,7 +5,7 @@ import spinal.lib._
 
 object GlobalSignals {
   def externalize[T <: Data](payload : T): T = {
-    externalize(payload, (t : T) => cloneOf(t)setName(t.name))
+    externalize(payload, (t : T) => cloneOf(t) setName(t.name))
   }
 
   def externalize[T <: Data](payload : T, copySignal : T => T, stopAtTop : Boolean = false): T = {
