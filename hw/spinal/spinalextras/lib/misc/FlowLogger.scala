@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib._
 import spinal.lib.bus.regif.RegInst
-import spinalextras.lib.{Memories, MemoryRequirement}
+
 import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
 import java.io.PrintWriter
@@ -13,7 +13,6 @@ import scala.collection.mutable
 import scala.language.postfixOps
 
 class GlobalLogger {
-
   val signals = new mutable.ArrayBuffer[(Data, Flow[Bits], ClockDomain)]()
 
   var built = false
@@ -218,7 +217,6 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       file.write(s)
       file.write("\n");
       file.flush()
-      //println(s)
     }
 
     val defined = new mutable.HashMap[String, mutable.ArrayBuffer[(Flow[Bits], Int)]]()
@@ -262,32 +260,30 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         |    }
         |}
         |
-        |void GlobalLogger_handle_transaction(uint8_t id, const struct GlobalLogger_transaction* tx) {
+        |void GlobalLogger_handle_transaction(${getName()}_ctx* ctx, uint8_t id, const struct GlobalLogger_transaction* tx) { }
         |
-        |}
-        |
-        |void ${getName()}_init_sql(const char* fn) {
-        |    sqlite3_open(fn, &${getName()}_db);
-        |
-        |    sqlite3_exec(${getName()}_db, "PRAGMA synchronous = OFF", NULL, NULL, 0);
+        |void ${getName()}_init_sql(${getName()}_ctx* ctx, sqlite3 *db) {
+        |    ctx->user = db;
+        |    sqlite3_exec(db, "PRAGMA synchronous = OFF", NULL, NULL, 0);
         |
         ${
       defined.keys.toList.flatMap(key => {
-        s"|    create_table(${getName()}_db, ${getName()}_${key}_CREATE_TABLE);\n" +
-        s"|    create_table(${getName()}_db, ${getName()}_${key}_CREATE_VIEW);\n"
+        s"|    create_table(db, ${getName()}_${key}_CREATE_TABLE);\n" +
+        s"|    create_table(db, ${getName()}_${key}_CREATE_VIEW);\n"
       }).mkString
     }
-        |    create_table(${getName()}_db, ${getName()}_ALL_EVENTS_CREATE_TABLE);
+        |    create_table(db, ${getName()}_ALL_EVENTS_CREATE_TABLE);
         |}""".stripMargin)
 
     for (t <- datas.map(getTypeName).toSet[String]) {
       emit(s"""
-              |void ${getName()}_handle_${t} (uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt) {
+              |void ${getName()}_handle_${t} (${getName()}_ctx* ctx, uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt) {
+              |    sqlite3 * db = (sqlite3 *)ctx->user;
               |    char* errmsg = 0;
               |    char* query = sqlite3_mprintf(
               |        "INSERT into ${getName()}_${t} (_time, _id " ${getName()}_${t}_FIELDS(${getName()}_COLUMN) " )  VALUES (%lld, %d " ${getName()}_${t}_FIELDS(${getName()}_FORMAT) " );",
               |        time, id ${getName()}_${t}_FIELDS(${getName()}_FIELD) );
-              |    sqlite3_exec(${getName()}_db, query, 0, 0, &errmsg);
+              |    sqlite3_exec(db, query, 0, 0, &errmsg);
               |    if(errmsg) {
               |        fprintf(stderr, "Insert error in '%s': %s\\n", query, errmsg);
               |    }
@@ -320,7 +316,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       //println(s)
     }
 
-    emit(s"""
+    emit(s"""//Generated do not edit!
                |#include "stdint.h"
                |#include "stdbool.h"
                |#include "stdio.h"
@@ -328,42 +324,47 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |#define ${this.name}_INDEX_BITS ${index_size}
                |#define ${this.name}_SIGNATURE 0x${signature.toHexString}
                |typedef struct ${getName()}_info_t {
-               |   uint32_t dropped_events;
+               |   uint32_t ctrl;
                |   uint32_t captured_events;
                |   uint32_t checksum;
                |   uint32_t sysclk_lsb;
                |   uint32_t fifo_occupancy;
                |   uint32_t inactive_mask;
                |   uint32_t signature;
+               |   uint32_t dropped_events;
                |} ${getName()}_info_t;
                |
                |static ${getName()}_info_t ${getName()}_info_get(volatile uint32_t* base) {
                |  return (${getName()}_info_t) {
-               |    .dropped_events = base[0],
+               |    .ctrl = base[0],
                |    .captured_events = base[1],
                |    .checksum = base[5],
                |    .sysclk_lsb = base[6],
                |    .fifo_occupancy = base[7],
                |    .inactive_mask = base[9],
-               |    .signature = base[10]
+               |    .signature = base[10],
+               |    .dropped_events = base[11]
                |  };
                |}
+               |
+               |typedef struct ${getName()}_ctx {
+               |    void* user;
+               |    uint64_t last_timestamp;
+               |} ${getName()}_ctx;
                |
                |typedef struct ${getName()}_transaction {
                |  uint32_t l[3];
                |} ${getName()}_transaction;
                |
-               |static void ${getName()}_handle(const struct ${getName()}_transaction* tx, uint32_t mask);
-               |static bool ${getName()}_poll(volatile uint32_t* ip_location, uint32_t mask) {
+               |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask);
+               |static bool ${getName()}_poll(${getName()}_ctx* ctx, volatile uint32_t* ip_location, uint32_t mask) {
                |  struct ${getName()}_transaction tx = {0};
                |  tx.l[0] = ip_location[2 + 0];
                |  if((tx.l[0] & 1) == 1) {
                |      tx.l[1] = ip_location[2 + 1];
                |      tx.l[2] = ip_location[2 + 2];
                |
-               |      //SHELL_OR_LOG(0, "Data %08x %08x %08x", tx.l[2], tx.l[1], tx.l[0]);
-               |
-               |    ${getName()}_handle(&tx, mask);
+               |    ${getName()}_handle(ctx, &tx, mask);
                |    return true;
                |  }
                |  return false;
@@ -442,17 +443,6 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
           emit(s"} ${getName()}_${key}_t;")
         }
       }
-
-//      if(defined.size != 1 || defined(key).head._1.getName() != key) {
-//        emit(s"""|${getName()}_${key}_t ${getName()}_parse_${key}(const ${getName()}_transaction* tx, int id) {
-//                    |     switch(id) {""".stripMargin)
-//        for((flow, idx) <- defined(key)) {
-//          emit(s"         case ${flow.getName().toUpperCase}_ID: return ${getName()}_parse_${flow.getName()}(tx);")
-//        }
-//        emit("     }")
-//        emit(s"     return (${getName()}_${key}_t){ 0 };")
-//        emit("}")
-//      }
     }
 
     emit(s"static const char* ${getName()}_get_id_name(int id) {")
@@ -478,13 +468,6 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
               emit(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${x._2.getBitsWidth}")
               bitOffset += x._2.getBitsWidth
             })
-//              emit(s"struct ${b.parent.name}_t {")
-//              b.elements.foreach(x => {
-//                val prefix = s"${x._1}"
-//                emit(s"\t${getCType(x._2)} ${prefix};")
-//                bitOffset += x._2.getBitsWidth
-//              })
-//              emit(s"}")
             emit(s"static ${getName()}_${getTypeName(d_clk)}_t ${getName()}_parse_${parent_name}(const ${getName()}_transaction* tx) {")
             emit(s"\treturn (${getName()}_${getTypeName(d_clk)}_t) {")
             b.elements.foreach(x => {
@@ -509,24 +492,24 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         }
     })
 
-    emit(s"void ${getName()}_handle_transaction(uint8_t id, const struct ${getName()}_transaction* tx);")
+    emit(s"void ${getName()}_handle_transaction(${getName()}_ctx* ctx, uint8_t id, const struct ${getName()}_transaction* tx);")
     for (t <- datas.map(getTypeName).toSet[String]) {
-      emit(s"void ${getName()}_handle_${t} (uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt);")
+      emit(s"void ${getName()}_handle_${t} (${getName()}_ctx* ctx, uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt);")
     }
+
     emit(s"static uint8_t ${getName()}_get_id(const struct ${getName()}_transaction* tx){ return ${getName()}_parse_field(tx, 1, ${index_size}); }")
-    emit(s"static void ${getName()}_handle(const struct ${getName()}_transaction* tx, uint32_t mask){")
-    emit(s"   static uint64_t gtime = 0;")
+    emit(s"static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask){")
     emit(s"   uint8_t id = ${getName()}_get_id(tx);")
     emit(s"   if(mask & (1 << id)) return;")
-    emit(s"   ${getName()}_handle_transaction(id, tx);")
+    emit(s"   ${getName()}_handle_transaction(ctx, id, tx);")
     emit(s"   switch(id) {")
     for ((flow, idx) <- flows()) {
       emit(s"   case ${flow.getName().toUpperCase}_ID: {\n" +
-        s"      gtime = ${getName}_full_time(tx, gtime, ${flow.getName()}_TIME_BIT_WIDTH); \n" +
-        s"      ${getName()}_handle_${getTypeName(datas(idx))}(gtime, id, ${getName()}_parse_${flow.getName()}(tx));")
+        s"      ctx->last_timestamp = ${getName}_full_time(tx, ctx->last_timestamp, ${flow.getName()}_TIME_BIT_WIDTH); \n" +
+        s"      ${getName()}_handle_${getTypeName(datas(idx))}(ctx, ctx->last_timestamp, id, ${getName()}_parse_${flow.getName()}(tx));")
       emit(s"      break;\n    }")
     }
-    emit(s"   case ${(1 << index_size) - 1}: gtime = ${getName()}_parse_field(tx, 1 + ${this.name}_INDEX_BITS, 64); break;")
+    emit(s"   case ${(1 << index_size) - 1}: ctx->last_timestamp = ${getName()}_parse_field(tx, 1 + ${this.name}_INDEX_BITS, 64); break;")
     emit("   default: fprintf(stderr, \"Unknown id %d\\n\", id);")
     emit(s"  }")
     emit(s"}")
