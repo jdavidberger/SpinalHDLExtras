@@ -551,8 +551,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       memoryStream <> stream
     } else {
       val demux = StreamDemux(stream, inMemory.asUInt, 2)
-      demux(0) <> memoryStream
-      demux(1) <> outputStream.get
+      demux(0) <> outputStream.get
+      demux(1) <> memoryStream
     }
 
     logger_port.createReadOnly(Bits(32 bits), address + 20) := checksum
