@@ -28,6 +28,7 @@ class JtagLoggerTap(bitWidth : Int, instr : Int = 0x24) extends Component {
     val tap = new JtagTap(io.jtag, 8)
     tap.idcode(B"h010003d1")(instructionId = 0xe0)
   }
+  noIoPrefix()
 
   JtagLoggerTap(io.log_stream, ctrl.tap, jtag_cd, instr)
 }
