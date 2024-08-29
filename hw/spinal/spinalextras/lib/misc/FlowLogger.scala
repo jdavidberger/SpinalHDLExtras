@@ -355,8 +355,16 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |  };
                |}
                |
+               |static void GlobalLogger_enable_memory_dump(GlobalLogger_ctx* ctx, volatile uint32_t* base, bool enable) {
+               |  if(ctx->ctrl != enable) {
+               |    base[0] = enable;
+               |    ctx->ctrl = enable;
+               |  }
+               |}
+               |
                |typedef struct ${getName()}_ctx {
                |    void* user;
+               |    uint32_t ctrl;
                |    uint64_t last_timestamp;
                |} ${getName()}_ctx;
                |
@@ -366,6 +374,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |
                |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask);
                |static bool ${getName()}_poll(${getName()}_ctx* ctx, volatile uint32_t* ip_location, uint32_t mask) {
+               |  GlobalLogger_enable_memory_dump(ctx, ip_location, 1);
                |  struct ${getName()}_transaction tx = {0};
                |  tx.l[0] = ip_location[2 + 0];
                |  if((tx.l[0] & 1) == 1) {

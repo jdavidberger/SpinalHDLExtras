@@ -2,12 +2,21 @@ package spinalextras.lib.misc
 
 import spinal.core.internals.ExpressionContainer
 import spinal.core.native.RefOwnerType
-import spinal.core.{BlackBox, Bundle, ClockDomain, Component, Data, GlobalData, HardType, HertzNumber, Nameable}
+import spinal.core.{BlackBox, Bundle, ClockDomain, Component, Data, GlobalData, HardType, HertzNumber, Nameable, out}
+import spinal.lib.fsm.StateMachineTask
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-case class Obfuscater() {
+object Obfuscater {
+  def apply(c : Component): Component = {
+    val obf = new Obfuscater()
+    obf.processComponent(c, is_top_level = true)
+    c
+  }
+}
+
+class Obfuscater() {
   val handled = new mutable.HashSet[Any]()
   var _id = 0
   var gprefix = ""
@@ -52,7 +61,7 @@ case class Obfuscater() {
         }
       }
       case (str, d) => {
-        this (d)
+        apply(d)
       }
       case _: Int => {}
       case _: Byte => {}
@@ -62,22 +71,27 @@ case class Obfuscater() {
       case _: ClockDomain => {}
       case _: HertzNumber => {}
       case _: HardType[Data] => {}
-      case _: spinal.core.internals.ScopeStatement => {}
+      case s: spinal.core.internals.ScopeStatement => {
+        s.walkStatements(apply)
+      }
       case _: GlobalData => {}
       case _: ExpressionContainer => {}
       case t: Traversable[Any] =>
         t.foreach(x => this(x))
+      case s : spinal.core.ScopeProperty.Capture => {
+        s.context.mutableMap.foreach(x => apply(x._2))
+      }
       case _ => {
-        println(s"Unknown ${component} ${component.getClass}")
+        println(s"Unknown component ${component} ${component.getClass}")
         return
       }
     }
   }
 
   def processNameable(nameable: Nameable): Unit = {
-    nameable.foreachReflectableNameables(that => this (that))
+    nameable.foreachReflectableNameables(that => apply (that))
     if (nameable.name != null) {
-      nameable.setPartialName(nextName())
+      nameable.setName(nextName())
     }
   }
 
@@ -94,7 +108,7 @@ case class Obfuscater() {
 
     n match {
       case b: Bundle => {
-        //b.elements.foreach(x => exclude(x._2))
+        b.elements.foreach(x => exclude(x._2))
       }
       case _ => {}
     }
@@ -102,14 +116,15 @@ case class Obfuscater() {
 
   def processComponent(component: Component, is_top_level: Boolean): Component = {
     if (!is_top_level) {
-      component.getAllIo.foreach(x => this (x))
+      component.getAllIo.foreach(x => apply(x))
       component.setDefinitionName(nextName())
+      component.setName(nextName())
     } else {
       gprefix = component.name.hashCode.abs.toString
-      component.getGroupedIO(false).foreach(exclude)
+      component.getGroupedIO(true).foreach(exclude)
+      processNameable(component.asInstanceOf[Nameable])
     }
-    processNameable(component.asInstanceOf[Nameable])
-    component.children.foreach(x => this (x))
+    component.children.foreach(x => apply(x))
     component
   }
 }
