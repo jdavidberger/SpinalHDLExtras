@@ -76,8 +76,9 @@ object SignalLogger {
     bundleFlow.setName(s"${name}")
     Seq((bundle, bundleFlow))
   }
-  def concatCC(name : String, signals: Data*): Seq[(Data, Flow[Bits])] = {
-    concat(name, signals:_*)
+
+  def concat(timeNumber: TimeNumber, name : String, signals: Data*): Seq[(Data, Flow[Bits])] = {
+    concat(name, signals:_*).map(x => (x._1, RateLimitFlow(timeNumber, x._2)))
   }
 }
 

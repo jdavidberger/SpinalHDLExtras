@@ -51,7 +51,7 @@ object AXIBusLogger {
 
     })
 
-    flows_meta.flatMap(_._1) ++ SignalLogger.concat("axi_ready_valids", flows_meta.flatMap(_._2):_*)
+    flows_meta.flatMap(_._1)
   }
   def flows(axis: Axi4Bus*): Seq[(Data, Flow[Bits])] = {
     flows(AllMapping, axis:_*)

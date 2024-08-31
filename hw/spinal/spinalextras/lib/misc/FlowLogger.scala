@@ -118,6 +118,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     val dropped_events = out(UInt(32 bits))
     val captured_events = out(UInt(32 bits))
     val sysclk = out(UInt(64 bits))
+
+    val flowFires = datas.map(_ => out Bool())
   }
   SimPublic(io.dropped_events)
   SimPublic(io.captured_events)
@@ -176,9 +178,12 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         }
         r.valid := (!io.inactive_channels(idx) && stream.valid) || manual_trigger
         if(ClockDomain.current == datas(idx)._2) {
+          io.flowFires(idx) := r.valid
           r.stage().toStream
         } else {
-          r.toStream.queue(4, pushClock = datas(idx)._2, popClock = ClockDomain.current)
+          val rCCed = r.toStream.queue(4, pushClock = datas(idx)._2, popClock = ClockDomain.current)
+          io.flowFires(idx) := rCCed.fire
+          rCCed
         }
       }
       val time_bits = logBits - output_stream.payload.getBitsWidth - index_size
@@ -234,11 +239,13 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     }
     emit(
       f"""
+         |#include "stdlib.h"
          |#include "sqlite3.h"
          |#include "${getName()}.h"
 
          |#define ${getName()}_COLUMN_DEF(f)  ", " #f " INTEGER"
          |#define ${getName()}_COLUMN_VIEW(f)  ", '" #f "'," #f
+         |#define ${getName()}_QUESTION_MARK(f)  ", ?"
          |""".stripMargin)
 
     var all_table = new mutable.ListBuffer[String]()
@@ -246,17 +253,22 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       file.write(s"static const char* ${getName()}_${key}_CREATE_TABLE = ")
       emit(s""""CREATE TABLE IF NOT EXISTS ${getName()}_${key} (_key INTEGER PRIMARY KEY, _time INTEGER, _id INTEGER " ${getName()}_${key}_FIELDS(${getName()}_COLUMN_DEF) ")"; """)
       file.write(s"static const char* ${getName()}_${key}_CREATE_VIEW = ")
-      emit(s""" "CREATE VIEW IF NOT EXISTS ${getName()}_${key}_JSON AS SELECT *, '${key}' as TYPE, JSON_OBJECT('id', _id, 'time', _time " ${getName()}_${key}_FIELDS(${getName()}_COLUMN_VIEW) ") as JSON  FROM ${getName()}_${key}"; """)
+      emit(s""" "CREATE VIEW IF NOT EXISTS ${getName()}_${key}_JSON AS SELECT *, '${key}' as TYPE, JSON_OBJECT('id', _id, 'time', _time " ${getName()}_${key}_FIELDS(${getName()}_COLUMN_VIEW) ") as JSON  FROM ${getName()}_${key} ORDER BY _time"; """)
 
       all_table += s"SELECT _id, _time, TYPE, JSON from ${getName()}_${key}_JSON"
     }
 
     emit(s"""
+        |typedef struct SqlLiteCtx {
+        |     sqlite3 *db;
+        |${defined.keys.map(key => s"     sqlite3_stmt *${key}_insert_stmt;").mkString("\n")}
+        |} SqlLiteCtx;
         |static const char* ${getName()}_ALL_EVENTS_CREATE_TABLE = "CREATE VIEW IF NOT EXISTS ALL_EVENTS AS ${all_table.mkString(" UNION ")}";
         |
         |#define ${getName()}_COLUMN(f)  ", " #f
         |#define ${getName()}_FORMAT(f) ", %u"
         |#define ${getName()}_FIELD(f) , pkt.f
+        |#define ${getName()}_BIND(f)  sqlite3_bind_int(stmt, idx++, pkt.f);
         |
         |sqlite3 *${getName()}_db = 0;
         |
@@ -271,13 +283,24 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         |void GlobalLogger_handle_transaction(${getName()}_ctx* ctx, uint8_t id, const struct GlobalLogger_transaction* tx) { }
         |
         |void ${getName()}_init_sql(${getName()}_ctx* ctx, sqlite3 *db) {
-        |    ctx->user = db;
+        |    SqlLiteCtx* sqlCtx = (SqlLiteCtx*)calloc(sizeof(SqlLiteCtx), 1);
+        |    ctx->user = sqlCtx;
+        |    sqlCtx->db = db;
         |    sqlite3_exec(db, "PRAGMA synchronous = OFF", NULL, NULL, 0);
-        |
+        |    sqlite3_exec(db, "PRAGMA journal_mode = OFF", NULL, NULL, 0);
         ${
-      defined.keys.toList.flatMap(key => {
-        s"|    create_table(db, ${getName()}_${key}_CREATE_TABLE);\n" +
-        s"|    create_table(db, ${getName()}_${key}_CREATE_VIEW);\n"
+      defined.keys.toList.flatMap(key => { s"""
+        |    create_table(db, ${getName()}_${key}_CREATE_TABLE);
+        |    create_table(db, ${getName()}_${key}_CREATE_VIEW);
+        |    {
+        |    const char* query = "INSERT into ${getName()}_${key} (_time, _id " ${getName()}_${key}_FIELDS(${getName()}_COLUMN) " )  VALUES (?, ? " ${getName()}_${key}_FIELDS(${getName()}_QUESTION_MARK) ")";
+        |    int rc = sqlite3_prepare_v2(db, query, -1, &sqlCtx->${key}_insert_stmt, NULL);
+        |    if (rc != 0) {
+        |         fprintf(stderr, "Prepare error %d for %s: %s\\n", rc, query, sqlite3_errmsg(db));
+        |         exit(-1);
+        |    }
+        |    }
+        """
       }).mkString
     }
         |    create_table(db, ${getName()}_ALL_EVENTS_CREATE_TABLE);
@@ -286,16 +309,19 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     for (t <- datas.map(getTypeName).toSet[String]) {
       emit(s"""
               |void ${getName()}_handle_${t} (${getName()}_ctx* ctx, uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt) {
-              |    sqlite3 * db = (sqlite3 *)ctx->user;
+              |    SqlLiteCtx* sqlCtx = ctx->user;
+              |    sqlite3 * db = sqlCtx->db;
               |    char* errmsg = 0;
-              |    char* query = sqlite3_mprintf(
-              |        "INSERT into ${getName()}_${t} (_time, _id " ${getName()}_${t}_FIELDS(${getName()}_COLUMN) " )  VALUES (%lld, %d " ${getName()}_${t}_FIELDS(${getName()}_FORMAT) " );",
-              |        time, id ${getName()}_${t}_FIELDS(${getName()}_FIELD) );
-              |    sqlite3_exec(db, query, 0, 0, &errmsg);
-              |    if(errmsg) {
-              |        fprintf(stderr, "Insert error in '%s': %s\\n", query, errmsg);
+              |    sqlite3_stmt *stmt = sqlCtx->${t}_insert_stmt;
+              |    int idx = 1;
+              |    sqlite3_bind_int64(stmt, idx++, time);
+              |    sqlite3_bind_int(stmt, idx++, id);
+              |    ${getName()}_${t}_FIELDS(${getName()}_BIND);
+              |    int rc = sqlite3_step(stmt);
+              |    if (rc != SQLITE_DONE) {
+              |        fprintf(stderr, "Insert error %d: %s\\n", rc, sqlite3_errmsg(db));
               |    }
-              |    sqlite3_free(query);
+              |    sqlite3_reset(stmt);
               |}
         """.stripMargin)
     }
@@ -321,7 +347,12 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       file.write(s)
       file.write("\n");
       file.flush()
-      //println(s)
+    }
+
+    val defined = new mutable.HashMap[String, mutable.ArrayBuffer[(Flow[Bits], Int)]]()
+    for ((flow, idx) <- flows()) {
+      val key = getTypeName(datas(idx))
+      defined.getOrElseUpdate(key, new mutable.ArrayBuffer[(Flow[Bits], Int)]) += ((flow, idx))
     }
 
     emit(s"""//Generated do not edit!
@@ -329,8 +360,11 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |#include "stdbool.h"
                |#include "stdio.h"
                |
+               |${flows().map { case (x, idx) => s"#define ${x.getName().toUpperCase}_ID ${idx}" }.mkString("\n")}
+               |
                |#define ${this.name}_INDEX_BITS ${index_size}
                |#define ${this.name}_SIGNATURE 0x${signature.toHexString}
+               |#define ${getName()}_EVENT_COUNT ${flows().size}
                |typedef struct ${getName()}_info_t {
                |   uint32_t ctrl;
                |   uint32_t captured_events;
@@ -340,10 +374,11 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |   uint32_t inactive_mask;
                |   uint32_t signature;
                |   uint32_t dropped_events;
+               |   uint32_t event_counter[${flows().size}];
                |} ${getName()}_info_t;
                |
                |static ${getName()}_info_t ${getName()}_info_get(volatile uint32_t* base) {
-               |  return (${getName()}_info_t) {
+               |  ${getName()}_info_t rtn = (${getName()}_info_t) {
                |    .ctrl = base[0],
                |    .captured_events = base[1],
                |    .checksum = base[5],
@@ -353,13 +388,10 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |    .signature = base[10],
                |    .dropped_events = base[11]
                |  };
-               |}
-               |
-               |static void GlobalLogger_enable_memory_dump(GlobalLogger_ctx* ctx, volatile uint32_t* base, bool enable) {
-               |  if(ctx->ctrl != enable) {
-               |    base[0] = enable;
-               |    ctx->ctrl = enable;
+               |  for(int i = 0;i < ${flows().size};i++) {
+               |     rtn.event_counter[i] = base[48/4 + i];
                |  }
+               |  return rtn;
                |}
                |
                |typedef struct ${getName()}_ctx {
@@ -367,6 +399,13 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |    uint32_t ctrl;
                |    uint64_t last_timestamp;
                |} ${getName()}_ctx;
+               |
+               |static void GlobalLogger_enable_memory_dump(GlobalLogger_ctx* ctx, volatile uint32_t* base, bool enable) {
+               |  if(ctx->ctrl != enable) {
+               |    base[0] = enable;
+               |    ctx->ctrl = enable;
+               |  }
+               |}
                |
                |typedef struct ${getName()}_transaction {
                |  uint32_t l[3];
@@ -416,21 +455,16 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |  uint64_t next_incr = (1LL << mask_bits);
                |  uint64_t mask = next_incr - 1;
                |  uint64_t time_reconstruction = (gtime & ~mask) | time_part;
-               |    //SHELL_OR_LOG(g_shell, "T %d %llx %llx %llx %llx", time_bit_width, mask, (gtime & ~mask), gtime, time_part);
-               |  if(time_reconstruction < gtime) {
+               |  if(time_reconstruction + (next_incr/4) < gtime) {
                |      return time_reconstruction + next_incr;
                |  }
                |  return time_reconstruction;
                |}
                |
+               |#define ${getName()}_DEFINITIONS(HANDLE_DEFINE) \\
+               |${defined.map(d => s"   HANDLE_DEFINE(${d._1})").mkString("\\\n")}
+               |
                |""".stripMargin)
-
-    val defined = new mutable.HashMap[String, mutable.ArrayBuffer[(Flow[Bits], Int)]]()
-    for ((flow, idx) <- flows()) {
-      val key = getTypeName(datas(idx))
-      emit(s"#define ${flow.getName().toUpperCase}_ID ${idx}")
-      defined.getOrElseUpdate(key, new mutable.ArrayBuffer[(Flow[Bits], Int)]) += ((flow, idx))
-    }
 
     emit(s"#define ${getName().toUpperCase}_FULL_TIME_ID 0x${((1 << index_size) - 1).toHexString}")
 
@@ -514,22 +548,31 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       emit(s"void ${getName()}_handle_${t} (${getName()}_ctx* ctx, uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt);")
     }
 
-    emit(s"static uint8_t ${getName()}_get_id(const struct ${getName()}_transaction* tx){ return ${getName()}_parse_field(tx, 1, ${index_size}); }")
-    emit(s"static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask){")
-    emit(s"   uint8_t id = ${getName()}_get_id(tx);")
-    emit(s"   if(mask & (1 << id)) return;")
-    emit(s"   ${getName()}_handle_transaction(ctx, id, tx);")
-    emit(s"   switch(id) {")
+    emit(
+      s"""
+         |static uint8_t ${getName()}_get_id(const struct ${getName()}_transaction* tx){ return ${getName()}_parse_field(tx, 1, ${index_size}); }
+         |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask){
+         |    uint8_t id = ${getName()}_get_id(tx);
+         |    if(mask & (1 << id)) return;
+         |    ${getName()}_handle_transaction(ctx, id, tx);
+         |    switch(id) {
+         |""".stripMargin)
+
     for ((flow, idx) <- flows()) {
-      emit(s"   case ${flow.getName().toUpperCase}_ID: {\n" +
-        s"      ctx->last_timestamp = ${getName}_full_time(tx, ctx->last_timestamp, ${flow.getName()}_TIME_BIT_WIDTH); \n" +
-        s"      ${getName()}_handle_${getTypeName(datas(idx))}(ctx, ctx->last_timestamp, id, ${getName()}_parse_${flow.getName()}(tx));")
-      emit(s"      break;\n    }")
+      emit(
+        s"""   case ${flow.getName().toUpperCase}_ID: {
+           |      ctx->last_timestamp = ${getName}_full_time(tx, ctx->last_timestamp, ${flow.getName()}_TIME_BIT_WIDTH);
+           |      ${getName()}_handle_${getTypeName(datas(idx))}(ctx, ctx->last_timestamp, id, ${getName()}_parse_${flow.getName()}(tx));
+           |      break;
+           |    }""".stripMargin)
     }
-    emit(s"   case ${(1 << index_size) - 1}: ctx->last_timestamp = ${getName()}_parse_field(tx, 1 + ${this.name}_INDEX_BITS, 64); break;")
-    emit("   default: fprintf(stderr, \"Unknown id %d\\n\", id);")
-    emit(s"  }")
-    emit(s"}")
+    emit(
+      s"""
+         |   case ${(1 << index_size) - 1}: ctx->last_timestamp = ${getName()}_parse_field(tx, 1 + ${this.name}_INDEX_BITS, 64); break;
+         |   default: fprintf(stderr, "Unknown id %d\\n", id);
+         |  }
+         |}
+      """.stripMargin)
   }
 
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int,
@@ -578,6 +621,16 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
     logger_port.createReadOnly(Bits(32 bits), address + 40) := signature
     logger_port.createReadOnly(UInt(32 bits), address + 44) := RegNext(io.dropped_events)
+
+    io.flowFires.zipWithIndex.foreach(x => {
+      val flowCnt = RegInit(U(0, 32 bits))
+      logger_port.createReadOnly(UInt(32 bits), address + 48 + x._2 * 4) := flowCnt
+      when(x._1) {
+        flowCnt := flowCnt + 1
+      }
+    }
+    )
+
   }
 }
 
@@ -613,6 +666,9 @@ object FlowLogger {
 
   def regs(regs: RegInst*): Seq[(Data, Flow[Bits])] = {
     regs.map(x => FlowLogger.asFlow(x))
+  }
+  def regs(timeNumber: TimeNumber, rs: RegInst*): Seq[(Data, Flow[Bits])] = {
+    regs(rs:_*).map(x => (x._1, RateLimitFlow(timeNumber, x._2)))
   }
 
   def asBits[T <: Data](t: T): Bits = {
