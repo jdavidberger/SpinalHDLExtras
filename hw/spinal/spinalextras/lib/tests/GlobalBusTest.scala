@@ -7,6 +7,7 @@ import spinal.lib.bus.regif.AccessType.RW
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone.{Wishbone, WishboneConfig}
 import spinalextras.lib.Config
+import spinalextras.lib.bus.{GlobalBusFactory, WishboneGlobalBus}
 import spinalextras.lib.misc._
 
 import scala.language.postfixOps

@@ -1,11 +1,12 @@
-package spinalextras.lib.misc
+package spinalextras.lib.logging
 
-import spinal.core.sim.SimPublic
 import spinal.core._
-import spinal.lib.bus.misc.SizeMapping
+import spinal.core.sim.SimPublic
 import spinal.lib._
+import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.regif.RegInst
-
+import spinalextras.lib.memory.MemoryBackedFifo
+import spinalextras.lib.misc.RateLimitFlow
 import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
 import java.io.PrintWriter
@@ -116,6 +117,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     val manual_trigger = slave Flow (UInt(datas.length bits))
 
     val dropped_events = out(UInt(32 bits))
+    val flush_dropped = in(Bool()) default(False)
+
     val captured_events = out(UInt(32 bits))
     val sysclk = out(UInt(64 bits))
 
@@ -154,6 +157,9 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
   val dropped_events = Reg(UInt(32 bits)) init (0)
   io.dropped_events := dropped_events
+  when(io.flush_dropped) {
+    dropped_events := 0
+  }
 
   val time_since_syscnt = Timeout(0xffffffffL)
 
@@ -263,12 +269,12 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         |     sqlite3 *db;
         |${defined.keys.map(key => s"     sqlite3_stmt *${key}_insert_stmt;").mkString("\n")}
         |} SqlLiteCtx;
-        |static const char* ${getName()}_ALL_EVENTS_CREATE_TABLE = "CREATE VIEW IF NOT EXISTS ALL_EVENTS AS ${all_table.mkString(" UNION ")}";
+        |static const char* ${getName()}_ALL_EVENTS_CREATE_TABLE = "CREATE VIEW IF NOT EXISTS ALL_EVENTS AS ${all_table.mkString(" UNION ")} ORDER BY _time";
         |
         |#define ${getName()}_COLUMN(f)  ", " #f
         |#define ${getName()}_FORMAT(f) ", %u"
         |#define ${getName()}_FIELD(f) , pkt.f
-        |#define ${getName()}_BIND(f)  sqlite3_bind_int(stmt, idx++, pkt.f);
+        |#define ${getName()}_BIND(f)  sqlite3_bind_int64(stmt, idx++, pkt.f);
         |
         |sqlite3 *${getName()}_db = 0;
         |
@@ -315,7 +321,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
               |    sqlite3_stmt *stmt = sqlCtx->${t}_insert_stmt;
               |    int idx = 1;
               |    sqlite3_bind_int64(stmt, idx++, time);
-              |    sqlite3_bind_int(stmt, idx++, id);
+              |    sqlite3_bind_int64(stmt, idx++, id);
               |    ${getName()}_${t}_FIELDS(${getName()}_BIND);
               |    int rc = sqlite3_step(stmt);
               |    if (rc != SQLITE_DONE) {

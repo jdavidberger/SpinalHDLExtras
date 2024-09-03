@@ -1,9 +1,10 @@
-package spinalextras.lib.misc
+package spinalextras.lib.bus
 
 import spinal.core._
-import spinal.lib.bus.amba4.axi._
 import spinal.lib._
+import spinal.lib.bus.amba4.axi._
 import spinal.lib.bus.misc.{AddressMapping, AllMapping}
+import spinalextras.lib.logging.FlowLogger
 
 import scala.language.postfixOps
 

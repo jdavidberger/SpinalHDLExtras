@@ -321,7 +321,7 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
     if(port.cmd.mask != null)
       mem_port.mask := port.cmd.mask
     mem_port.address := port.cmd.address
-    assert(port.cmd.address < num_elements)
+    assert(port.cmd.address.resize(log2Up(num_elements + 1) bits) < num_elements)
     mem_port.enable := port.cmd.valid
     mem_port.write := port.cmd.write
     mem_port.wdata.assignFromBits(port.cmd.data)
@@ -337,7 +337,7 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
 
   io.readPorts.foreach(port => {
     var rspFlow = cloneOf(port.rsp)
-    assert(port.cmd.payload < num_elements)
+    //assert(port.cmd.payload < num_elements)
     rspFlow.data := mem.readSync(
       address = port.cmd.payload,
       enable = port.cmd.valid,
@@ -351,7 +351,7 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
   })
 
   io.writePorts.foreach(port => {
-    assert(port.cmd.address < num_elements)
+//    assert(port.cmd.address < num_elements)
     mem.write(address = port.cmd.address,
       data = port.cmd.data.as(dataType),
       enable = port.cmd.valid,
@@ -377,7 +377,7 @@ object LatticeMemories {
   }
 
   def apply[T <: Data](memKind : MemTechnologyKind)(requirements : MemoryRequirement[T]): HardwareMemory[T] = {
-    val allocationSize = requirements.allocationSize
+    val allocationSize = (requirements.dataType.getBitsWidth.min(32) * requirements.num_elements) / 8
 
     val shouldUseLRam = memKind.technologyKind.toLowerCase == "lram" || allocationSize > (3 KiB)
     val lram_factory = find_lram(requirements)

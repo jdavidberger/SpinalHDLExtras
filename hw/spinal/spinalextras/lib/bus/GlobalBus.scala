@@ -1,6 +1,4 @@
-package spinalextras.lib.misc
-
-
+package spinalextras.lib.bus
 
 import spinal.core._
 import spinal.lib._
@@ -8,6 +6,7 @@ import spinal.lib.bus.misc._
 import spinal.lib.bus.regif._
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
+import spinalextras.lib.logging.{GlobalLogger, WishboneBusLogger}
 
 import scala.collection.mutable
 
@@ -15,11 +14,10 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
   var masters = mutable.ArrayBuffer[(T, Set[String])]()
   var slaves = mutable.ArrayBuffer[(T, AddressMapping, Set[String])]()
 
-
+  var built = false
   var topComponent = {
-    val topComponent = Component.toplevel
+    val topComponent = Component.current
 
-    var built = false
     Component.toplevel.addPrePopTask(() => {
       if(!built) {
         this.build()
@@ -29,13 +27,18 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     topComponent
   }
 
+  def cancel(): Unit = {
+    built = true
+  }
+
+
   type direction_function = T => T
 
   def addr_width() : Int
   def create_bus() : T
   def create_directed_bus(name : String, dir : direction_function): T = {
     var bus = create_bus().setName(name)
-    if (Component.current != Component.toplevel) {
+    if (Component.current != topComponent) {
       bus = dir(bus)
     }
     bus
@@ -65,7 +68,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
       intermediate_bus = Some(next_bus)
       ctx.restore()
       c = c.parent
-    } while(c != Component.toplevel && c != null)
+    } while(c != topComponent && c != null)
     assert(c != null)
 
     (intermediate_bus.get, new_bus.get)
@@ -252,13 +255,13 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
   override def create_bus(): PipelinedMemoryBus = PipelinedMemoryBus(config)
 
   def addr_width() = config.addressWidth
-
   override def build(): Unit = {
     println("System Bus Masters")
     super.build()
 
     val ctx = Component.push(Component.toplevel)
     val interconn = PipelinedMemoryBusInterconnect()
+    interconn.perfConfig()
 
     for((topBus, mapping, tags) <- slaves) {
       interconn.addSlave(topBus, mapping)

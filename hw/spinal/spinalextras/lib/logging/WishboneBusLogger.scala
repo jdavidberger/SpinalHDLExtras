@@ -1,21 +1,16 @@
-package spinalextras.lib.misc
+package spinalextras.lib.logging
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
-import spinal.core.internals.Expression
-import spinal.core.sim.{SimBaseTypePimper, SimBoolPimper, SimClockDomainHandlePimper, SimPublic, SimTimeout}
-import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4Shared}
+import spinal.core.sim.{SimBaseTypePimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout}
 import spinal.lib._
-import spinal.lib.bus.misc.{AddressMapping, AllMapping, SizeMapping}
+import spinal.lib.bus.misc.{AddressMapping, AllMapping}
 import spinal.lib.bus.wishbone._
-import spinal.lib.misc.Timer
 import spinal.lib.sim.StreamMonitor
 import spinalextras.lib.Config
-import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
+import spinalextras.lib.misc.RateLimitFlow
 
-import scala.collection.mutable
 import scala.language.postfixOps
-import scala.reflect.ClassTag
 
 
 

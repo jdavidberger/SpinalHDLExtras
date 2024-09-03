@@ -5,11 +5,14 @@ import spinal.lib._
 
 object GlobalSignals {
   def externalize[T <: Data](payload : T): T = {
-    externalize(payload, (t : T) => cloneOf(t) setName(t.name))
+    externalize(payload, (t : T) => cloneOf(t))
   }
 
-  def externalize[T <: Data](payload : T, copySignal : T => T, stopAtTop : Boolean = false): T = {
-    val topComponent = if(stopAtTop) Component.toplevel else null
+  def externalize[T <: Data](payload : T, topComponent : Component): T = {
+    externalize(payload, (t : T) => cloneOf(t), topComponent)
+  }
+
+  def externalize[T <: Data](payload : T, copySignal : T => T, topComponent : Component = null): T = {
     val dir = direction_function(payload)
 
     var intermediate : T = payload
@@ -19,7 +22,10 @@ object GlobalSignals {
     while(c != topComponent) {
       val ctx = Component.push(c)
 
-      val higher_payload = dir(copySignal(payload))
+      var higher_payload = copySignal(payload)
+      if(c.parent != topComponent) {
+        higher_payload = dir(higher_payload)
+      }
 
       if(new_signal.isEmpty) {
         new_signal = Some(higher_payload)
