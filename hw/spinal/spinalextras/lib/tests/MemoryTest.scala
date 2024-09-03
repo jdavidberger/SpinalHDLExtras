@@ -137,7 +137,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   expected_value := AddressHash(responseAddress, dataWidth).resized
 
   val outstanding_count = CounterUpDown((1L << 32), incWhen = io.bus.cmd.fire && ~io.bus.cmd.write, decWhen = io.bus.rsp.fire)
-  assert(~outstanding_count.msb)
+  assert(~outstanding_count.msb, "~outstanding_count.msb")
 
   val masked_data = access.rsp.data & byteMask
   when(access.rsp.valid) {
@@ -150,7 +150,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
 
     when(!valid_value) {
       report(Seq("Invalid value found given ", access.rsp.data, " vs expected ", expected_value, " at ", responseAddress, " for ", ClockDomain.current.frequency.getValue.decomposeString))
-      assert(False)
+      assert(False, "Invalid value found")
     } otherwise {
       io.valid_count := io.valid_count + 1
     }
@@ -196,15 +196,15 @@ class MemMemoryTest extends AnyFunSuite {
   }
 
   for(reqs <- Seq(
-    new MemoryRequirementBits(19, 1000, 1, 0, 0),
-    new MemoryRequirementBits(19, 1000, 0, 1, 1),
+    new MemoryRequirementBits(19, 1024, 1, 0, 0),
+    new MemoryRequirementBits(19, 1024, 0, 1, 1),
 
-    new MemoryRequirementBits(8, 1000, 1, 0, 0),
-    new MemoryRequirementBits(32, 1000, 1, 0, 0),
-    new MemoryRequirementBits(32, 1000, 0, 1, 1),
+    new MemoryRequirementBits(8, 1024, 1, 0, 0),
+    new MemoryRequirementBits(32, 1024, 1, 0, 0),
+    new MemoryRequirementBits(32, 1024, 0, 1, 1),
 
-    new MemoryRequirementBits(95, 1000, 0, 1, 1),
-    new MemoryRequirementBits(96, 1000, 0, 1, 1)
+    new MemoryRequirementBits(95, 1024, 0, 1, 1),
+    new MemoryRequirementBits(96, 1024, 0, 1, 1)
   )) {
     test(s"MemBased_${reqs.toString}") {
       doTest(reqs)
@@ -213,13 +213,13 @@ class MemMemoryTest extends AnyFunSuite {
 
   for(reqs <- Seq(
     //(new MemoryRequirementBits(19, 1000, 1, 0, 0), 19, 10000),
-    (new MemoryRequirementBits(32, 1000, 1, 0, 0), 32),
-    (new MemoryRequirementBits(64, 1000, 1, 0, 0), 32),
+    (new MemoryRequirementBits(32, 1024, 1, 0, 0), 32),
+    (new MemoryRequirementBits(64, 1024, 1, 0, 0), 32),
 
-    (new MemoryRequirementBits(64, 1000, 0, 1, 1), 32),
+    (new MemoryRequirementBits(64, 1024, 0, 1, 1), 32),
 
-    (new MemoryRequirementBits(95, 1000, 1, 0, 0), 32),
-    (new MemoryRequirementBits(95, 1000, 0, 1, 1), 32),
+    (new MemoryRequirementBits(95, 1024, 1, 0, 0), 32),
+    (new MemoryRequirementBits(95, 1024, 0, 1, 1), 32),
   )) {
     test(s"WidenTest_${reqs._1.toString}_${reqs._2}") {
       doTest(reqs._1, factory = (freqs, tech) => new WideHardwareMemory[Bits](freqs, () => Memories(reqs._1.copy(dataType = Bits(reqs._2 bits)))))

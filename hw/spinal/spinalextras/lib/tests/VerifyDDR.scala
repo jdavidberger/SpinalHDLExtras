@@ -59,8 +59,7 @@ case class VerifyODDRTestBench(ddr_factor : Int = 4, ODDRFactory : (Int) => ODDR
     } otherwise {
       valid := goddr.io.OUT.valid === loddr.io.OUT.valid
     }
-    assert(valid)
-
+    assert(valid, "goddr not valid")
   }
 }
 

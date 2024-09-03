@@ -113,7 +113,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
     val log = master(Stream(Bits(logBits bits)))
 
-    val inactive_channels = in(Bits(datas.length bits)).addTag(crossClockDomain)
+    val inactive_channels = in(Bits(datas.length bits)).addTag(crossClockDomain) default(0)
     val manual_trigger = slave Flow (UInt(datas.length bits))
 
     val dropped_events = out(UInt(32 bits))

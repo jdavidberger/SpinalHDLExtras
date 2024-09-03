@@ -92,6 +92,7 @@ class SignalLoggerTest extends AnyFunSuite {
         io.flush <> fifo.io.flush
         io.gpio <> gpio
 
+        logger.io.manual_trigger.setIdle()
         logger.io.log <> fifo.io.push
         io.log <> fifo.io.pop
 
