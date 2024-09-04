@@ -18,5 +18,5 @@ do
   -work $test_name $GEN_DIR/$test_name.v \
   $VERILOG_DIR/TestClockGen.sv
 
-  time $SIMPATH/vsim -L lifcl $test_name.$test_name -do "run 100us;"
+  time $SIMPATH/vsim -L lifcl $test_name.$test_name -do "run 100us;exit -code 1"
 done
