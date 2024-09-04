@@ -14,7 +14,7 @@ object FifoFactory {
     val rtn = FifoInterface(dataType, depth)
     val fifo = StreamFifo(dataType = dataType, depth = depth)
     rtn.push >> fifo.io.push
-    rtn.pop << fifo.io.pop
+    rtn.pop << fifo.io.pop.stage()
     rtn.availability := fifo.io.availability
     rtn.occupancy := fifo.io.occupancy
     fifo.io.flush := rtn.flush

@@ -69,7 +69,10 @@ object HardwareMemory {
 
 }
 
-case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : BigInt, numReadWritePorts : Int, numReadPorts : Int, numWritePorts : Int, needsMask : Boolean = false) {
+case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : BigInt, numReadWritePorts : Int,
+                                        numReadPorts : Int, numWritePorts : Int,
+                                        needsMask : Boolean = false,
+                                        latencyRange : (Int, Int) = (1, 3)) {
   lazy val allocationSize = dataType.getBitsWidth * num_elements
   lazy val numPorts = numReadWritePorts + numReadPorts + numWritePorts
 
@@ -96,6 +99,8 @@ abstract class HardwareMemory[T <: Data]() extends Component {
   lazy val num_elements = requirements.num_elements
   lazy val dataType = requirements.dataType
 
+  lazy val actual_num_elements = num_elements
+
   lazy val config = PipelinedMemoryBusConfig(log2Up(num_elements), dataWidth = requirements.dataType.getBitsWidth)
   def bitsWidth = requirements.dataType.getBitsWidth
 
@@ -103,6 +108,10 @@ abstract class HardwareMemory[T <: Data]() extends Component {
     val readWritePorts = Array.fill(requirements.numReadWritePorts)(slave((HardwareMemoryReadWritePort(config))))
     val readPorts = Array.fill(requirements.numReadPorts)(slave((HardwareMemoryReadPort(config))))
     val writePorts = Array.fill(requirements.numWritePorts)(slave((HardwareMemoryWritePort(config))))
+  }
+
+  def rsps = {
+    io.readWritePorts.map(_.rsp) ++ io.readPorts.map(_.rsp)
   }
 
   def setIdle(): Unit = {
@@ -153,22 +162,33 @@ abstract class HardwareMemory[T <: Data]() extends Component {
 class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory: () => HardwareMemory[Bits]) extends HardwareMemory[T]() {
   val prototype = direct_factory()
 
-  override def requirements = reqs.copy(num_elements = prototype.num_elements)
+  override lazy val latency : Int = prototype.latency
+  override def requirements = reqs
 
-  val needed_cols = (dataType.getBitsWidth + prototype.bitsWidth - 1)/ prototype.bitsWidth
-  var memories = Array.fill(needed_cols - 1)(direct_factory()) ++ Seq(prototype)
-  memories.zipWithIndex.map(x => x._1.setName(s"memories_col_${x._2}"))
-  //memories.foreach(_.setIdle())
+  val mod_width = dataType.getBitsWidth % prototype.bitsWidth
+  val needed_cols = dataType.getBitsWidth/ prototype.bitsWidth
+  val mod_memory = if(mod_width != 0) Seq(Memories(reqs.copy(dataType = Bits(mod_width bits), latencyRange = (prototype.latency, prototype.latency) ))) else Seq()
+  var memories = Array.fill(needed_cols - 1)(direct_factory()) ++ Seq(prototype) ++ mod_memory
+  memories.zipWithIndex.map(x => x._1.setName(s"memories_col_${x._2}_${x._1.actual_num_elements}x${x._1.bitsWidth}"))
+
+  override lazy val actual_num_elements = memories.map(_.num_elements).min
+
+  rsps.zipWithIndex.foreach{case (rsp, idx) => {
+    rsp.payload.data.assignFromBits(Vec(memories.map(mem => {
+      mem.rsps(idx).payload.data
+    }).toSeq).asBits.resized)
+
+
+    rsp.valid := memories.head.rsps(idx).valid
+    assert(Vec(memories.map(_.rsps(idx).valid).map(x => x === rsp.valid)).andR, "Read responses not synced")
+  }}
 
   io.readPorts.zipWithIndex.foreach(port_idx => {
     val (port, idx) = port_idx
-
-    port.rsp.payload.data.assignFromBits(Vec(memories.map(mem => {
-      mem.io.readPorts(idx).cmd << port.cmd
-      mem.io.readPorts(idx).rsp.payload.data
-    }).toSeq).asBits.resized)
-
-    port.rsp.valid := memories.head.io.readPorts(idx).rsp.valid
+    memories.map(mem => {
+      mem.io.readPorts(idx).cmd.valid := port.cmd.valid
+      mem.io.readPorts(idx).cmd.payload := port.cmd.payload.resized
+    })
   })
 
   io.writePorts.zipWithIndex.foreach(port_idx => {
@@ -176,20 +196,21 @@ class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory
 
     val datas = memories.map(mem => {
       mem.io.writePorts(idx).cmd.valid := port.cmd.valid
-      mem.io.writePorts(idx).cmd.address := port.cmd.address
+      mem.io.writePorts(idx).cmd.address := port.cmd.address.resized
       (mem.io.writePorts(idx).cmd.data, mem.io.writePorts(idx).cmd.mask)
     })
 
-    datas.map(_._1).zip(port.cmd.data.subdivideIn(memories.size slices, strict = false)).foreach(d => {
+    datas.map(_._1).zip(port.cmd.data.subdivideIn(prototype.bitsWidth bits, strict = false)).foreach(d => {
       d._1 := d._2.resized
     })
     if(port.cmd.mask != null) {
-      datas.map(_._2).zip(port.cmd.mask.subdivideIn(memories.size slices, strict = false)).foreach(d => {
+      datas.map(_._2).zip(port.cmd.mask.subdivideIn(prototype.bitsWidth/8 bits, strict = false)).foreach(d => {
         d._1 := d._2
       })
     } else {
       datas.map(_._2).foreach(d => {
-        d.setAll()
+        if(d != null)
+          d.setAll()
       })
     }
   })
@@ -200,25 +221,24 @@ class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory
     val datas = memories.map(mem => {
       mem.io.readWritePorts(idx).cmd.valid := port.cmd.valid
       mem.io.readWritePorts(idx).cmd.write := port.cmd.write
-      mem.io.readWritePorts(idx).cmd.address := port.cmd.address
+      mem.io.readWritePorts(idx).cmd.address := port.cmd.address.resized
 
       (mem.io.readWritePorts(idx).cmd.data, mem.io.readWritePorts(idx).rsp.data, mem.io.readWritePorts(idx).cmd.mask)
     })
 
-    port.rsp.valid := memories.head.io.readWritePorts(idx).rsp.valid
-    port.rsp.payload.data.assignFromBits(Vec(datas.map(_._2)).asBits.resized)
-    datas.map(_._1).zip(port.cmd.data.subdivideIn(memories.size slices, strict = false)).foreach(d => {
+    datas.map(_._1).zip(port.cmd.data.subdivideIn(prototype.bitsWidth bits, strict = false)).foreach(d => {
       d._1 := d._2.resized
     })
 
 
     if(port.cmd.mask != null) {
-      datas.map(_._3).zip(port.cmd.mask.subdivideIn(memories.size slices, strict = false)).foreach(d => {
+      datas.map(_._3).zip(port.cmd.mask.subdivideIn((prototype.bitsWidth/8) bits, strict = false)).foreach(d => {
         d._1 := d._2
       })
     } else {
       datas.map(_._3).foreach(d => {
-        d.setAll()
+        if(d != null)
+          d.setAll()
       })
     }
   })
@@ -229,15 +249,24 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
   override def requirements = reqs
   val wide_factory = () => new WideHardwareMemory(requirements, direct_factory)
   val prototype = wide_factory()
+
+  override lazy val latency : Int = prototype.latency
   require(prototype.bitsWidth == dataType.getBitsWidth)
-  require(isPow2(prototype.num_elements))
+  require(isPow2(prototype.num_elements) || prototype.num_elements == reqs.num_elements)
 
   val needed_rows = ((num_elements + prototype.num_elements - 1) / prototype.num_elements).toInt
-
   var memories = Array.fill(needed_rows - 1)(wide_factory()) ++ Seq(prototype)
+
   var mappings = Array.range(0, needed_rows).map(idx => SizeMapping(prototype.num_elements * idx, prototype.num_elements))
 
-  memories.zipWithIndex.map(x => x._1.setName(s"memories_row_${x._2}"))
+  override lazy val actual_num_elements = memories.map(_.actual_num_elements).sum
+
+  if(actual_num_elements > num_elements) {
+    SpinalWarning(s"Memory type underutilized -- total space is ${actual_num_elements}x${bitsWidth}; ${num_elements}x${bitsWidth} are used.")
+  }
+
+  memories.zipWithIndex.map(x => x._1.setName(s"memories_row_${x._2}_${x._1.actual_num_elements}x${x._1.bitsWidth}"))
+  memories.foreach(x => println(s"${x.name}"))
   memories.foreach(_.setIdle())
 
   def memories_hits(addr: UInt): (UInt, UInt) = {
@@ -250,6 +279,18 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
     (addr.resize(addrWidth bits), addr >> (addrWidth))
   }
 
+  rsps.zipWithIndex.foreach{case (rsp, idx) => {
+    rsp.valid := False
+    rsp.payload.assignDontCare()
+
+    memories.foreach(mem => {
+      when(mem.rsps(idx).valid) {
+        rsp.valid := True
+        rsp.payload := mem.rsps(idx).payload
+      }
+    })
+  }}
+
   io.readPorts.zipWithIndex.foreach(port_idx => {
     val (port, idx) = port_idx
     val (addr, hit_idx) = memories_hits(port.cmd.payload)
@@ -257,16 +298,6 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
 
     mem_readPorts(hit_idx).cmd.valid := port.cmd.valid
     mem_readPorts(hit_idx).cmd.payload := addr
-
-    port.rsp.valid := False
-    port.rsp.payload.assignDontCare()
-
-    memories.foreach(mem => {
-      when(mem.io.readPorts(idx).rsp.valid) {
-        port.rsp.valid := True
-        port.rsp.payload := mem.io.readPorts(idx).rsp.payload
-      }
-    })
   })
 
   io.readWritePorts.zipWithIndex.foreach(port_idx => {
@@ -280,16 +311,6 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
     mem_readWritePorts(hit_idx).cmd.payload.write := port.cmd.write
     if(port.cmd.mask != null)
       mem_readWritePorts(hit_idx).cmd.payload.mask := port.cmd.mask
-
-    port.rsp.valid := False
-    port.rsp.payload.assignDontCare()
-
-    memories.foreach(mem => {
-      when(mem.io.readWritePorts(idx).rsp.valid) {
-        port.rsp.valid := True
-        port.rsp.payload := mem.io.readWritePorts(idx).rsp.payload
-      }
-    })
   })
 
   io.writePorts.zipWithIndex.foreach(port_idx => {
@@ -306,10 +327,13 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
   })
 }
 
-case class MemBackedHardwardMemory[T <: Data](override val requirements : MemoryRequirement[T], extra_latency : Int = 1) extends
+case class MemBackedHardwardMemory[T <: Data](override val requirements : MemoryRequirement[T]) extends
   HardwareMemory[T]() {
   val mem = Mem[T](dataType, num_elements)
-  override lazy val latency = 1 + extra_latency
+
+  override lazy val latency = requirements.latencyRange._2
+  val extra_latency = latency - 1
+
   if (globalData.config.flags.contains(GenerationFlags.simulation)) {
     //mem.randBoot()
     mem.init((0 until num_elements.toInt).map(idx => B(0).as(dataType) ))
@@ -334,10 +358,10 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
     var rspFlow = cloneOf(port.rsp)
     rspFlow.valid := RegNext(port.cmd.valid && !port.cmd.write)
     rspFlow.data := mem_port.rdata.asBits
-    for(i <- 0 to extra_latency)
+    for(i <- 0 until extra_latency)
       rspFlow = rspFlow.stage()
 
-    port.rsp <> rspFlow.stage()
+    port.rsp <> rspFlow
   })
 
   io.readPorts.foreach(port => {
@@ -349,10 +373,10 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
     ).asBits
     rspFlow.valid := RegNext(port.cmd.valid)
 
-    for(i <- 0 to extra_latency)
+    for(i <- 0 until extra_latency)
       rspFlow = rspFlow.stage()
 
-    port.rsp <> rspFlow.stage()
+    port.rsp <> rspFlow
   })
 
   io.writePorts.foreach(port => {
@@ -373,9 +397,9 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
 object LatticeMemories {
   def find_lram[T <: Data](requirements : MemoryRequirement[T]): Option[()=>HardwareMemory[Bits]] = {
     if(requirements.numPorts > 2) return None
-
+    val latency = requirements.latencyRange._2.min(2)
     (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
-      case (1, 1, 0) => Some(() => new PDPSC512K_Mem(latency = 2))
+      case (1, 1, 0) => Some(() => new PDPSC512K_Mem(target_latency = latency))
       case (0, 0, 1) => Some(() => new DPSC512K_Mem())
       case (0, 0, 2) => Some(() => new DPSC512K_Mem())
     }
@@ -418,4 +442,6 @@ case class PipelinedMemoryBusMemory[T <: Data](reqs : MemoryRequirement[T], tech
     val bus = slave(cloneOf(mem_bus))
   }
   mem_bus <> io.bus
+
+  def latency = mem.latency
 }

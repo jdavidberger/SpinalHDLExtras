@@ -51,6 +51,7 @@ case class VerifyODDRTestBench(ddr_factor : Int = 4, ODDRFactory : (Int) => ODDR
 
   val eclkArea = new ClockingArea(eclkDomain) {
     val valid = Reg(Bool()) init(True)
+
     valid.addTag(crossClockDomain)
     val goddr = sclkArea.goddr
     val loddr = sclkArea.loddr
@@ -77,7 +78,9 @@ case class VerifyIDDRTestBench(ddr_factor : Int = 4, IDDRFactory : (Int) => IDDR
   val sclkDomain = new ClockDomain(sclk, reset = reset)
   val eclkDomain = new ClockDomain(eclk, reset = reset)
 
-
+  val eclkArea = new ClockingArea(eclkDomain) {
+    val counter = CounterFreeRun(16)
+  }
   val sclkArea = new ClockingArea(sclkDomain ) {
     val liddr = new IDDRArray(UInt(8 bits), output_per_input = ddr_factor, IDDRFactory = Some(IDDRFactory))
     val giddr = new IDDRArray(UInt(8 bits), output_per_input = ddr_factor, IDDRFactory = Some(ddr_factor => new GenericIDDR(ddr_factor, latency = liddr.latency())))
@@ -88,11 +91,24 @@ case class VerifyIDDRTestBench(ddr_factor : Int = 4, IDDRFactory : (Int) => IDDR
     val valid = Reg(Bool()) init(True)
     valid.addTag(crossClockDomain)
     when(giddr.io.OUT.valid) {
-      valid := giddr.io.OUT.asBits === liddr.io.OUT.asBits
+      valid := giddr.io.OUT.asBits === liddr.io.OUT.asBits && (giddr.io.OUT.valid === liddr.io.OUT.valid)
     } otherwise {
       valid := giddr.io.OUT.valid === liddr.io.OUT.valid
     }
-    assert(valid)
+    when(!valid) {
+      report(Seq(s"Mismatch in giddr and liddr. Latency should be ${liddr.latency()} ", giddr.io.OUT.payload.asBits, " ", liddr.io.OUT.payload.asBits, " ", giddr.io.OUT.valid, " ", liddr.io.OUT.valid))
+    }
+
+    for(iddr <- Seq(giddr, liddr)) {
+      when(iddr.io.OUT.valid) {
+        report(Seq(s"${iddr.name} ", eclkArea.counter.value, " ", iddr.io.OUT.payload.asBits))
+      }
+    }
+    when(oddr.io.IN.valid) {
+      report(Seq(s"${oddr.name} IN ", eclkArea.counter.value, " ", oddr.io.IN.payload.asBits))
+    }
+
+    assert(valid, "Mismatch between giddr and liddr")
 
     val counter = Counter(1 << 8)
     counter.increment()
@@ -116,7 +132,6 @@ object LatticeODDRSim extends App {
     Config.spinal.generateVerilog(
       new Component {
         val GSR_INST = new GSR()
-        GSR_INST.io.setAll()
 
         for(f <- Seq(2, 4, 8, 10)) {
           val dut = VerifyODDRTestBench(f, x => new LatticeODDR(x)).setDefinitionName(s"VerifyDDRTestBench_${f}").setName(s"verifyDDRTestBench_${f}")
@@ -130,7 +145,6 @@ object LatticeIDDRSim extends App {
   Config.spinal.generateVerilog(
     new Component {
       val GSR_INST = new GSR()
-      GSR_INST.io.setAll()
 
       for(f <- Seq(2)) {
         val dut = VerifyIDDRTestBench(f, x => new LatticeIDDR(x)).setDefinitionName(s"VerifyIDDRTestBench_${f}").setName(s"verifyIDDRTestBench_${f}")

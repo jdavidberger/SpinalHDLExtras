@@ -4,6 +4,8 @@ import spinal.lib._
 import spinal.core._
 import spinalextras.lib.{HardwareMemory, MemoryRequirement}
 
+import scala.language.postfixOps
+
 class PDPSC512K(
                  OUTREG : Boolean = false,
                  GSR : Boolean = true,
@@ -42,10 +44,11 @@ class PDPSC512K(
   mapCurrentClockDomain(clock=io.CLK, reset=io.RSTR)
 }
 
-class PDPSC512K_Mem(latency : Int = 2) extends HardwareMemory[Bits]() {
+class PDPSC512K_Mem(target_latency : Int = 2) extends HardwareMemory[Bits]() {
   override val requirements = MemoryRequirement(
     Bits(32 bits), (1 << 14), 0, 1, 1
   )
+  override lazy val latency : Int = target_latency
   assert(latency == 2 || latency == 1)
   val outreg = latency == 2
   val mem = new PDPSC512K(OUTREG = outreg)
@@ -53,6 +56,8 @@ class PDPSC512K_Mem(latency : Int = 2) extends HardwareMemory[Bits]() {
   val read = io.readPorts.head
   mem.io.ADR := read.cmd.payload.asBits
   read.rsp.data := mem.io.DO
+
+  override lazy val actual_num_elements = (512 KiB) / 32
 
   if(latency == 2) {
     read.rsp.valid := RegNext(RegNext(read.cmd.valid))

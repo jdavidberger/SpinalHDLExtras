@@ -58,7 +58,7 @@ object AddressHash {
   }
 }
 
-case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false) extends Component {
+case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1) extends Component {
   val io = new Bundle {
     val bus = master(PipelinedMemoryBus(cfg))
 
@@ -122,6 +122,18 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
     }
   }
 
+  val hasExpectedLatency = RegInit(True)
+  if(latency >= 0) {
+    var expected_read_stream = cmd_stream.toFlowFire.map(_.address).throwWhen(cmd_stream.write)
+    for(i <- 0 until (latency + 1)) {
+      expected_read_stream = expected_read_stream.stage()
+    }
+    expected_read_stream.setName(s"expected_read_stream_${latency}")
+
+    hasExpectedLatency := expected_read_stream.valid === access.rsp.valid
+    assert(expected_read_stream.valid === access.rsp.valid, "Memory latency isn't what was expected")
+  }
+
   io.valid_count.setAsReg() init (0)
 
   io.valid.setAsReg() init (True)
@@ -143,7 +155,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   when(access.rsp.valid) {
     responseAddress := responseAddress + incPerOp
     val valid_value = ((expected_value).asBits & byteMask) === masked_data
-    io.valid := (io.valid && valid_value)// && ~timeout_counter.willOverflowIfInc)
+    io.valid := (io.valid && valid_value && hasExpectedLatency)// && ~timeout_counter.willOverflowIfInc)
     when(~valid_value) {
       io.valid_count := 0
     }
@@ -173,7 +185,7 @@ class MemMemoryTest extends AnyFunSuite {
         () => {
           val mem = PipelinedMemoryBusMemory(reqs = reqs, technologyKind = technologyKind, factory = factory)
           Seq(
-            MemoryTestBench(mem.io.bus.config),
+            MemoryTestBench(mem.io.bus.config, latency = mem.latency),
             mem
           ).toIterator
         }
@@ -227,17 +239,17 @@ class MemMemoryTest extends AnyFunSuite {
   }
 
   for(reqs <- Seq(
-    (new MemoryRequirementBits(95, 16000, 0, 1, 1), 32, 1 << 14),
-    (new MemoryRequirementBits(95, 16000, 1, 0, 0), 32, 1 << 14),
-    (new MemoryRequirementBits(32, 1000, 1, 0, 0), 32, 1 << 9),
+    (new MemoryRequirementBits(95, 1 << 14, 0, 1, 1), 32, 1 << 14),
+    (new MemoryRequirementBits(95, 1 << 14, 1, 0, 0), 32, 1 << 14),
+    (new MemoryRequirementBits(32, 1<<9, 1, 0, 0), 32, 1 << 9),
 
-    (new MemoryRequirementBits(95, 1000, 1, 0, 0), 32, 1 << 8),
+    (new MemoryRequirementBits(95, 1<<8, 1, 0, 0), 32, 1 << 8),
 
-    (new MemoryRequirementBits(32, 1000, 1, 0, 0), 16, 1 << 9),
-    (new MemoryRequirementBits(32, 1000, 0, 1, 1), 16, 1 << 9)
+    (new MemoryRequirementBits(32, 1<<9, 1, 0, 0), 16, 1 << 9),
+    (new MemoryRequirementBits(32, 1<<9, 0, 1, 1), 16, 1 << 9)
   )) {
     test(s"StackedTest_${reqs._1.toString}_${reqs._2}_${reqs._3}") {
-      doTest(reqs._1, factory = (freqs, tech) => new StackedHardwareMemory[Bits](freqs, () => Memories(reqs._1.copy(dataType = Bits(reqs._2 bits), num_elements = reqs._3))))
+      doTest(reqs._1, factory = (freqs, tech) => new StackedHardwareMemory[Bits](freqs, () => Memories(reqs._1.copy(dataType = Bits(32 bits), num_elements = reqs._3))))
     }
   }
 
@@ -255,10 +267,12 @@ case class LatticeMemoryTest() extends Component {
   }.rst_counter
 
   new ClockingArea(osc.hf_clk().get.copy(reset = !rst_counter)) {
-      val mem = new PDPSC512K_Mem()
-      val tb = MemoryTestBench(mem.config)
+    for(latency <- Seq(1, 2)) {
+      val mem = new PDPSC512K_Mem(latency)
+      val tb = MemoryTestBench(mem.config, latency = mem.latency)
       val pmbs = mem.pmbs()
       tb.io.bus <> pmbs.head
+    }
   }
 
 }
@@ -274,7 +288,7 @@ case class LatticeFifoTest() extends Component {
   }.rst_counter
 
   new ClockingArea(osc.hf_clk().get.copy(reset = !rst_counter)) {
-    val mem = new MemoryBackedFifo(Bits(32 bits), 64, mem_factory = (r : MemoryRequirement[Bits]) => new PDPSC512K_Mem())
+    val mem = new MemoryBackedFifo(Bits(33 bits), 1 << 12)//, mem_factory = (r : MemoryRequirement[Bits]) => new PDPSC512K_Mem())
     val tb = FifoTestBench(mem.dataType)
     mem.io.push <> tb.io.push
     mem.io.pop <> tb.io.pop
@@ -285,6 +299,8 @@ object LatticeMemoryTest extends App {
   Config.spinalConfig.copy(device = Device("lattice", "lifcl")).generateVerilog(
     new LatticeMemoryTest()
   )
+}
+object LatticeFifoTest extends App {
   Config.spinalConfig.copy(device = Device("lattice", "lifcl")).generateVerilog(
     new LatticeFifoTest()
   )
