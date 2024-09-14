@@ -3,7 +3,8 @@ package spinalextras.lib.misc
 import spinal.core.ClockDomain.ClockFrequency
 import spinal.core.{ClockDomain, HertzNumber}
 
-case class ClockSpecification(freq: HertzNumber, phaseOffset: Double = 0, tolerance: Double = 0.01) {
+case class ClockSpecification(freq: HertzNumber,
+                              phaseOffset: Double = 0, tolerance: Double = 0.01) {
 
 }
 

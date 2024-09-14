@@ -8,6 +8,7 @@ import spinalextras.lib.blackbox.lattice.lifcl.PLLConfig.to_bin_string
 import spinalextras.lib.misc._
 import spinalextras.lib.tests.TestClockGen
 
+import java.io.FileReader
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
@@ -54,6 +55,16 @@ case class PLLClockConfig(
   }
 }
 
+object PLLOutputClockConfig {
+  def apply(TRIM: Int,
+            DEL : Int,
+            DIV : Int,
+            PHI : Int,
+            ENABLE : Boolean,
+            TRIM_BYPASSED: Boolean,
+            ACTUAL_FREQ : HertzNumber,
+            ACTUAL_PHASE : Double) : PLLOutputClockConfig = PLLOutputClockConfig(TRIM, DEL, DIV, PHI, ENABLE, TRIM_BYPASSED, ACTUAL_FREQ, ACTUAL_PHASE)
+}
 case class PLLOutputClockConfig(
                                  TRIM: Int = 0,
                                  DEL : Int = 0,
@@ -61,7 +72,8 @@ case class PLLOutputClockConfig(
                                  PHI : Int = 0,
                                  ENABLE : Boolean = true,
                                  TRIM_BYPASSED: Boolean = false,
-                                 ACTUAL_FREQ : HertzNumber = 0 MHz,
+                                 //ACTUAL_FREQ : HertzNumber = 0 MHz,
+                                 ACTUAL_FREQ : Double = 0, // In hertz
                                  ACTUAL_PHASE : Double = 0
                                ) {
   override def equals(o: Any) = {
@@ -621,7 +633,7 @@ class PLL(val cfg: PLLConfig) extends BlackBox {
       val reset = BufferCC(!io.LOCK)
     }
 
-    val scale = cfg.ACTUAL_FREQ / ref_clk
+    val scale = HertzNumber(cfg.ACTUAL_FREQ) / ref_clk
 
     new ClockDomain(clk, reset = clkArea.reset, frequency = FixedRangeFrequency(min_ref_clk * scale, max_ref_clk * scale))
   })
@@ -998,6 +1010,9 @@ object PLLConfig {
     val lowest_freq = (spec.freq * (1 - spec.tolerance)).max(6.25 MHz)
     val highest_freq = (spec.freq * (1 + spec.tolerance)).min(800 MHz)
 
+    val spec_freq_d = spec.freq.toDouble
+    val spec_tol_d = spec.tolerance.toDouble
+
     val range_start = (vco_freq/highest_freq.toInt).toDouble.floor.toInt.min(128)
     val range_end = (vco_freq/lowest_freq.toInt).toDouble.ceil.toInt.min(128)
     val div_range = Array.range(range_start, range_end + 1)
@@ -1009,17 +1024,17 @@ object PLLConfig {
 
         val clk_freq = vco_freq / d
         (
-          (clk_freq - spec.freq.toInt).abs.toDouble, (actual_phase - spec.phaseOffset).abs,
+          (clk_freq.toDouble - spec.freq.toInt).abs, (actual_phase - spec.phaseOffset).abs,
           PLLOutputClockConfig(
             ENABLE = true,
             DIV = d - 1,
             DEL = phase - 1,
-            ACTUAL_FREQ = HertzNumber(clk_freq.toBigDecimal),
+            ACTUAL_FREQ = clk_freq.toDouble,
             ACTUAL_PHASE = actual_phase
           )
         )
       })
-      .map(r => (r._1 * 1e-6 + r._2 / 360.0, r._3, r._1 <= (spec.freq * spec.tolerance * vco_tolerance).toDouble))
+      .map(r => (r._1 * 1e-6 + r._2 / 360.0, r._3, r._1 <= (spec_freq_d * spec_tol_d * vco_tolerance)))
       .sortBy(r => r._1)
 
     (validOptions.head._1,
@@ -1085,7 +1100,7 @@ object PLLConfig {
 
   // Clk #, idiv, fbdiv, fractional
   def find_ref_clock(inputClock : ClockSpecification, outputClocks : PLLOutputClockConfig*) : Option[PLLClockConfig] = {
-
+    val inputClockFreq_d = inputClock.freq.toDouble
     def find_valid_settings_for_clk(clk : PLLOutputClockConfig): Option[PLLClockConfig] = {
       breakable {
         for (clki_div <- clki_div_range) {
@@ -1094,7 +1109,7 @@ object PLLConfig {
             break()
           }
           else if ((phase_detect_freq <= (500 MHz))) {
-            val clkfb_div = (clk.ACTUAL_FREQ * clki_div / inputClock.freq).toDouble
+            val clkfb_div = (clk.ACTUAL_FREQ * clki_div / inputClockFreq_d)
             if (clk.ACTUAL_PHASE == 0 && clkfb_div.round == clkfb_div && clkfb_div < (128)) {
               return Some(PLLClockConfig(CLKI_DIV = clki_div, CLKFB_DIV = clkfb_div.toInt))
             }

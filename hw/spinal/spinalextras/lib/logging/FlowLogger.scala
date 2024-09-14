@@ -166,7 +166,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
   val syscnt_stream = Stream(Bits(logBits bits))
   val needs_syscnt = RegInit(False)
   needs_syscnt := needs_syscnt | time_since_syscnt
-  syscnt_stream.payload := (syscnt ## ~B(0, index_size bits)).resized
+  syscnt_stream.payload := (syscnt ## ~B(0, (logBits - index_size - 64) bits)).resized
   syscnt_stream.valid := syscnt_stream.ready & needs_syscnt
 
   var minimum_time_bits = logBits
@@ -193,7 +193,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         }
       }
       val time_bits = logBits - output_stream.payload.getBitsWidth - index_size
-      require(time_bits > 0)
+      assert(time_bits > 0, s"${stream}[${idx}] has too many bits for logger ${logBits} ${output_stream.payload.getBitsWidth} ${index_size}")
 
       if (minimum_time_bits > time_bits) {
         minimum_time_bits = time_bits
@@ -204,14 +204,12 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       }
 
       val stamped_stream = output_stream.map(p => syscnt.resize(time_bits bits) ## p ## B(idx, index_size bits))
-      stamped_stream.ready := True
-      val encoded_fifo = StreamFifo(stamped_stream.payload.clone(), 8)
-      encoded_fifo.io.push.payload := stamped_stream.payload
-      encoded_fifo.io.push.valid := stamped_stream.valid && encoded_fifo.io.push.ready
-      when(stamped_stream.valid && !encoded_fifo.io.push.ready) {
+
+      when(stamped_stream.isStall) {
         dropped_events := dropped_events + 1
       }
-      encoded_fifo.io.pop
+
+      stamped_stream.stage()
     }
   }
 
@@ -224,6 +222,12 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
   def getTypeName(d_clk: (Data, ClockDomain)): String = {
     val (d, cd) = d_clk
+    d match {
+      case b: Bundle => if(b.getTypeString.contains("$")) d.getName() else b.getTypeString
+      case _ => d.getName()
+    }
+  }
+  def getTypeName(d: Data): String = {
     d match {
       case b: Bundle => if(b.getTypeString.contains("$")) d.getName() else b.getTypeString
       case _ => d.getName()
@@ -361,12 +365,11 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       defined.getOrElseUpdate(key, new mutable.ArrayBuffer[(Flow[Bits], Int)]) += ((flow, idx))
     }
 
+    //|${flows().map { case (x, idx) => s"#define ${x.getName().toUpperCase}_ID ${idx}" }.mkString("\n")}
     emit(s"""//Generated do not edit!
                |#include "stdint.h"
                |#include "stdbool.h"
                |#include "stdio.h"
-               |
-               |${flows().map { case (x, idx) => s"#define ${x.getName().toUpperCase}_ID ${idx}" }.mkString("\n")}
                |
                |#define ${this.name}_INDEX_BITS ${index_size}
                |#define ${this.name}_SIGNATURE 0x${signature.toHexString}
@@ -391,11 +394,11 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |    .sysclk_lsb = base[6],
                |    .fifo_occupancy = base[7],
                |    .inactive_mask = base[9],
-               |    .signature = base[10],
-               |    .dropped_events = base[11]
+               |    .signature = base[12],
+               |    .dropped_events = base[13]
                |  };
                |  for(int i = 0;i < ${flows().size};i++) {
-               |     rtn.event_counter[i] = base[48/4 + i];
+               |     rtn.event_counter[i] = base[56/4 + i];
                |  }
                |  return rtn;
                |}
@@ -417,7 +420,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |  uint32_t l[3];
                |} ${getName()}_transaction;
                |
-               |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask);
+               |void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask);
                |static bool ${getName()}_poll(${getName()}_ctx* ctx, volatile uint32_t* ip_location, uint32_t mask) {
                |  GlobalLogger_enable_memory_dump(ctx, ip_location, 1);
                |  struct ${getName()}_transaction tx = {0};
@@ -505,48 +508,61 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     emit(s"static const char* ${getName()}_get_id_name(int id) {")
     emit(s"   switch(id) {")
     for ((flow, idx) <- flows()) {
-      emit(s"   case ${flow.getName().toUpperCase}_ID: return ${'"' + flow.getName() + '"'};")
+      emit(s"   case ${idx}: return ${'"' + flow.getName() + '"'};")
     }
     emit("    }")
     emit("    return \"UNKNOWN\";")
     emit("}")
 
-    datas.foreach(d_clk => {
-      val (d, cd) = d_clk
+    val handledTypes = new mutable.HashSet[String]()
+    def emitTypeFunctions(d : Data): Unit = {
+      val typeName = getTypeName(d)
+
       var bitOffset = 0
       val time_bits = logBits - d.getBitsWidth - index_size
       emit(s"#define ${d.getName()}_TIME_BIT_WIDTH ${time_bits}")
-        d match {
-          case b: MultiData => {
-            var parent_name = if(d.parent != null) d.parent.name else s"${d.name}"
-            b.elements.foreach(x => {
-              val prefix = s"${parent_name}_${x._1}"
-              emit(s"#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}")
-              emit(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${x._2.getBitsWidth}")
-              bitOffset += x._2.getBitsWidth
-            })
-            emit(s"static ${getName()}_${getTypeName(d_clk)}_t ${getName()}_parse_${parent_name}(const ${getName()}_transaction* tx) {")
-            emit(s"\treturn (${getName()}_${getTypeName(d_clk)}_t) {")
-            b.elements.foreach(x => {
-              val prefix = s"${parent_name}_${x._1}"
-              emit(s"\t\t.${x._1} = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH),")
-            })
-            emit("\t};")
-            emit("}")
+      d match {
+        case b : MultiData => {
+          val parent_name = if(d.parent != null) d.parent.name else s"${d.name}"
 
-          }
-          case _ => {
-            val time_bits = logBits - d.getBitsWidth - index_size
-            val prefix = s"${d.getName()}"
-            emit(s"#define ${prefix}_TIME_BIT_WIDTH ${time_bits}")
+          if(handledTypes.contains(parent_name))
+            return
+          handledTypes.add(parent_name)
 
+          b.elements.foreach(x => {
+            val prefix = s"${parent_name}_${x._1}"
             emit(s"#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}")
-            emit(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${d.getBitsWidth}")
-            emit(s"static ${getName()}_${getTypeName(d_clk)}_t ${getName()}_parse_${d.getName()}(const ${getName()}_transaction* tx) {")
-            emit(s"\treturn (${getName()}_${getTypeName(d_clk)}_t){ .value = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH) };")
-            emit("}")
-          }
+            emit(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${x._2.getBitsWidth}")
+            bitOffset += x._2.getBitsWidth
+          })
+          emit(s"static ${getName()}_${typeName}_t ${getName()}_parse_${parent_name}(const ${getName()}_transaction* tx) {")
+          emit(s"\treturn (${getName()}_${typeName}_t) {")
+          b.elements.foreach(x => {
+            val prefix = s"${parent_name}_${x._1}"
+            emit(s"\t\t.${x._1} = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH),")
+          })
+          emit("\t};")
+          emit("}")
         }
+        case _ => {
+          val time_bits = logBits - d.getBitsWidth - index_size
+          val prefix = s"${d.getName()}"
+          emit(
+            s"""
+               |#define ${prefix}_TIME_BIT_WIDTH ${time_bits}
+               |#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}
+               |#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${d.getBitsWidth}
+               |static ${getName()}_${typeName}_t ${getName()}_parse_${d.getName()}(const ${getName()}_transaction* tx) {
+               |   return (${getName()}_${typeName}_t){ .value = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH) };
+               |}
+               |""".stripMargin)
+        }
+      }
+    }
+
+    datas.foreach(d_clk => {
+      val (d, cd) = d_clk
+      emitTypeFunctions(d)
     })
 
     emit(s"void ${getName()}_handle_transaction(${getName()}_ctx* ctx, uint8_t id, const struct ${getName()}_transaction* tx);")
@@ -557,7 +573,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     emit(
       s"""
          |static uint8_t ${getName()}_get_id(const struct ${getName()}_transaction* tx){ return ${getName()}_parse_field(tx, 1, ${index_size}); }
-         |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask){
+         |void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask){
          |    uint8_t id = ${getName()}_get_id(tx);
          |    if(mask & (1 << id)) return;
          |    ${getName()}_handle_transaction(ctx, id, tx);
@@ -566,7 +582,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
     for ((flow, idx) <- flows()) {
       emit(
-        s"""   case ${flow.getName().toUpperCase}_ID: {
+        s"""   case ${idx}: {
            |      ctx->last_timestamp = ${getName}_full_time(tx, ctx->last_timestamp, ${flow.getName()}_TIME_BIT_WIDTH);
            |      ${getName()}_handle_${getTypeName(datas(idx))}(ctx, ctx->last_timestamp, id, ${getName()}_parse_${flow.getName()}(tx));
            |      break;
@@ -623,14 +639,17 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     val manual_trigger = io.manual_trigger.clone()
     logger_port.driveFlow(manual_trigger, address + 32)
     io.manual_trigger <> manual_trigger.stage()
-    io.inactive_channels := logger_port.createReadAndWrite(io.inactive_channels, address + 36) init (0)
 
-    logger_port.createReadOnly(Bits(32 bits), address + 40) := signature
-    logger_port.createReadOnly(UInt(32 bits), address + 44) := RegNext(io.dropped_events)
+    val inactive_channels = Reg(io.inactive_channels.clone()) init(0)
+    io.inactive_channels := inactive_channels
+    logger_port.readAndWriteMultiWord(inactive_channels, address + 36)
+
+    logger_port.createReadOnly(Bits(32 bits), address + 48) := signature
+    logger_port.createReadOnly(UInt(32 bits), address + 52) := RegNext(io.dropped_events)
 
     io.flowFires.zipWithIndex.foreach(x => {
       val flowCnt = RegInit(U(0, 32 bits))
-      logger_port.createReadOnly(UInt(32 bits), address + 48 + x._2 * 4) := flowCnt
+      logger_port.createReadOnly(UInt(32 bits), address + 56 + x._2 * 4) := flowCnt
       when(x._1) {
         flowCnt := flowCnt + 1
       }

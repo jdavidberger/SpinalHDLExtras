@@ -61,9 +61,21 @@ object SignalLogger {
       (signal, stream.setName(signal.name))
     })
   }
-  def concat(name : String, signals: Data*): Seq[(Data, Flow[Bits])] = {
+  def concat(name : String, signals: Any*): Seq[(Data, Flow[Bits])] = {
+    val signal_elments = signals.flatMap(s => {
+      s match {
+        case b : Bundle => b.elements
+        case d : Data => Seq((d.getName(), d))
+        case e : Seq[(String, Data)] => e
+        case _ => {
+          assert(false)
+          Seq()
+        }
+      }
+    })
+
     val bundle = new Bundle {
-      elements.append(signals.map(x => (x.getName(), x)):_*)
+      elements.append(signal_elments:_*)
     }.setName(s"${name}")
     val bundleFlow = Flow(Bits(bundle.getBitsWidth bits)).setName(s"${name}Flow")
     bundleFlow.payload.assignFromBits(bundle.asBits)

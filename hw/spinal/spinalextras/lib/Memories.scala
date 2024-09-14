@@ -82,8 +82,9 @@ case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : B
     } else {
       s"${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
     }
-
   }
+
+  def asBits = new MemoryRequirement[Bits](Bits(dataType.getBitsWidth bits), num_elements, numReadWritePorts, numReadPorts, numWritePorts, needsMask, latencyRange)
 }
 
 class MemoryRequirementBits(dataWidth : Int, num_elements : BigInt, numReadWritePorts : Int, numReadPorts : Int, numWritePorts : Int) extends
@@ -165,9 +166,9 @@ class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory
   override lazy val latency : Int = prototype.latency
   override def requirements = reqs
 
-  val mod_width = dataType.getBitsWidth % prototype.bitsWidth
+  val mod_width = (dataType.getBitsWidth) % prototype.bitsWidth
   val needed_cols = dataType.getBitsWidth/ prototype.bitsWidth
-  val mod_memory = if(mod_width != 0) Seq(Memories(reqs.copy(dataType = Bits(mod_width bits), latencyRange = (prototype.latency, prototype.latency) ))) else Seq()
+  lazy val mod_memory = if(mod_width != 0 && (dataType.getBitsWidth > prototype.bitsWidth)) Seq(Memories(reqs.copy(dataType = Bits(mod_width bits), latencyRange = (prototype.latency, prototype.latency) ))) else Seq()
   var memories = Array.fill(needed_cols - 1)(direct_factory()) ++ Seq(prototype) ++ mod_memory
   memories.zipWithIndex.map(x => x._1.setName(s"memories_col_${x._2}_${x._1.actual_num_elements}x${x._1.bitsWidth}"))
 
@@ -395,20 +396,33 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
 //}
 
 object LatticeMemories {
+  var lram_available = 4
+
   def find_lram[T <: Data](requirements : MemoryRequirement[T]): Option[()=>HardwareMemory[Bits]] = {
-    if(requirements.numPorts > 2) return None
-    val latency = requirements.latencyRange._2.min(2)
-    (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
-      case (1, 1, 0) => Some(() => new PDPSC512K_Mem(target_latency = latency))
-      case (0, 0, 1) => Some(() => new DPSC512K_Mem())
-      case (0, 0, 2) => Some(() => new DPSC512K_Mem())
-    }
+    if(requirements.numPorts > 2)
+      return None
+
+    Some(
+      () => {
+        if(lram_available <= 0)
+          MemBackedHardwardMemory(requirements.copy(dataType = Bits(32 bits)))
+        else {
+          lram_available = lram_available - 1
+          val latency = requirements.latencyRange._2.min(2)
+          (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
+            case (1, 1, 0) => new PDPSC512K_Mem(target_latency = latency)
+            case (0, 0, 1) => new DPSC512K_Mem()
+            case (0, 0, 2) => new DPSC512K_Mem()
+          }
+        }
+      }
+    )
   }
 
   def apply[T <: Data](memKind : MemTechnologyKind)(requirements : MemoryRequirement[T]): HardwareMemory[T] = {
     val allocationSize = (requirements.dataType.getBitsWidth.min(32) * requirements.num_elements) / 8
 
-    val shouldUseLRam = memKind.technologyKind.toLowerCase == "lram" || allocationSize > (3 KiB)
+    val shouldUseLRam = lram_available > 0 && (memKind.technologyKind.toLowerCase == "lram" || allocationSize > (6 KiB))
     val lram_factory = find_lram(requirements)
 
     if(shouldUseLRam && lram_factory.isDefined) {

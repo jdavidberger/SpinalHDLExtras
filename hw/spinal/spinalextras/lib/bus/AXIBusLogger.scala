@@ -35,7 +35,7 @@ object AXIBusLogger {
         r.toFlowFire.takeWhen(allowRead).setName(r.getName()),
         w.toFlowFire.takeWhen(allowWrite).setName(w.getName()),
         b.toFlowFire.takeWhen(allowWrite).setName(b.getName()),
-      ).map(x => FlowLogger.asFlow(x)),
+      ).map(x => FlowLogger.asFlow(x.stage())),
         Seq(
           aw.valid,
           ar.valid,
