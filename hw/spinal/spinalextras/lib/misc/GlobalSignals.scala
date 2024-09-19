@@ -18,7 +18,7 @@ object GlobalSignals {
     var intermediate : T = payload
     var new_signal : Option[T] = None
 
-    var c = Component.current.parent
+    var c = payload.component.parent
     while(c != topComponent) {
       val ctx = Component.push(c)
 

@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib.bus.misc.{DefaultMapping, MaskMapping, SizeMapping}
 import spinal.lib.bus.simple.{PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinal.lib._
+import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.HardwareMemory.{HardwareMemoryReadWriteCmd, HardwareMemoryWriteCmd}
 import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.memory.MemoryPoolFIFOs.splitReadWrite
@@ -82,4 +83,7 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
 
   sysBus.cancel()
 
+  def attach_bus(busSlaveFactory: BusIf): Unit = {
+    fifos.foreach(_.attach_bus(busSlaveFactory))
+  }
 }

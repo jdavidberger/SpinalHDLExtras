@@ -170,7 +170,7 @@ class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory
   val needed_cols = dataType.getBitsWidth/ prototype.bitsWidth
   lazy val mod_memory = if(mod_width != 0 && (dataType.getBitsWidth > prototype.bitsWidth)) Seq(Memories(reqs.copy(dataType = Bits(mod_width bits), latencyRange = (prototype.latency, prototype.latency) ))) else Seq()
   var memories = Array.fill(needed_cols - 1)(direct_factory()) ++ Seq(prototype) ++ mod_memory
-  memories.zipWithIndex.map(x => x._1.setName(s"memories_col_${x._2}_${x._1.actual_num_elements}x${x._1.bitsWidth}"))
+  memories.zipWithIndex.map(x => x._1.setName(s"memories_col_${x._2}_${x._1.actual_num_elements}x${x._1.bitsWidth}_${x._1.getClass.getSimpleName}"))
 
   override lazy val actual_num_elements = memories.map(_.num_elements).min
 

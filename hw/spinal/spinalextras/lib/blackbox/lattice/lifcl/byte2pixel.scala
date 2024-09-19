@@ -2,13 +2,15 @@ package spinalextras.lib.blackbox.lattice.lifcl
 
 
 import spinal.core._
+import spinal.lib.bus.regif.AccessType.{ROV, WC}
+import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinal.lib.{Flow, master, slave}
 import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
 import spinalextras.lib.mipi
 import spinalextras.lib.mipi.{MIPIConfig, MIPIPacketHeader, PixelFlow}
 
 class byte2pixel(cfg : MIPIConfig, enable_misc_signals : Boolean = true, byte_cd: ClockDomain = null, pixel_cd: ClockDomain = null,
-                 var ip_name : String = null, enable_logging : Boolean = true, clock_suffix : Boolean = false) extends BlackBox {
+                 var ip_name : String = null, enable_logging : Boolean = true, clock_suffix : Boolean = true) extends BlackBox {
   if(ip_name == null) {
     val byte_f = if(byte_cd == null || byte_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_byte${byte_cd.frequency.getValue.decomposeString.replace(" ", "")}"
     val pixel_f = if(pixel_cd == null || pixel_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_pixel${pixel_cd.frequency.getValue.decomposeString.replace(" ", "")}"
@@ -30,9 +32,9 @@ class byte2pixel(cfg : MIPIConfig, enable_misc_signals : Boolean = true, byte_cd
     val wc_i = in UInt(16 bits)
     val reset_pixel_n_i = in Bool()
     val clk_pixel_i = in Bool()
-    val fv_o = out Bool()
-    val lv_o = out Bool()
-    val pd_o = out UInt(cfg.DT_WIDTH bits)
+//    val fv_o = out Bool()
+//    val lv_o = out Bool()
+//    val pd_o = out UInt(cfg.DT_WIDTH bits)
 
     val pixelFlow = master(PixelFlow(cfg.DT_WIDTH))
     pixelFlow.frame_valid.setName("fv_o")
@@ -115,4 +117,28 @@ class byte2pixel(cfg : MIPIConfig, enable_misc_signals : Boolean = true, byte_cd
       )
     )
   }
-}
+
+  def attach_bus(busSlaveFactory: BusIf): Unit = {
+    Component.current.withAutoPull()
+
+    val sig = busSlaveFactory.newReg("b2p start")
+    val signature = sig.field(Bits(32 bit), ROV, BigInt("F000A801", 16), "ip sig")
+
+    for(error_signal <- Seq(
+      io.debug_signals.mem_re_o,
+      io.debug_signals.mem_we_o,
+      io.debug_signals.fifo_full_o,
+      io.pixelFlow.line_valid,
+      io.pixelFlow.frame_valid,
+      io.payload.valid
+    )) {
+      val reg = busSlaveFactory.newReg(error_signal.name)(SymbolName(s"${error_signal.name}"))
+      val cnt = reg.field(UInt(32 bits), WC, error_signal.name)(SymbolName(s"${error_signal.name}_cnt")) init(0)
+      when(error_signal) {
+        cnt := cnt + 1
+      }
+    }
+
+  }
+
+  }

@@ -38,14 +38,17 @@ class MemoryPoolFifoFactory[T <: Data] {
 
   def build(technologyKind: MemTechnologyKind = auto,
             mem_factory: (MemoryRequirement[T], MemTechnologyKind) => HardwareMemory[T] = Memories.apply[T] _,
-            localFifoDepth: Int = 0): Unit = {
+            localFifoDepth: Int = 0): MemoryPoolFIFOs[T] = {
     val fifos = interfaces
     val sizes = interfaces.map(_.depth)
+    if(interfaces.isEmpty)
+      return null
 
     val dataType = interfaces.map(_.dataType).maxBy(_.getBitsWidth)
     val pool = new MemoryPoolFIFOs(dataType, sizes, technologyKind, mem_factory, localFifoDepth)
     pool.io.fifos.zip(fifos).map(x => {
       x._1 <> x._2
     })
+    pool
   }
 }

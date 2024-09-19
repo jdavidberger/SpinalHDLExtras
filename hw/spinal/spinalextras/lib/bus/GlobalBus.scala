@@ -108,10 +108,23 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
   def bus_interface(port : T, addressMapping: SizeMapping) : BusIf
   def slave_factory(port : T) : BusSlaveFactory
 
-
-  def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
+  var shared_bus_interfaces = new mutable.ArrayBuffer[(SizeMapping, BusIf)]
+  def add_shared_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
     val port = add_slave(name, mapping, tags:_*)
     val busIf = bus_interface(port, mapping)
+    busIf.regPtrReAnchorAt(mapping.base)
+
+    shared_bus_interfaces.append((mapping, busIf))
+
+    busIf
+  }
+
+  def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
+    val busIf = shared_bus_interfaces.filter(_._1.overlap(mapping)).headOption.map(_._2).getOrElse({
+      val port = add_slave(name, mapping, tags:_*)
+      val busIf = bus_interface(port, mapping)
+      busIf
+    })
     busIf.regPtrReAnchorAt(mapping.base)
     busIf
   }

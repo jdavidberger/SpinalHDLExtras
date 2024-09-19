@@ -53,6 +53,7 @@ class GlobalLogger {
 
   def add(s: (Data, Flow[Bits])*): Unit = {
     assert(!built)
+    assert(ClockDomain.current != null)
     signals.appendAll(s.map(x => (x._1, topify(x._2), ClockDomain.current)))
   }
 
@@ -122,7 +123,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     val captured_events = out(UInt(32 bits))
     val sysclk = out(UInt(64 bits))
 
-    val flowFires = datas.map(_ => out Bool())
+    val flowFires = datas.zipWithIndex.map(x => (out Bool()).setPartialName(s"flowFires${x._2}_${x._1._1.getName}"))
   }
   SimPublic(io.dropped_events)
   SimPublic(io.captured_events)
@@ -209,7 +210,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         dropped_events := dropped_events + 1
       }
 
-      stamped_stream.stage()
+      stamped_stream.stage().s2mPipe()
     }
   }
 
@@ -218,7 +219,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     time_since_syscnt.clear()
   }
 
-  io.log <> StreamArbiterFactory.lowerFirst.noLock.on(encoded_streams ++ Seq(syscnt_stream.stage()))
+  io.log <> StreamArbiterFactory.lowerFirst.noLock.on(encoded_streams ++ Seq(syscnt_stream.stage())).stage()
 
   def getTypeName(d_clk: (Data, ClockDomain)): String = {
     val (d, cd) = d_clk
@@ -366,7 +367,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     }
 
     //|${flows().map { case (x, idx) => s"#define ${x.getName().toUpperCase}_ID ${idx}" }.mkString("\n")}
-    emit(s"""//Generated do not edit!
+    emit(s"""#pragma once
+               |//Generated do not edit!
                |#include "stdint.h"
                |#include "stdbool.h"
                |#include "stdio.h"
@@ -420,7 +422,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
                |  uint32_t l[3];
                |} ${getName()}_transaction;
                |
-               |void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask);
+               |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask);
                |static bool ${getName()}_poll(${getName()}_ctx* ctx, volatile uint32_t* ip_location, uint32_t mask) {
                |  GlobalLogger_enable_memory_dump(ctx, ip_location, 1);
                |  struct ${getName()}_transaction tx = {0};
@@ -573,7 +575,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     emit(
       s"""
          |static uint8_t ${getName()}_get_id(const struct ${getName()}_transaction* tx){ return ${getName()}_parse_field(tx, 1, ${index_size}); }
-         |void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask){
+         |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask){
          |    uint8_t id = ${getName()}_get_id(tx);
          |    if(mask & (1 << id)) return;
          |    ${getName()}_handle_transaction(ctx, id, tx);
@@ -633,8 +635,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     logger_port.createReadOnly(Bits(32 bits), address + 24) := io.sysclk.resize(32).asBits
     logger_port.createReadOnly(UInt(32 bits), address + 28) := RegNext(loggerFifo.io.occupancy).resized
 
-    loggerFifo.io.flush := False
-    logger_port.onWrite(address + 28)(loggerFifo.io.flush := True)
+    loggerFifo.io.flush := RegNext(logger_port.isWriting(address + 28))
 
     val manual_trigger = io.manual_trigger.clone()
     logger_port.driveFlow(manual_trigger, address + 32)

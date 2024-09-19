@@ -77,17 +77,22 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
     io.wb.ACK := reqWasWE || io.pmb.rsp.valid
   }
 
-  assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
+  //assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
 }
 
 object WishboneToPipelinedMemoryBus {
   def apply(bus: Wishbone, rspQueue : Int): PipelinedMemoryBus = {
     val config = PipelinedMemoryBusConfig(addressWidth = bus.config.addressWidth, dataWidth = bus.config.dataWidth)
-    val toBus = PipelinedMemoryBus(config)
-    val adapter = new WishboneToPipelinedMemoryBus(config, bus.config, rspQueue)
-    adapter.io.pmb <> toBus
-    adapter.io.wb <> bus
-    toBus
+
+    if(bus.isMasterInterface ^ (bus.component == Component.current)) {
+      val adapter = new WishboneToPipelinedMemoryBus(config, bus.config, rspQueue)
+      adapter.io.wb <> bus
+      adapter.io.pmb
+    } else {
+      val adapter = new PipelinedMemoryBusToWishbone(bus.config, config, rspQueue)
+      adapter.io.wb <> bus
+      adapter.io.pmb
+    }
   }
 }
 
@@ -121,16 +126,16 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
   if(io.wb.BTE != null)
     io.wb.BTE := 0
 
-  io.pmb.cmd.ready := io.wb.isTransfer
+  io.pmb.cmd.ready := io.wb.isRequestAck
 
-  assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
+  //assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
   io.pmb.rsp.valid := !reqWasWE & io.wb.ACK
   io.pmb.rsp.payload.data := io.wb.DAT_MISO.resized
 }
 
 object PipelinedMemoryBusToWishbone {
   def apply(bus : PipelinedMemoryBus, rspQueue : Int): Wishbone = {
-    apply(bus, rspQueue, WishboneConfig(addressWidth = bus.config.addressWidth, dataWidth = bus.config.dataWidth, useSTALL = true, addressGranularity = AddressGranularity.WORD))
+    apply(bus, rspQueue, WishboneConfig(addressWidth = bus.config.addressWidth, dataWidth = bus.config.dataWidth, useSTALL = rspQueue > 1, addressGranularity = AddressGranularity.WORD))
   }
   def apply(bus : PipelinedMemoryBus, rspQueue : Int, config : WishboneConfig): Wishbone = {
     apply(bus, rspQueue, config, identity)

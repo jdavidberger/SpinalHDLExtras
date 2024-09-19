@@ -3,7 +3,7 @@ package spinalextras.lib.bus
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba4.axi._
-import spinal.lib.bus.misc.{AddressMapping, AllMapping}
+import spinal.lib.bus.misc._
 import spinalextras.lib.logging.FlowLogger
 
 import scala.language.postfixOps
@@ -26,16 +26,21 @@ object AXIBusLogger {
         }
       }
 
-      val allowWrite = RegNextWhen(addressMapping.hit(aw.payload.addr), aw.fire, False)
-      val allowRead  = RegNextWhen(addressMapping.hit(ar.payload.addr), ar.fire, False)
+      val (allowWrite, allowRead) =
+        if(addressMapping == AllMapping) {
+          (True, True)
+        } else {
+          (RegNextWhen(addressMapping.hit(aw.payload.addr), aw.fire, False),
+            RegNextWhen(addressMapping.hit(ar.payload.addr), ar.fire, False))
+        }
 
       (Seq(
-        aw.toFlowFire.takeWhen(addressMapping.hit(aw.payload.addr)).setName(aw.getName()),
-        ar.toFlowFire.takeWhen(addressMapping.hit(ar.payload.addr)).setName(ar.getName()),
-        r.toFlowFire.takeWhen(allowRead).setName(r.getName()),
-        w.toFlowFire.takeWhen(allowWrite).setName(w.getName()),
-        b.toFlowFire.takeWhen(allowWrite).setName(b.getName()),
-      ).map(x => FlowLogger.asFlow(x.stage())),
+        aw.toFlowFire.stage().takeWhen(addressMapping.hit(aw.payload.addr)).setName(aw.getName()),
+        ar.toFlowFire.stage().takeWhen(addressMapping.hit(ar.payload.addr)).setName(ar.getName()),
+        r.toFlowFire.stage().takeWhen(allowRead).setName(r.getName()),
+        w.toFlowFire.stage().takeWhen(allowWrite).setName(w.getName()),
+        b.toFlowFire.stage().takeWhen(allowWrite).setName(b.getName()),
+      ).map(x => FlowLogger.asFlow(x)),
         Seq(
           aw.valid,
           ar.valid,

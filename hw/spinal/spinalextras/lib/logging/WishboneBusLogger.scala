@@ -37,7 +37,8 @@ object WishboneBusLogger {
       wbLog.ADR := wb.ADR
       wbLog.WE := wb.WE
       wbLog.DAT := Mux(wb.WE, wb.DAT_MOSI, wb.DAT_MISO)
-      wbLog.SEL := wb.SEL
+      if(wbLog.SEL != null)
+        wbLog.SEL := wb.SEL
 
       val stream = Flow(Bits(wbLog.getBitsWidth bits)).setName(wb.name)
       stream.payload := wbLog.asBits

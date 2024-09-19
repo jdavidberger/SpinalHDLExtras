@@ -3,6 +3,8 @@ package spinalextras.lib.memory
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
+import spinal.lib.bus.regif.AccessType.{RO, RW}
+import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinal.lib.bus.simple._
 import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.testing.test_funcs
@@ -33,13 +35,12 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
   var readFifo = new StreamFifo(
     dataType = dataType,
     depth = mem_latency,
-    withAsyncRead = true,
-    withBypass = true
+    forFMax = true
   )
 
   io.memoryValid.ready := readBus.cmd.fire
   val outstanding = CounterUpDown(mem_latency, incWhen = readBus.cmd.fire && !readBus.cmd.write, decWhen = readFifo.io.push.fire)
-  when(io.memoryValid.valid && readFifo.io.availability > outstanding) {
+  when(io.memoryValid.valid && RegNext(readFifo.io.availability > (outstanding.value + 1))) {
     readBus.cmd.valid := True
   }
 
@@ -123,5 +124,32 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
 
     val empty = ramOccupancy === 0 && inFlight.value === 0 // && readFifo.io.occupancy === 0
     io.empty := empty
+  }
+
+  def attach_bus(busSlaveFactory: BusIf): Unit = {
+    for(v : Data <- Seq(io.occupancy, flushArea.ramOccupancy.value, flushArea.inFlight.value, flushArea.full)) {
+      val reg = busSlaveFactory.newReg(f"${v.name} ${name}")(SymbolName(v.name))
+      val field = reg.field(Bits(32 bits), RO, s"${name}_occ")
+      field := v.asBits.resized
+    }
+
+    val total_push_reg = busSlaveFactory.newReg(f"total_push ${name}")
+    val total_push = total_push_reg.field(UInt(32 bits), RW, s"${name}_total_push")
+    when(io.push.fire) {
+      total_push := total_push + 1
+    }
+
+    val total_pop_reg = busSlaveFactory.newReg(f"total_pop ${name}")
+    val total_pop = total_pop_reg.field(UInt(32 bits), RW, s"${name}_total_pop")
+    when(io.pop.fire) {
+      total_pop := total_pop + 1
+    }
+
+    val highwater_reg = busSlaveFactory.newReg(f"highwater ${name}")
+    val highwater = highwater_reg.field(cloneOf(io.occupancy), RW, s"${name}_highwater")
+    when(RegNext(io.occupancy > highwater)) {
+      highwater := io.occupancy
+    }
+
   }
 }
