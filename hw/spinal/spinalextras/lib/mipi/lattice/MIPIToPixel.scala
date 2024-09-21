@@ -49,6 +49,10 @@ case class MIPIToPixel(cfg : MIPIConfig,
   bytes_to_pixels.assignMIPIBytes(mipi_to_bytes.MIPIBytes)
   io.pixelFlow <> bytes_to_pixels.io.pixelFlow
 
+  def byte_clock_domain() : ClockDomain = {
+    mipi_to_bytes.byte_cd()
+  }
+
   def attach_bus(busSlaveFactory: BusIf): Unit = {
     mipi_to_bytes.attach_bus(busSlaveFactory)
     bytes_to_pixels.attach_bus(busSlaveFactory)
