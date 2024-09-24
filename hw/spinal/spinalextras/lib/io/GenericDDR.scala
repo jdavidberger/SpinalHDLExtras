@@ -28,6 +28,7 @@ class GenericODDR(input_per_output : Int = 2, latency : Int = 1) extends ODDR(in
 
     val g = if(input_per_output > 2) {
       val gc = Counter((input_per_output + 1) / 2) init(0)
+      gc.addTag (crossClockDomain)
       gc.setName("gc")
 
       when(IN.valid) {

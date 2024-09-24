@@ -5,6 +5,8 @@ import spinal.lib._
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.io.lattice.LatticeTristateBuffer
 
+import scala.language.postfixOps
+
 abstract class TristateBuffer() extends Component {
   val io = new Bundle {
     val input, output_enable = in Bool()
@@ -29,9 +31,9 @@ object TristateBuffer {
   def apply() = factory(())
 }
 
-case class TristateBufferArray[T <: BitVector](payloadType : HardType[T], gear : Int = 2) extends Component {
+case class TristateBufferArray[T <: BitVector](payloadType : HardType[T]) extends Component {
   val bitsWidth = payloadType.getBitsWidth
-
+  setDefinitionName(s"Tristate_w${bitsWidth}")
   val io = new Bundle {
     val output_enable = in Bool()
     val input = in (payloadType)
