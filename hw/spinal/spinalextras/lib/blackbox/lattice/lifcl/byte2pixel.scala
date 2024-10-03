@@ -15,7 +15,7 @@ class byte2pixel(cfg : MIPIConfig, enable_misc_signals : Boolean = true, byte_cd
     val byte_f = if(byte_cd == null || byte_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_byte${byte_cd.frequency.getValue.decomposeString.replace(" ", "")}"
     val pixel_f = if(pixel_cd == null || pixel_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_pixel${pixel_cd.frequency.getValue.decomposeString.replace(" ", "")}"
     val clock_suffix_str = if(clock_suffix) s"${byte_f}${pixel_f}" else ""
-    ip_name = s"byte2pixel_${cfg.NUM_RX_LANES}x${cfg.RX_GEAR}_${cfg.ref_dt}_p${cfg.DT_WIDTH}${clock_suffix_str}"
+    ip_name = s"byte2pixel_${cfg.NUM_RX_LANES}x${cfg.RX_GEAR}_${cfg.ref_dt}_l${cfg.OUTPUT_LANES}${clock_suffix_str}"
   }
 
   val io = new Bundle {
@@ -32,14 +32,20 @@ class byte2pixel(cfg : MIPIConfig, enable_misc_signals : Boolean = true, byte_cd
     val wc_i = in UInt(16 bits)
     val reset_pixel_n_i = in Bool()
     val clk_pixel_i = in Bool()
-//    val fv_o = out Bool()
-//    val lv_o = out Bool()
-//    val pd_o = out UInt(cfg.DT_WIDTH bits)
 
-    val pixelFlow = master(PixelFlow(cfg.DT_WIDTH))
-    pixelFlow.frame_valid.setName("fv_o")
-    pixelFlow.line_valid.setName("lv_o")
-    pixelFlow.payload.setName("pd_o")
+
+    val lv_o, fv_o = out Bool()
+    val pd_o = out Bits(cfg.DT_WIDTH bits)
+
+    def pixelFlow = {
+      val rtn = PixelFlow(cfg.DT_WIDTH)
+      //val buffer = Reg(Bits((data_latency - 1) bits)) init(0)
+      //buffer := ((buffer << 1) ## fv_o).resized
+      rtn.frame_valid := fv_o
+      rtn.line_valid := lv_o
+      rtn.payload := pd_o
+      rtn
+    }
 
     val p_odd_o = out UInt(2 bits)
     val pixcnt_c_o = out UInt(19 bits)
@@ -138,7 +144,6 @@ class byte2pixel(cfg : MIPIConfig, enable_misc_signals : Boolean = true, byte_cd
         cnt := cnt + 1
       }
     }
-
   }
 
   }

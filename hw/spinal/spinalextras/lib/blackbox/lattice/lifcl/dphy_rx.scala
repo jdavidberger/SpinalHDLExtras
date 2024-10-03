@@ -7,7 +7,7 @@ import spinal.lib._
 import spinal.lib.bus.misc.BusSlaveFactory
 import spinal.lib.bus.regif.AccessType._
 import spinal.lib.bus.regif.{BusIf, SymbolName}
-import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.mipi.{MIPIConfig, MIPIIO, MIPIPacketHeader}
 import spinalextras.lib.misc.{AsyncToSyncReset, ClockMeasure, GlobalSignals}
 
@@ -22,38 +22,40 @@ class dphy_rx(cfg : MIPIConfig,
               sync_cd: ClockDomain = null,
               byte_cd: ClockDomain = null,
               var byte_freq: HertzNumber = null,
-              var link_freq: HertzNumber = null,
+              var rx_line_rate: HertzNumber = null,
               clock_suffix : Boolean = true,
               cfg_datsettle_cyc : Boolean = true,
-              var ip_name : String = null) extends BlackBox {
+              var ip_name : String = null,
+             is_continous_clock : Option[Boolean] = None) extends BlackBox {
   val is_soft_phy = true
-  val is_continous_clock = byte_cd == null
+  val config_for_continous_clock = is_continous_clock.getOrElse(byte_cd == null)
   if(byte_freq == null) {
     require(byte_cd != null);
     byte_freq = byte_cd.frequency.getValue
   }
-  if(link_freq == null) {
-    link_freq = byte_freq * cfg.NUM_RX_LANES * cfg.RX_GEAR / 2
+  if(rx_line_rate == null) {
+    rx_line_rate = byte_freq * cfg.NUM_RX_LANES * cfg.RX_GEAR / 2
   }
+  val dphy_clk_freq = rx_line_rate / 2
 
-  val _enable_fifo_misc_signals = enable_fifo_misc_signals.getOrElse(!(is_soft_phy && is_continous_clock))
+  val _enable_fifo_misc_signals = enable_fifo_misc_signals.getOrElse(!(is_soft_phy && config_for_continous_clock))
 
   if(ip_name == null) {
     val sync_f = if(sync_cd == null || sync_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_sync${sync_cd.frequency.getValue.decomposeString.replace(" ", "")}"
     val byte_f = s"_byte${byte_freq.decomposeString.replace(" ", "")}"
     val clock_suffix_str = if(clock_suffix) s"${sync_f}${byte_f}" else ""
-    val cont_string = if (is_continous_clock) "cont_" else ""
+    val cont_string = if (config_for_continous_clock) "cont_" else ""
     ip_name = s"dphy_rx_${cont_string}${cfg.NUM_RX_LANES}x${cfg.RX_GEAR}${clock_suffix_str}"
   }
 
-  def solve_datasettle(byte_freq : HertzNumber, dphy_clk_freq : HertzNumber): Int = {
+  def solve_datasettle(byte_freq : HertzNumber, ui_freq : HertzNumber): Int = {
     val TCLK_BYTE = byte_freq.toTime
 
-    val UI = dphy_clk_freq.toTime / 2
-    (((85 ns) + (UI * 6)).toDouble  / TCLK_BYTE.toDouble).ceil.toInt
+    val UI = ui_freq.toTime / 2
+    (((85 ns) + (UI * 6)).toDouble  / TCLK_BYTE.toDouble).ceil.toInt - (if(is_soft_phy) 3 else 0)
   }
 
-  val default_datsettlecyc = solve_datasettle(byte_freq, link_freq)
+  val default_datsettlecyc = solve_datasettle(byte_freq, rx_line_rate)
 
   val io = new Bundle {
     /**
@@ -94,14 +96,14 @@ class dphy_rx(cfg : MIPIConfig,
      * clock domain. The signal driving this port must be
      * synchronized to the clk_lp_hs_ctrl.
      */
-    val reset_lp_n_i = !is_continous_clock generate in(Bool())
+    val reset_lp_n_i = !config_for_continous_clock generate in(Bool())
     /**
      * Clocks the logic that detects the Rx D-PHY clock lane
      * LP <-> HS transitions. The minimum frequency for
      * clk_lp_ctrl_i is 40 MHz, as the minimum TLPX is 50 ns
      * (1/25 ns = 40 MHz).
      */
-    val clk_lp_ctrl_i = !is_continous_clock generate in(Bool())
+    val clk_lp_ctrl_i = !config_for_continous_clock generate in(Bool())
 
     /**
      * Continuously running byte clock. This is div8 (in Gear
@@ -145,7 +147,8 @@ class dphy_rx(cfg : MIPIConfig,
 
     def byte_clock_domain(): ClockDomain = {
       if(byte_cd == null) {
-        new ClockDomain(clk_byte_hs_o, reset_byte_fr_n_i, config = ClockDomain.current.config.copy(resetKind = SYNC, resetActiveLevel = LOW))
+        new ClockDomain(clk_byte_hs_o, reset_byte_fr_n_i, config = ClockDomain.current.config.copy(resetKind = SYNC, resetActiveLevel = LOW),
+          frequency = FixedFrequency(byte_freq))
       } else {
         byte_cd
       }
@@ -180,7 +183,12 @@ class dphy_rx(cfg : MIPIConfig,
       val payload_crc_o = out(Bits(16 bits))
       val payload_crcvld_o = out Bool()
 
-      val ecc_check_o, ecc_byte_error_o, ecc_1bit_error_o, ecc_2bit_error_o = out Bool()
+      val ecc_info = master(Flow(Vec(Bool(), 3)))
+      ecc_info.valid.setName("ecc_check_o")
+      ecc_info.payload(0).setName("ecc_1bit_error_o")
+      ecc_info.payload(1).setName("ecc_2bit_error_o")
+      ecc_info.payload(2).setName("ecc_byte_error_o")
+
       val ref_dt_i = in(Bits(6 bits)) default(cfg.ref_dt.id)
     }.setPartialName("")
 
@@ -347,7 +355,7 @@ class dphy_rx(cfg : MIPIConfig,
     bytes.valid := io.packet_parser.lp_en_o || io.packet_parser.sp_en_o
     bytes.is_long_packet := io.packet_parser.lp_en_o
     bytes.is_long_av_packet := io.packet_parser.lp_av_en_o
-    bytes
+    bytes.setName("MIPIPacketHeader")
   }
 
   def MIPIBytes = {
@@ -367,8 +375,10 @@ class dphy_rx(cfg : MIPIConfig,
     if(byte_cd != null) {
       io.reset_byte_fr_n_i := ~byte_cd.readResetWire
       io.clk_byte_fr_i := byte_cd.readClockWire
-      io.clk_lp_ctrl_i := byte_cd.readClockWire
-      io.reset_lp_n_i := ~byte_cd.readResetWire
+      if(io.clk_lp_ctrl_i != null)
+        io.clk_lp_ctrl_i := byte_cd.readClockWire
+      if(io.reset_lp_n_i != null)
+        io.reset_lp_n_i := ~byte_cd.readResetWire
     } else {
       io.reset_byte_fr_n_i := ~AsyncToSyncReset(io.clk_byte_hs_o, sync_cd.readResetWire)
       io.clk_byte_fr_i := io.clk_byte_hs_o
@@ -387,7 +397,8 @@ class dphy_rx(cfg : MIPIConfig,
 
   enable_logging generate new ClockingArea(byte_cd()) {
     GlobalLogger(
-      SignalLogger.concat("MIPI_misc_debug",
+      FlowLogger.flows(MIPIPacketHeader),
+      SignalLogger.concat("MIPI_misc_debug" + (if (io.fifo_misc_signals != null) "_w_fifo" else ""),
         io.ready_o,
         io.misc_signals,
         if(io.fifo_misc_signals != null) io.fifo_misc_signals.elements.filterNot(_._1.contains("empty")) else Seq()
@@ -396,10 +407,7 @@ class dphy_rx(cfg : MIPIConfig,
         SignalLogger.concat("MIPI_misc_error",
           io.fifo_misc_signals.elements.filterNot(e => e._1.contains("empty") || e._1.contains("state"))
         )
-      } else Seq(),
-      SignalLogger.concat("MIPI_packet_debug",
-        io.packet_parser,
-      )
+      } else Seq()
     )
   }
 
@@ -407,8 +415,9 @@ class dphy_rx(cfg : MIPIConfig,
     Component.current.withAutoPull()
     withAutoPull()
 
-    val clk_meas_short = ClockMeasure(io.clk_byte_hs_o, 0x20000)
-    val clk_meas_long = ClockMeasure(io.clk_byte_hs_o, 0x4000000)
+    val clk_byte = io.clk_byte_hs_o.setName("clk_byte_hs_o")
+    val clk_meas_short = ClockMeasure(clk_byte, 0x20000)
+    val clk_meas_long = ClockMeasure(clk_byte, 0x4000000)
 
     val sig_reg = busSlaveFactory.newReg("dphy sig")
     val signature = sig_reg.field(Bits(32 bit), ROV, BigInt("F000A802", 16), "ip sig")
@@ -417,8 +426,8 @@ class dphy_rx(cfg : MIPIConfig,
 
     for((clk_meas, name) <- Seq((clk_meas_long, "long"), (clk_meas_short, "short"))) {
       val dphy_reg = busSlaveFactory.newReg(f"dphy ${name} clk reg")
-      val dphy_status = dphy_reg.field(clk_meas.io.output_cnt.clone(), RO, s"${name}_CLK_cnt")
-      dphy_status := clk_meas.io.output_cnt
+      val dphy_status = dphy_reg.field(clk_meas.io.output_cnt.payload.clone(), RO, s"${name}_CLK_cnt")
+      dphy_status := clk_meas.io.output_cnt.payload
 
       clk_meas.io.flush := lastWriteAddress === (U(dphy_reg.addr) ## True).resized
     }
@@ -434,18 +443,21 @@ class dphy_rx(cfg : MIPIConfig,
 
     for(error_signal <- Seq(
       io.hs_sync_o.rise().setPartialName("hs_sync_rise"),
-      io.misc_signals.term_clk_en_o.rise().setPartialName("term_clk_en_rise"),
-      io.misc_signals.term_d_en_o(0).rise().setPartialName("term_d_en_o0"),
+      BufferCC(io.misc_signals.term_clk_en_o).rise().setPartialName("term_clk_en_rise"),
+      BufferCC(io.misc_signals.term_d_en_o(0)).rise().setPartialName("term_d_en_o0"),
       io.misc_signals.hs_d_en_o,
       io.misc_signals.cd_clk_o,
       io.misc_signals.cd_d0_o,
-      io.packet_parser.ecc_check_o, io.packet_parser.ecc_byte_error_o, io.packet_parser.ecc_1bit_error_o, io.packet_parser.ecc_2bit_error_o,
+      io.packet_parser.ecc_info.valid,
+      io.packet_parser.ecc_info.payload(0),
+      io.packet_parser.ecc_info.payload(1),
+      io.packet_parser.ecc_info.payload(2),
       io.packet_parser.payload_en_o,
       io.packet_parser.lp_en_o, io.packet_parser.lp_av_en_o, io.packet_parser.sp_en_o,
       io.packet_parser.payload_crcvld_o) ++ fifo_signals) {
       val reg = busSlaveFactory.newReg(error_signal.name)(SymbolName(s"${error_signal.name}"))
       val cnt = reg.field(UInt(32 bits), WC, error_signal.name)(SymbolName(s"${error_signal.name}_cnt")) init(0)
-      when(error_signal) {
+      when(BufferCC(error_signal)) {
         cnt := cnt + 1
       }
     }

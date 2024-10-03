@@ -220,19 +220,16 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
   }
 
   io.log <> StreamArbiterFactory.lowerFirst.noLock.on(encoded_streams ++ Seq(syscnt_stream.stage())).stage()
-
-  def getTypeName(d_clk: (Data, ClockDomain)): String = {
-    val (d, cd) = d_clk
+  def getTypeName(d: Data): String = {
     d match {
-      case b: Bundle => if(b.getTypeString.contains("$")) d.getName() else b.getTypeString
+      case b: Bundle => if(b.getTypeString.contains("$") || b.getTypeString.isEmpty) d.getName() else b.getTypeString
       case _ => d.getName()
     }
   }
-  def getTypeName(d: Data): String = {
-    d match {
-      case b: Bundle => if(b.getTypeString.contains("$")) d.getName() else b.getTypeString
-      case _ => d.getName()
-    }
+
+  def getTypeName(d_clk: (Data, ClockDomain)): String = {
+    val (d, cd) = d_clk
+    getTypeName(d)
   }
 
   def sqliteHandlers(output_path : String): Unit = {
@@ -246,6 +243,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     val defined = new mutable.HashMap[String, mutable.ArrayBuffer[(Flow[Bits], Int)]]()
     for ((flow, idx) <- flows()) {
       val key = getTypeName(datas(idx))
+      require(!key.isEmpty)
       defined.getOrElseUpdate(key, new mutable.ArrayBuffer[(Flow[Bits], Int)]) += ((flow, idx))
     }
     emit(

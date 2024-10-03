@@ -43,6 +43,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     }
     bus
   }
+  def stage_bus(bus : T) : T
 
   def add_interface(name : String, dir : T => T ): (T, T) = {
     if(Component.current == Component.toplevel) {
@@ -202,7 +203,9 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
     }
     x
   }
-
+  def stage_bus(bus : Wishbone) : Wishbone = {
+    WishboneStage(bus)
+  }
   override def bus_interface(port : Wishbone, mapping: SizeMapping) : WishboneBusInterface = WishboneBusInterface(port, mapping)
   override def slave_factory(port : Wishbone) = WishboneSlaveFactory(port)
 
@@ -288,4 +291,8 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
   override def bus_interface(port: PipelinedMemoryBus, addressMapping: SizeMapping): BusIf = ???
 
   override def slave_factory(port: PipelinedMemoryBus): BusSlaveFactory = ???
+
+  override def stage_bus(bus: PipelinedMemoryBus): PipelinedMemoryBus = {
+    bus
+  }
 }
