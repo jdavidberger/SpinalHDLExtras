@@ -85,7 +85,7 @@ object IDDR {
 
 case class ODDRArray[T <: BitVector](payloadType : HardType[T], input_per_output : Int = 2, ODDRFactory : Option[(Int) => ODDR] = None) extends ComponentWithKnownLatency {
   val bitsWidth = payloadType.getBitsWidth
-  setDefinitionName(s"ODDR_x${input_per_output}_w${bitsWidth}")
+  ///setDefinitionName(s"ODDR_x${input_per_output}_w${bitsWidth}")
   val oddrs = Array.fill(bitsWidth)(ODDRFactory.getOrElse(x => ODDR(x))(input_per_output))
   val io = new Bundle {
     val IN= slave(Flow(Vec(payloadType, input_per_output)))

@@ -635,7 +635,9 @@ class PLL(val cfg: PLLConfig) extends BlackBox {
 
     val scale = HertzNumber(cfg.ACTUAL_FREQ) / ref_clk
 
-    new ClockDomain(clk, reset = clkArea.reset, frequency = FixedRangeFrequency(min_ref_clk * scale, max_ref_clk * scale))
+    new ClockDomain(clk, reset = clkArea.reset,
+      config = ClockDomainConfig(RISING, ASYNC, HIGH),
+      frequency = FixedRangeFrequency(min_ref_clk * scale, max_ref_clk * scale))
   })
 
   noIoPrefix()

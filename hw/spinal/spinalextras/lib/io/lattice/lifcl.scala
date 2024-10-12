@@ -99,7 +99,7 @@ class LatticeIDDR(gear : Int = 2) extends IDDR(gear) with ComponentWithKnownLate
   QD._2 := io.IN.payload
 
   setDefinitionName(s"LatticeIDDR_x${gear}_l${latency()}")
-  override def latency(): Int = 1
+
   override def latency(): Int = {
     gear match {
       case 2 => 1

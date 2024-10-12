@@ -5,7 +5,9 @@ import spinal.core._
 import spinal.core.sim.{SimBitVectorPimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout}
 import spinal.lib._
 import spinal.lib.bus.simple._
+import spinalextras.lib.HardwareMemory.HardwareMemoryWriteCmd
 import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, GSR, OSCD, OSCDConfig, PDPSC512K_Mem}
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.memory.MemoryBackedFifo
 import spinalextras.lib.misc.{AutoInterconnect, ClockSpecification}
 import spinalextras.lib.{Config, HardwareMemory, Memories, MemoryRequirement, MemoryRequirementBits, PipelinedMemoryBusMemory, StackedHardwareMemory, WideHardwareMemory}
@@ -65,6 +67,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
     val valid = out(Bool())
     val valid_count = out(UInt(32 bits))
   }
+  noIoPrefix()
 
   val access = io.bus
 
@@ -122,7 +125,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
     }
   }
 
-  val hasExpectedLatency = RegInit(True)
+  val hasExpectedLatency = RegInit(True).allowUnsetRegToAvoidLatch()
   if(latency >= 0) {
     var expected_read_stream = cmd_stream.toFlowFire.map(_.address).throwWhen(cmd_stream.write)
     for(i <- 0 until (latency + 1)) {
@@ -138,12 +141,13 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
 
   io.valid.setAsReg() init (True)
 
-  val byteMask, expected_value = Bits(dataWidth bits)
-  val byteMaskVal = ByteMaskToBitMask(AddressMaskHash(responseAddress, dataWidth))
-  if(byteMaskVal != null) {
-    byteMask := byteMaskVal
+  val bitMask, expected_value = Bits(dataWidth bits)
+  val byteMask = AddressMaskHash(responseAddress, dataWidth)
+  val bitMaskVal = ByteMaskToBitMask(byteMask)
+  if(bitMaskVal != null) {
+    bitMask := bitMaskVal
   } else {
-    byteMask.setAll()
+    bitMask.setAll()
   }
 
   expected_value := AddressHash(responseAddress, dataWidth).resized
@@ -151,13 +155,25 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   val outstanding_count = CounterUpDown((1L << 32), incWhen = io.bus.cmd.fire && ~io.bus.cmd.write, decWhen = io.bus.rsp.fire)
   assert(~outstanding_count.msb, "~outstanding_count.msb")
 
-  val masked_data = access.rsp.data & byteMask
+  val count_vals = new Bundle {
+    val total_valid, total_invalid = UInt(32 bits)
+  }.setAsReg()
+
+  val read_timeout = Timeout(iterationCount * 16)
+  val masked_data = access.rsp.data & bitMask
+
+  val valid_value = Bool()
+  valid_value := True
+
   when(access.rsp.valid) {
+    read_timeout.clear()
+    valid_value := ((expected_value).asBits & bitMask) === masked_data
     responseAddress := responseAddress + incPerOp
-    val valid_value = ((expected_value).asBits & byteMask) === masked_data
+
     io.valid := (io.valid && valid_value && hasExpectedLatency)// && ~timeout_counter.willOverflowIfInc)
     when(~valid_value) {
       io.valid_count := 0
+      count_vals.total_invalid := count_vals.total_invalid + 1
     }
 
     when(!valid_value) {
@@ -165,9 +181,31 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
       assert(False, "Invalid value found")
     } otherwise {
       io.valid_count := io.valid_count + 1
+      count_vals.total_valid := count_vals.total_valid + 1
     }
   }
 
+  when(read_timeout) {
+    read_timeout.clear()
+    report(Seq("timeout found for", ClockDomain.current.frequency.getValue.decomposeString))
+    assert(False, "read timeout")
+  }
+
+  val timer = Timeout(1000 ms)
+  timer.clearWhen(timer.state)
+
+  val invalid_data = Flow(HardwareMemoryWriteCmd(cmd_stream.config.copy(dataWidth = 32)))
+  invalid_data.valid := !valid_value
+  invalid_data.payload.data := (access.rsp.data ^ expected_value).resized
+  invalid_data.payload.address := responseAddress
+  invalid_data.payload.mask := RegNext(byteMask).resized
+
+
+  GlobalLogger(
+    SignalLogger.concat(100 ms, "counts", count_vals.total_invalid, count_vals.total_valid),
+    SignalLogger.concat("errors", read_timeout.state, io.valid),
+    FlowLogger.flows(invalid_data)
+  )
 
   if(unique_name) {
     io.valid_count.setName(s"valid_count${dataWidth}_${(ClockDomain.current.frequency.getValue / 1e6).toDouble.round.toInt}")
@@ -257,8 +295,8 @@ class MemMemoryTest extends AnyFunSuite {
 
 
 case class LatticeMemoryTest() extends Component {
+  val GSR_INST = GSR.no_op()
   var osc = new ResetArea(False, false) {
-    val GSR_INST = new GSR().setName("GSR_INST")
     val osc = new OSCD(OSCDConfig.create(ClockSpecification(45 MHz, tolerance = .1)))
   }.osc
 
@@ -278,8 +316,8 @@ case class LatticeMemoryTest() extends Component {
 }
 
 case class LatticeFifoTest() extends Component {
+  val GSR_INST = GSR.no_op()
   var osc = new ResetArea(False, false) {
-    val GSR_INST = new GSR().setName("GSR_INST")
     val osc = new OSCD(OSCDConfig.create(ClockSpecification(45 MHz, tolerance = .1)))
   }.osc
 
@@ -292,6 +330,7 @@ case class LatticeFifoTest() extends Component {
     val tb = FifoTestBench(mem.dataType)
     mem.io.push <> tb.io.push
     mem.io.pop <> tb.io.pop
+    mem.io.flush := False
   }
 }
 

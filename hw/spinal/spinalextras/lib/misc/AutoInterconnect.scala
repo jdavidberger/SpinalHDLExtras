@@ -6,8 +6,9 @@ import spinal.lib.{IMasterSlave, growableAnyPimped}
 import scala.collection.mutable
 
 object AutoInterconnect {
-  def buildInterconnect(components: Iterable[Component], io : Bundle, renames: Map[String, String] = Map.empty): Unit = {
+  def buildInterconnect(components_iterable: Iterable[Component], io : Bundle, renames: Map[String, String] = Map.empty): Unit = {
     val unhandled_ios = new mutable.HashMap[String, Data]()
+    val components = components_iterable.toSeq
     for (c <- components) {
 
       def hasAssignments(io: Data): Boolean = {

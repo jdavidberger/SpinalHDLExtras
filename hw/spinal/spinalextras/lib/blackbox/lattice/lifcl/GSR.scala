@@ -11,3 +11,12 @@ class GSR extends BlackBox {
   noIoPrefix()
   mapCurrentClockDomain(io.CLK, io.GSR_N, resetActiveLevel = LOW)
 }
+
+object GSR {
+  def no_op() : GSR = {
+    new ClockingArea(new ClockDomain(False, False)) {
+      val gsr = new GSR().setName("GSR_INST")
+    }.gsr
+  }
+
+}

@@ -137,7 +137,7 @@ case class VerifyIDDRTestBench(ddr_factor : Int = 4, IDDRFactory : (Int) => IDDR
 object LatticeODDRSim extends App {
     Config.spinal.generateVerilog(
       new Component {
-        val GSR_INST = new GSR()
+        val GSR_INST = GSR.no_op()
 
         for(f <- Seq(2, 4, 8, 10)) {
           val dut = VerifyODDRTestBench(f, x => new LatticeODDR(x)).setDefinitionName(s"VerifyDDRTestBench_${f}").setName(s"verifyDDRTestBench_${f}")
@@ -150,7 +150,7 @@ object LatticeODDRSim extends App {
 object LatticeIDDRSim extends App {
   Config.spinal.generateVerilog(
     new Component {
-      val GSR_INST = new GSR()
+      val GSR_INST = GSR.no_op()
 
       for(f <- Seq(2)) {
         val dut = VerifyIDDRTestBench(f, x => new LatticeIDDR(x)).setDefinitionName(s"VerifyIDDRTestBench_${f}").setName(s"verifyIDDRTestBench_${f}")
