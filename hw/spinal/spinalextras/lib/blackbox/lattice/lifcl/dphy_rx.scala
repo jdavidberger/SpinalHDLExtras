@@ -21,23 +21,20 @@ class dphy_rx(cfg : MIPIConfig,
               enable_logging : Boolean = true,
               sync_cd: ClockDomain = null,
               byte_cd: ClockDomain = null,
-              var byte_freq: HertzNumber = null,
-              var rx_line_rate: HertzNumber = null,
               clock_suffix : Boolean = true,
               cfg_datsettle_cyc : Boolean = true,
+              cfg_fifo_read_delay : Boolean = true,
               var ip_name : String = null,
              is_continous_clock : Option[Boolean] = None) extends BlackBox {
   val is_soft_phy = true
   val config_for_continous_clock = is_continous_clock.getOrElse(byte_cd == null)
-  if(byte_freq == null) {
-    require(byte_cd != null);
-    byte_freq = byte_cd.frequency.getValue
-  }
-  if(rx_line_rate == null) {
-    rx_line_rate = byte_freq * cfg.NUM_RX_LANES * cfg.RX_GEAR / 2
-  }
+
+  val byte_freq: HertzNumber = cfg.dphy_byte_freq
+  val byte_cd_freq = if(byte_cd != null) byte_cd.frequency.getValue else byte_freq
+  val rx_line_rate = cfg.rx_line_rate
   val dphy_clk_freq = rx_line_rate / 2
 
+  val cfg_has_fifo = !config_for_continous_clock
   val _enable_fifo_misc_signals = enable_fifo_misc_signals.getOrElse(!(is_soft_phy && config_for_continous_clock))
 
   if(ip_name == null) {
@@ -78,7 +75,7 @@ class dphy_rx(cfg : MIPIConfig,
      * • 1’b1 – Null and Blanking packets are ignored by
      * the IP
      */
-    val rxcsr_dropnull_i = enable_packet_parser generate in Bool()
+    val rxcsr_dropnull_i = enable_packet_parser generate in Bool() default(False)
     val pll_lock_i = in Bool()
     val sync_clk_i = in Bool()
     val sync_rst_i = in Bool()
@@ -144,6 +141,7 @@ class dphy_rx(cfg : MIPIConfig,
      */
     val rxcsr_datsettlecyc_i = cfg_datsettle_cyc generate in UInt(8 bits) default(default_datsettlecyc)
 
+    val rxcsr_rxfifo_pktdly_i = (cfg_fifo_read_delay && cfg_has_fifo) generate in UInt(16 bits) default(2)
 
     def byte_clock_domain(): ClockDomain = {
       if(byte_cd == null) {
@@ -399,6 +397,7 @@ class dphy_rx(cfg : MIPIConfig,
     GlobalLogger(
       FlowLogger.flows(MIPIPacketHeader),
       SignalLogger.concat("MIPI_misc_debug" + (if (io.fifo_misc_signals != null) "_w_fifo" else ""),
+        io.dphy_cfg_num_lanes, io.dphy_rxdatawidth_hs,
         io.ready_o,
         io.misc_signals,
         if(io.fifo_misc_signals != null) io.fifo_misc_signals.elements.filterNot(_._1.contains("empty")) else Seq()
@@ -419,7 +418,7 @@ class dphy_rx(cfg : MIPIConfig,
     val clk_meas_short = ClockMeasure(clk_byte, 0x20000)
     val clk_meas_long = ClockMeasure(clk_byte, 0x4000000)
 
-    val sig_reg = busSlaveFactory.newReg("dphy sig")
+    val sig_reg = busSlaveFactory.newReg(s"dphy sig")
     val signature = sig_reg.field(Bits(32 bit), ROV, BigInt("F000A802", 16), "ip sig")
 
     val lastWriteAddress = RegNext(busSlaveFactory.writeAddress() ## busSlaveFactory.doWrite)
@@ -432,10 +431,15 @@ class dphy_rx(cfg : MIPIConfig,
       clk_meas.io.flush := lastWriteAddress === (U(dphy_reg.addr) ## True).resized
     }
 
-    val dphy_data_ctrl = busSlaveFactory.newReg("Dphy ctrl")
+    val dphy_data_ctrl = busSlaveFactory.newReg("rxcsr_datsettlecyc")
     val dphy_data_settle =
       dphy_data_ctrl.field(io.rxcsr_datsettlecyc_i.clone(), RW, "Controls the tHS-SETTLE protocol timing parameter. Check the t-HSZERO parameter of the D-PHY transmitter to ensure the tHS-SETTLE setting can properly detect the Start-of-Transmit pattern.") init(default_datsettlecyc)
     GlobalSignals.externalize(io.rxcsr_datsettlecyc_i) := dphy_data_settle
+
+    val pktdelay_ctrl = busSlaveFactory.newReg("rxcsr_rxfifo_pktdly")
+    val pktdelay =
+      pktdelay_ctrl.field(io.rxcsr_rxfifo_pktdly_i.clone(), RW, "Packet delay on fifo") init(2)
+    GlobalSignals.externalize(io.rxcsr_rxfifo_pktdly_i) := pktdelay
 
     val fifo_signals = if(io.fifo_misc_signals != null) Seq(
       io.fifo_misc_signals.fifo_ovflw_err_o, io.fifo_misc_signals.rxque_full_o,

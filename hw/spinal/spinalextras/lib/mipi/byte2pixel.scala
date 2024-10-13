@@ -11,7 +11,9 @@ import spinalextras.lib.Config
 
 import scala.language.postfixOps
 
-case class byte2pixel(cfg : MIPIConfig, byte_cd: ClockDomain, pixel_cd: ClockDomain = ClockDomain.current) extends Component {
+case class byte2pixel(cfg : MIPIConfig,
+                      byte_cd: ClockDomain,
+                      pixel_cd: ClockDomain = ClockDomain.current) extends Component {
   val io = new Bundle {
     val mipi_header = slave Flow(MIPIPacketHeader(cfg))
     val payload = slave Flow(Bits(cfg.GEARED_LANES bits))
@@ -26,31 +28,72 @@ case class byte2pixel(cfg : MIPIConfig, byte_cd: ClockDomain, pixel_cd: ClockDom
     (1 until smaller).filter((factor) => (factor * bigger) % smaller == 0).map((factor) => Math.abs(factor * bigger)).toVector(0)
   }
 
+
+  def csi_unpack_to_pixel(d : Vec[Bits]): Vec[Bits] = {
+    val dw = MIPIDataTypes.bit_width(cfg.ref_dt)
+    if(dw == 8)
+      return d
+
+    // MIPI binary backing is sorta weird. It takes the 8 MS bits of each pixel and sends then in order, and then when
+    // there are 8 'leftover' bits, thats the next byte
+    assert(dw == 12 || dw == 10)
+
+    // How many full bytes do we get before a leftover byte
+    val group_cnt = 8 / (dw - 8)
+
+    // Each full byte gets this many bits added on
+    val leftover_bits = 8 / group_cnt
+
+    // Make groups of the full bytes and the leftover byte. The last byte is the leftover byte
+    val groups = d.grouped(group_cnt + 1).toSeq
+
+    Vec(groups.flatMap(group => {
+      val full_bytes = group.dropRight(1)
+      val leftover_byte = group.last
+      val leftover_bit_groups = leftover_byte.subdivideIn(leftover_bits bits).reverse
+
+      // Merge all the full bytes with the leftover_bits by concatenating the lsb's onto the end.
+      full_bytes.zip(leftover_bit_groups).map { case (byte, lsb) => byte ## lsb }
+    }))
+  }
+
   val lcm_width = lcm(cfg.GEARED_LANES, cfg.DT_WIDTH)
   val fifo_min_depth = Math.pow(2, (1 + Math.log(lcm_width / cfg.GEARED_LANES) / Math.log(2)).ceil).toInt
-  val fifo = new StreamFifoCC(TupleBundle2(Bits(2 bits), Bits(cfg.GEARED_LANES bits)), fifo_min_depth,
-    pushClock = byte_cd, popClock = pixel_cd)
+
+  val byte_cd_freq = byte_cd.frequency.getValue
+  val byte_phy_freq = cfg.dphy_byte_freq
+
+  require(byte_cd_freq >= byte_phy_freq)
+  require(byte_phy_freq * cfg.GEARED_LANES <= pixel_cd.frequency.getValue * cfg.DT_WIDTH)
 
   val byte_count = 2400
-  val clock_ratio = (byte_cd.frequency.getValue /  pixel_cd.frequency.getValue).toDouble
+  val clock_ratio = (byte_phy_freq / pixel_cd.frequency.getValue).toDouble
   val delay_time_ratio = 8.0 * ((1.0 / cfg.GEARED_LANES) - clock_ratio / cfg.DT_WIDTH)
   val delay_time = byte_count * delay_time_ratio
   // TODO -- if desired you can use delay_time above to keep line_valid solid for one full row
 
-  require(byte_cd.frequency.getValue * cfg.GEARED_LANES <= pixel_cd.frequency.getValue * cfg.DT_WIDTH)
+  val byte_clock_fifo = cfg.DT_WIDTH > cfg.GEARED_LANES
+  val fifoWidth = if(byte_clock_fifo) cfg.DT_WIDTH else cfg.GEARED_LANES
+  val fifoType = TupleBundle2(Bits(2 bits), Bits(fifoWidth bits))
+  val fifo = new StreamFifoCC(fifoType, fifo_min_depth,
+    pushClock = byte_cd, popClock = pixel_cd)
+
+  val conversion_clock = if(byte_clock_fifo) byte_cd else pixel_cd
+  val conversion_area = new ClockingArea(conversion_clock) {
+    val lcm_stream = Stream(Vec(Bits(8 bits), lcm_width/8))
+    val pixel_stream = Stream(Vec(Bits(MIPIDataTypes.bit_width(cfg.ref_dt) bits), cfg.OUTPUT_LANES))
+    pixel_stream.ready := True
+
+    val bytes = Flow(Bits(cfg.GEARED_LANES bits))
+    val overflow = Bool()
+
+    assert(overflow === False, "bytes overflow")
+    StreamWidthAdapter(bytes.toStream(overflow), lcm_stream)
+    StreamWidthAdapter(lcm_stream.map(csi_unpack_to_pixel).stage(), pixel_stream)
+  }
+
   val byte_clk_area = new ClockingArea(byte_cd) {
     val isRefDt, fv = RegInit(False)
-
-    val lv = io.payload.valid && isRefDt
-    val fv_lv_state = fv ## lv
-    fifo.io.push.payload._1 := fv_lv_state
-    fifo.io.push.payload._2 := io.payload.payload
-
-    fifo.io.push.valid := True
-    when(fv_lv_state =/= RegNext(fv_lv_state)) {
-      fifo.io.push.valid := True
-    }
-    assert(fifo.io.push.ready, "Fifo full on b2p")
 
     when(io.mipi_header.fire) {
       when(io.mipi_header.is_long_av_packet) {
@@ -60,53 +103,53 @@ case class byte2pixel(cfg : MIPIConfig, byte_cd: ClockDomain, pixel_cd: ClockDom
       }
 
       when(io.mipi_header.is_short_packet) {
-        when(io.mipi_header.datatype === 0) {
+        when(io.mipi_header.datatype === 0) { // Frame start short packet
           fv := True
-        } elsewhen(io.mipi_header.datatype === 1) {
+        } elsewhen(io.mipi_header.datatype === 1) { // Frame end short packet
           fv := False
         }
       }
     }
-  }
 
-  def csi_remap(d : Vec[Bits]): Vec[Bits] = {
-    val dw = MIPIDataTypes.bit_width(cfg.ref_dt)
-    if(dw == 8)
-      return d
+    if(byte_clock_fifo) {
+      conversion_area.bytes << io.payload.takeWhen(isRefDt)
 
-    assert(dw == 12 || dw == 10)
-    val group_cnt = 8 / (dw - 8)
-    val groups = d.grouped(group_cnt + 1).toSeq
+      fifo.io.push.payload._1 := Delay(fv, 5) ## conversion_area.pixel_stream.valid
+      fifo.io.push.payload._2 := conversion_area.pixel_stream.payload.asBits
 
-    val remaped_groups = groups.flatMap(partition => {
-      val lcb = partition.last.asBits.subdivideIn(8 / group_cnt bits).reverse
-      partition.dropRight(1).zip(lcb).map(x => x._1 ## x._2)
-    })
+    } else {
+      fifo.io.push.payload._1 := fv ## (io.payload.valid && isRefDt)
+      fifo.io.push.payload._2 := io.payload.payload
+    }
 
-    Vec(remaped_groups)
+    // When the byte cd freq is slower than the pixel clock; we can just flood the fifo. But when the byte clock
+    // is faster, only do it on changes.
+    fifo.io.push.valid := {
+      if (byte_cd_freq > pixel_cd.frequency.getValue)
+        fifo.io.push.payload._1 =/= RegNext(fifo.io.push.payload._1)
+      else
+        True
+    }
+
+    assert(fifo.io.push.ready, "Fifo overflow")
   }
 
   val pixel_clk_area = new ClockingArea(pixel_cd) {
-    val lcm_stream = Stream(Vec(Bits(8 bits), lcm_width/8))
-    val pixel_stream = Stream(Vec(Bits(MIPIDataTypes.bit_width(cfg.ref_dt) bits), cfg.OUTPUT_LANES))
-    pixel_stream.ready := True
-
     fifo.io.pop.ready := True
-
     val fv = RegNextWhen(fifo.io.pop.payload._1(1), fifo.io.pop.fire)
 
-    val bytes = Flow(Bits(cfg.GEARED_LANES bits))
-    bytes.valid := fifo.io.pop.fire && fifo.io.pop.payload._1(0)
-    bytes.payload := fifo.io.pop.payload._2
+    if(byte_clock_fifo) {
+      io.pixelFlow.frame_valid := fv
+      io.pixelFlow.valid := fifo.io.pop.fire && fifo.io.pop.payload._1(0)
+      io.pixelFlow.payload := fifo.io.pop.payload._2.asBits
+    } else {
+      conversion_area.bytes.valid := fifo.io.pop.fire && fifo.io.pop.payload._1(0)
+      conversion_area.bytes.payload := fifo.io.pop.payload._2
 
-    val overflow = Bool()
-    assert(overflow === False, "bytes overflow")
-    StreamWidthAdapter(bytes.toStream(overflow), lcm_stream)
-    StreamWidthAdapter(lcm_stream.map(csi_remap).stage(), pixel_stream)
-
-    io.pixelFlow.frame_valid := Delay(fv, 5)
-    io.pixelFlow.valid := pixel_stream.valid
-    io.pixelFlow.payload := pixel_stream.payload.asBits
+      io.pixelFlow.frame_valid := Delay(fv, 5)
+      io.pixelFlow.valid := conversion_area.pixel_stream.valid
+      io.pixelFlow.payload := conversion_area.pixel_stream.payload.asBits
+    }
 
     assert(!(io.pixelFlow.frame_valid == False && io.pixelFlow.valid == True), "Linevalid when frame valid is false")
   }
@@ -128,9 +171,9 @@ case class byte2pixel(cfg : MIPIConfig, byte_cd: ClockDomain, pixel_cd: ClockDom
 
     for(error_signal <- Seq(
       BufferCC(~fifo.io.push.ready).setPartialName("fifo_full"),
-      io.pixelFlow.line_valid,
-      io.pixelFlow.frame_valid,
-      io.pixelFlow.frame_valid.setPartialName("not_frame_valid"),
+      BufferCC(io.pixelFlow.line_valid).setPartialName("line_valid"),
+      BufferCC(io.pixelFlow.frame_valid).setPartialName("frame_valid"),
+      BufferCC(~io.pixelFlow.frame_valid).setPartialName("not_frame_valid"),
       BufferCC(io.payload.valid).setPartialName("payload_valid")
     )) {
       val reg = busSlaveFactory.newReg(error_signal.name)(SymbolName(s"${error_signal.name}"))
@@ -143,16 +186,16 @@ case class byte2pixel(cfg : MIPIConfig, byte_cd: ClockDomain, pixel_cd: ClockDom
 }
 
 class byte2PixelTest extends AnyFunSuite {
-  val cfg = new MIPIConfig(2, 8, 1, MIPIDataTypes.RAW12)
-  test("Basic") {
-    Config.sim.withConfig(Config.spinalConfig.copy(defaultClockDomainFrequency = FixedFrequency(83.333 MHz))).doSim(
-      new byte2pixel(cfg, ClockDomain.external("byte", frequency = FixedFrequency(50 MHz)))) { dut =>
-      dut.clockDomain.forkStimulus(83.333 MHz)
-      dut.byte_cd.forkStimulus(50 MHz)
-
-      dut.byte_cd.waitSampling(1)
+  def doTest(cfg : MIPIConfig, f1 : HertzNumber): Unit = {
+    Config.sim.withConfig(Config.spinalConfig.copy(defaultClockDomainFrequency = FixedFrequency(f1))).doSim(
+      new byte2pixel(cfg, ClockDomain.external("byte", frequency = FixedFrequency(cfg.dphy_byte_freq)))) { dut =>
       dut.io.mipi_header.valid #= false
       dut.io.payload.valid #= false
+
+      dut.clockDomain.forkStimulus(f1)
+      dut.byte_cd.forkStimulus(cfg.dphy_byte_freq)
+
+      dut.byte_cd.waitSampling(1)
 
       dut.clockDomain.waitSampling(5)
 
@@ -197,5 +240,12 @@ class byte2PixelTest extends AnyFunSuite {
 
       //sco.checkEmptyness()
     }
+  }
+
+  test("Basic_10bpp") {
+    doTest(new MIPIConfig(2, 8, 1, MIPIDataTypes.RAW10, 50 MHz), 83.33 MHz)
+  }
+  test("Basic_4x12bpp") {
+    doTest(new MIPIConfig(2, 8, 4, MIPIDataTypes.RAW12, 125 MHz), 83.33 MHz)
   }
 }
