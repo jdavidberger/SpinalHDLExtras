@@ -19,7 +19,46 @@ class LatticeTristateBuffer() extends TristateBuffer {
   bb.I <> io.input
 }
 
-class LatticeODDR(gear : Int = 2) extends ODDR(gear) with ComponentWithKnownLatency {
+case class LatticeDelay() extends Component {
+  val io = new Bundle {
+    val delay = slave Stream(UInt(8 bits))
+
+    val IN = in Bool()
+    val OUT = out Bool()
+  }
+
+  var delay_block = DELAYA()
+  delay_block.io.A := io.IN
+  io.OUT := delay_block.io.Z
+
+  val target = RegNextWhen(io.delay.payload, io.delay.valid) init(0)
+  val current_delay = CounterUpDown(128)
+
+  delay_block.io.COARSE0 := False
+  delay_block.io.COARSE1 := target.msb
+  delay_block.io.LOAD_N := ~ClockDomain.current.readResetWire
+  delay_block.io.DIRECTION := RegNext(current_delay > target.resize(7 bits)) init(False)
+
+  val needs_change = RegNext(current_delay =/= target.resize(7 bits))
+  val bring_pulse_low = RegNext(delay_block.io.MOVE)
+  delay_block.io.MOVE := needs_change && ~bring_pulse_low
+
+  io.delay.ready := False
+  when(!needs_change && io.delay.valid) {
+    io.delay.ready := True
+  }
+
+  when(delay_block.io.MOVE.rise(False)) {
+    when(delay_block.io.DIRECTION) {
+      current_delay.decrement()
+    } otherwise {
+      current_delay.increment()
+    }
+  }
+}
+
+class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithKnownLatency {
+  def gear = reqs.signal_multiple
   val QD = gear match {
     case 2 => {
       val oddr = ODDRX1()
@@ -52,7 +91,17 @@ class LatticeODDR(gear : Int = 2) extends ODDR(gear) with ComponentWithKnownLate
 
   (0 until gear).foreach(i => QD._2(i) := io.IN.payload(i))
 
-  io.OUT.payload := QD._1
+  if(reqs.delayable) {
+    val delay = LatticeDelay()
+    io.DELAY = Some(slave (delay.io.delay.clone()))
+    delay.io.delay <> io.DELAY.get
+    delay.io.IN := QD._1
+    io.OUT.payload := delay.io.OUT
+  } else {
+    io.OUT.payload := QD._1
+  }
+
+
 
   override def latency(): Int = {
     gear match {
@@ -65,7 +114,8 @@ class LatticeODDR(gear : Int = 2) extends ODDR(gear) with ComponentWithKnownLate
   setDefinitionName(s"LatticeODDR_x${gear}_l${latency()}")
 }
 
-class LatticeIDDR(gear : Int = 2) extends IDDR(gear) with ComponentWithKnownLatency {
+class LatticeIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithKnownLatency {
+  val gear = reqs.signal_multiple
   assert(gear >= 2)
 
   val QD = gear match {
@@ -96,7 +146,16 @@ class LatticeIDDR(gear : Int = 2) extends IDDR(gear) with ComponentWithKnownLate
     case _ => throw new InvalidParameterException()
   }
   (0 until gear).foreach(i => io.OUT.payload(i) := QD._1(i))
-  QD._2 := io.IN.payload
+
+  if(reqs.delayable) {
+    val delay = LatticeDelay()
+    delay.io.IN := io.IN.payload
+    QD._2 := delay.io.OUT
+    io.DELAY = Some(slave (delay.io.delay.clone()))
+    delay.io.delay <> io.DELAY.get
+  } else {
+    QD._2 := io.IN.payload
+  }
 
   setDefinitionName(s"LatticeIDDR_x${gear}_l${latency()}")
 

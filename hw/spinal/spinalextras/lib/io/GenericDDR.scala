@@ -14,7 +14,7 @@ import spinalextras.lib.Config
  * @param latency The latency in edge clk cycles from valid input to valid output. Useful to mimic real ODDR behavior
  *                and verify that designs using ODDR aren't dependent on a given latency
  */
-class GenericODDR(input_per_output : Int = 2, latency : Int = 1) extends ODDR(input_per_output) {
+class GenericODDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends ODDR(reqs) {
   setDefinitionName(s"GenericODDR_x${input_per_output}_l${latency}")
   val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = RISING))
   val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = FALLING))
@@ -77,7 +77,7 @@ class GenericODDR(input_per_output : Int = 2, latency : Int = 1) extends ODDR(in
  * @param output_per_input The number of inputs per output pin (gearing)
  * @param latency The latency in edge clk cycles from valid input to valid output
  */
-class GenericIDDR(output_per_input : Int = 2, latency : Int = 1) extends IDDR(output_per_input) {
+class GenericIDDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends IDDR(reqs) {
   val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = RISING))
   val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = FALLING))
 
@@ -135,7 +135,8 @@ class GenericIDDR(output_per_input : Int = 2, latency : Int = 1) extends IDDR(ou
  * @param latency The latency in edge clk cycles from valid input to valid output. Useful to mimic real ODDR behavior
  *                and verify that designs using ODDR aren't dependent on a given latency
  */
-class GenericIDDR1(output_per_input : Int = 2, latency : Int = 1) extends ODDR(output_per_input) {
+class GenericIDDR1(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends ODDR(reqs) {
+  val output_per_input = reqs.signal_multiple
   setDefinitionName(s"GenericODDR_x${input_per_output}_l${latency}")
   val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = RISING))
   val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = FALLING))

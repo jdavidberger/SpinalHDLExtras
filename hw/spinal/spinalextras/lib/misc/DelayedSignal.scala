@@ -6,6 +6,8 @@ import scala.language.postfixOps
 
 case class DelayedSignal(latency : Int, crossClockDomain : Boolean = false) extends Component {
   setDefinitionName(s"DelayedSignal${if(crossClockDomain) "CC" else ""}_l${latency}")
+  require(latency >= 0)
+
   val io = new Bundle {
     val input = in(Bool())
     val output = out(Bool())

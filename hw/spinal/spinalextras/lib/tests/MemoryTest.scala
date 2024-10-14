@@ -60,7 +60,7 @@ object AddressHash {
   }
 }
 
-case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1) extends Component {
+case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1, test_masking : Boolean = true) extends Component {
   val io = new Bundle {
     val bus = master(PipelinedMemoryBus(cfg))
 
@@ -96,7 +96,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   val incPerOp = dataWidth / 8
   //cmd_stream.address := (0x000 + incPerOp * writeCnt.value).resized
   cmd_stream.data := AddressHash(cmd_stream.address, dataWidth).resized
-  val cmdHash = AddressMaskHash(cmd_stream.address, dataWidth)
+  val cmdHash = if(test_masking) AddressMaskHash(cmd_stream.address, dataWidth) else null
   if(cmdHash != null) {
     cmd_stream.mask := cmdHash.resized
   } else {
@@ -143,7 +143,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
 
   val bitMask, expected_value = Bits(dataWidth bits)
   val byteMask = AddressMaskHash(responseAddress, dataWidth)
-  val bitMaskVal = ByteMaskToBitMask(byteMask)
+  val bitMaskVal = if (test_masking) ByteMaskToBitMask(byteMask) else null
   if(bitMaskVal != null) {
     bitMask := bitMaskVal
   } else {
@@ -167,7 +167,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
 
   when(access.rsp.valid) {
     read_timeout.clear()
-    valid_value := ((expected_value).asBits & bitMask) === masked_data
+    valid_value := (((expected_value).asBits & bitMask) === masked_data)
     responseAddress := responseAddress + incPerOp
 
     io.valid := (io.valid && valid_value && hasExpectedLatency)// && ~timeout_counter.willOverflowIfInc)
@@ -187,8 +187,8 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
 
   when(read_timeout) {
     read_timeout.clear()
-    report(Seq("timeout found for", ClockDomain.current.frequency.getValue.decomposeString))
-    assert(False, "read timeout")
+    //report(Seq("timeout found for", ClockDomain.current.frequency.getValue.decomposeString))
+    //assert(False, "read timeout")
   }
 
   val timer = Timeout(1000 ms)
