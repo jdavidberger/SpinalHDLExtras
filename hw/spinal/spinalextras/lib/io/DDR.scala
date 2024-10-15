@@ -171,13 +171,16 @@ case class IDDRArray[T <: BitVector](payloadType : HardType[T], reqs : DDRRequir
 
 
 case class IODDRArray[T <: BitVector](payloadType : HardType[T],
-                                      reqs: DDRRequirements) extends ComponentWithKnownLatency {
+                                      in_reqs: DDRRequirements,
+                                      out_reqs: DDRRequirements) extends ComponentWithKnownLatency {
   val bitsWidth = payloadType.getBitsWidth
-  val gear = reqs.signal_multiple
+  val gear = in_reqs.signal_multiple
+  require(gear == out_reqs.signal_multiple)
+
   setDefinitionName(s"IODDR_x${gear}_w${bitsWidth}")
 
-  val data_in = IDDRArray(payloadType, reqs)
-  val data_out = ODDRArray(payloadType, reqs)
+  val data_in = IDDRArray(payloadType, in_reqs)
+  val data_out = ODDRArray(payloadType, out_reqs)
   val tristates = TristateBufferArray(payloadType)
 
   val io = new Bundle {

@@ -60,7 +60,8 @@ object AddressHash {
   }
 }
 
-case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1, test_masking : Boolean = true) extends Component {
+case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1, test_masking : Boolean = true,
+                           address_mask : BigInt = 0xffffffffL) extends Component {
   val io = new Bundle {
     val bus = master(PipelinedMemoryBus(cfg))
 
@@ -90,7 +91,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   val read_cnt = Counter(iterationCount - 2) init (0)
   val readMode = Reg(Bool()) init (False)
 
-  val readAddress, writeAddress, responseAddress = Reg(UInt(cfg.addressWidth bits)) init (0)
+  val readAddress, writeAddress, responseAddress, lastGoodResponse = Reg(UInt(cfg.addressWidth bits)) init (0)
 
   val dataWidth = cfg.dataWidth
   val incPerOp = dataWidth / 8
@@ -106,15 +107,15 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   cmd_stream.valid := True
   cmd_stream.write := ~readMode
   when(cmd_stream.write) {
-    cmd_stream.address := writeAddress.resized
+    cmd_stream.address := (writeAddress.resized & address_mask).resized
   } otherwise {
-    cmd_stream.address := readAddress.resized
+    cmd_stream.address := (readAddress.resized & address_mask).resized
   }
   when(cmd_stream.fire) {
     when(cmd_stream.write) {
-      writeAddress := writeAddress + incPerOp
+      writeAddress := (writeAddress + incPerOp) & address_mask
     } otherwise {
-      readAddress := readAddress + incPerOp
+      readAddress := (readAddress + incPerOp) & address_mask
     }
     writeCnt.increment()
     read_cnt.increment()
@@ -157,18 +158,26 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
 
   val count_vals = new Bundle {
     val total_valid, total_invalid = UInt(32 bits)
+    val timeout_counts = UInt(32 bits)
   }.setAsReg()
 
   val read_timeout = Timeout(iterationCount * 16)
   val masked_data = access.rsp.data & bitMask
 
-  val valid_value = Bool()
-  valid_value := True
+  val eval_flow = access.rsp
+    .map(x => TupleBundle(x.data & bitMask, expected_value.asBits & bitMask, responseAddress))
+    .stage()
+    .map(x => TupleBundle(x._1 === x._2, x._1, x._2, x._3))
+    .stage()
 
-  when(access.rsp.valid) {
+  when(access.rsp.fire) {
+    responseAddress := (responseAddress + incPerOp) & address_mask
+  }
+
+  when(eval_flow.fire) {
     read_timeout.clear()
-    valid_value := (((expected_value).asBits & bitMask) === masked_data)
-    responseAddress := responseAddress + incPerOp
+    val (valid_value, given_data, expected_value, responseAddress) =
+      (eval_flow.payload._1, eval_flow.payload._2, eval_flow.payload._3, eval_flow.payload._4)
 
     io.valid := (io.valid && valid_value && hasExpectedLatency)// && ~timeout_counter.willOverflowIfInc)
     when(~valid_value) {
@@ -180,6 +189,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
       report(Seq("Invalid value found given ", access.rsp.data, " vs expected ", expected_value, " at ", responseAddress, " for ", ClockDomain.current.frequency.getValue.decomposeString))
       assert(False, "Invalid value found")
     } otherwise {
+      lastGoodResponse := responseAddress
       io.valid_count := io.valid_count + 1
       count_vals.total_valid := count_vals.total_valid + 1
     }
@@ -187,6 +197,7 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
 
   when(read_timeout) {
     read_timeout.clear()
+    count_vals.timeout_counts := count_vals.timeout_counts + 1
     //report(Seq("timeout found for", ClockDomain.current.frequency.getValue.decomposeString))
     //assert(False, "read timeout")
   }
@@ -194,17 +205,17 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   val timer = Timeout(1000 ms)
   timer.clearWhen(timer.state)
 
-  val invalid_data = Flow(HardwareMemoryWriteCmd(cmd_stream.config.copy(dataWidth = 32)))
-  invalid_data.valid := !valid_value
-  invalid_data.payload.data := (access.rsp.data ^ expected_value).resized
-  invalid_data.payload.address := responseAddress
-  invalid_data.payload.mask := RegNext(byteMask).resized
+//  val invalid_data = Flow(HardwareMemoryWriteCmd(cmd_stream.config.copy(dataWidth = 32)))
+//  invalid_data.valid := !valid_value
+//  invalid_data.payload.data := (access.rsp.data ^ expected_value).resized
+//  invalid_data.payload.address := responseAddress
+//  invalid_data.payload.mask := RegNext(byteMask).resized
 
 
   GlobalLogger(
     SignalLogger.concat(100 ms, "counts", count_vals.total_invalid, count_vals.total_valid),
-    SignalLogger.concat("errors", read_timeout.state, io.valid),
-    FlowLogger.flows(invalid_data)
+    SignalLogger.concat(100 ms, "error_counts", lastGoodResponse, count_vals.timeout_counts),
+    //FlowLogger.flows(invalid_data)
   )
 
   if(unique_name) {

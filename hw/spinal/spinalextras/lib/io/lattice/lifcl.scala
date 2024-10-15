@@ -27,7 +27,7 @@ case class LatticeDelay() extends Component {
     val OUT = out Bool()
   }
 
-  var delay_block = DELAYA()
+  var delay_block = DELAYA(COARSE_DELAY_MODE="DYNAMIC")
   delay_block.io.A := io.IN
   io.OUT := delay_block.io.Z
 
@@ -44,7 +44,7 @@ case class LatticeDelay() extends Component {
   delay_block.io.MOVE := needs_change && ~bring_pulse_low
 
   io.delay.ready := False
-  when(!needs_change && io.delay.valid) {
+  when(!needs_change && Delay(io.delay.valid, 2)) {
     io.delay.ready := True
   }
 

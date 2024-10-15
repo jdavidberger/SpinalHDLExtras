@@ -76,7 +76,11 @@ class GlobalLogger {
     ctx.restore()
 
   }
-
+  def create_logger_stream(depth: Int, outputStream : Stream[Bits]): Unit = {
+    Component.toplevel.addPrePopTask(() => {
+      this.build(null, 0, depth, "GlobalLogger", Some(outputStream))
+    })
+  }
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String, outputStream : Option[Stream[Bits]] = None): Unit = {
     sysBus.addPreBuildTask(() => build(sysBus, address, depth, name, outputStream))
     Component.toplevel.addPrePopTask(() => {
@@ -100,6 +104,9 @@ object GlobalLogger {
   }
   def set_output_path(fn : String): Unit = {
     get().set_output_path(fn)
+  }
+  def create_logger_stream(depth: Int, outputStream : Stream[Bits]) : Unit = {
+    get().create_logger_stream(depth, outputStream = outputStream)
   }
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String = Component.toplevel.name + "Logger",
                          outputStream : Option[Stream[Bits]] = None): Unit = {
@@ -209,7 +216,9 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
       when(stamped_stream.isStall) {
         dropped_events := dropped_events + 1
       }
-
+      when(stamped_stream.fire) {
+        report(Seq(stream.name, stream.payload))
+      }
       stamped_stream.stage().s2mPipe()
     }
   }
@@ -613,6 +622,13 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
         fold(B(0, 32 bit))((a, b) => a ^ b.resize(32 bits))
     }
 
+    if(sysBus == null) {
+      stream >> outputStream.get
+      loggerFifo.io.flush := False
+      io.manual_trigger.clearAll()
+      return
+    }
+
     val logger_port = sysBus.add_slave_factory("logger_port", SizeMapping(address, 1 KiB), "cpu")
 
     val ctrlReg = logger_port.createReadAndWrite(UInt(32 bits), address + 0) init(0)
@@ -666,7 +682,7 @@ object FlowLogger {
     new FlowLogger(signals.flatten.map(x => (x._1, ClockDomain.current))).assign(signals.flatten.map(_._2))
   }
 
-  def asFlow[T <: Bundle](s: Stream[T]): (Data, Flow[Bits]) = {
+  def asFlow[T <: Data](s: Stream[T]): (Data, Flow[Bits]) = {
     (s.payload, s.toFlowFire.setName(s.getName()).map(FlowLogger.asBits).setName(s.getName()))
   }
 
@@ -685,6 +701,10 @@ object FlowLogger {
   }
 
   def flows[T <: Data](flows: Flow[T]*): Seq[(Data, Flow[Bits])] = {
+    flows.map(x => FlowLogger.asFlow(x))
+  }
+
+  def streams[T <: Data](flows: Stream[T]*): Seq[(Data, Flow[Bits])] = {
     flows.map(x => FlowLogger.asFlow(x))
   }
 
