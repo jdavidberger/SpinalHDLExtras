@@ -10,6 +10,7 @@ import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, PDPSC512K_Mem}
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.misc.ComponentWithKnownLatency
 
+import scala.collection.mutable
 import scala.language.postfixOps
 import scala.reflect.ClassTag
 
@@ -396,7 +397,8 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
 //}
 
 object LatticeMemories {
-  var lram_available = 4
+  var lram_available_maps = new mutable.HashMap[Component, Int]()
+  def lram_available = lram_available_maps.getOrElse(Component.toplevel, 4)
 
   def find_lram[T <: Data](requirements : MemoryRequirement[T]): Option[()=>HardwareMemory[Bits]] = {
     if(requirements.numPorts > 2)
@@ -407,7 +409,7 @@ object LatticeMemories {
         if(lram_available <= 0)
           MemBackedHardwardMemory(requirements.copy(dataType = Bits(32 bits)))
         else {
-          lram_available = lram_available - 1
+          lram_available_maps(Component.toplevel) = lram_available - 1
           val latency = requirements.latencyRange._2.min(2)
           (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
             case (1, 1, 0) => new PDPSC512K_Mem(target_latency = latency)

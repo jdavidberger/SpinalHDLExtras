@@ -33,8 +33,8 @@ case class VerifyODDRTestBench(ddr_factor : Int = 4, ODDRFactory : (DDRRequireme
   val eclkDomain = new ClockDomain(eclk, reset = reset)
 
   val sclkArea = new ClockingArea(sclkDomain ) {
-    val loddr = new ODDRArray(UInt(8 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(ODDRFactory))
-    val goddr = new ODDRArray(UInt(8 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(ddr_factor => new GenericODDR(ddr_factor, latency = loddr.latency())))
+    val loddr = new ODDRS(UInt(8 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(ODDRFactory))
+    val goddr = new ODDRS(UInt(8 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(ddr_factor => new GenericODDR(ddr_factor, latency = loddr.latency())))
 
     val counter = Counter(1 << 8)
     counter.increment()
@@ -88,10 +88,10 @@ case class VerifyIDDRTestBench(ddr_factor : Int = 4, IDDRFactory : (DDRRequireme
     val counter = CounterFreeRun(16)
   }
   val sclkArea = new ClockingArea(sclkDomain ) {
-    val liddr = new IDDRArray(UInt(8 bits), DDRRequirements(ddr_factor), IDDRFactory = Some(IDDRFactory))
-    val giddr = new IDDRArray(UInt(8 bits), DDRRequirements(ddr_factor), IDDRFactory = Some(ddr_factor => new GenericIDDR(ddr_factor, latency = liddr.latency())))
+    val liddr = new IDDRS(UInt(8 bits), DDRRequirements(ddr_factor), IDDRFactory = Some(IDDRFactory))
+    val giddr = new IDDRS(UInt(8 bits), DDRRequirements(ddr_factor), IDDRFactory = Some(ddr_factor => new GenericIDDR(ddr_factor, latency = liddr.latency())))
 
-    val oddr = new ODDRArray(UInt(8 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(ddr_factor => new GenericODDR(ddr_factor)))
+    val oddr = new ODDRS(UInt(8 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(ddr_factor => new GenericODDR(ddr_factor)))
     val primes = Seq(1, 3, 5, 7, 11, 13, 17, 19, 23, 31, 111)
 
     val valid = Reg(Bool()) init(True)

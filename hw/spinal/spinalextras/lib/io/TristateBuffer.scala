@@ -31,7 +31,7 @@ object TristateBuffer {
   def apply() = factory(())
 }
 
-case class TristateBufferArray[T <: BitVector](payloadType : HardType[T]) extends Component {
+case class TristateBuffers[T <: BitVector](payloadType : HardType[T]) extends Component {
   val bitsWidth = payloadType.getBitsWidth
   setDefinitionName(s"Tristate_w${bitsWidth}")
   val io = new Bundle {

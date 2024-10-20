@@ -174,7 +174,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
   val syscnt_stream = Stream(Bits(logBits bits))
   val needs_syscnt = RegInit(False)
   needs_syscnt := needs_syscnt | time_since_syscnt
-  syscnt_stream.payload := (syscnt ## ~B(0, (logBits - index_size - 64) bits)).resized
+  val syscnt_padding = logBits - index_size - 64
+  syscnt_stream.payload := (syscnt ## ~B(0, syscnt_padding bits)).resized
   syscnt_stream.valid := syscnt_stream.ready & needs_syscnt
 
   var minimum_time_bits = logBits
@@ -205,6 +206,9 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
       if (minimum_time_bits > time_bits) {
         minimum_time_bits = time_bits
+      }
+      when(output_stream.fire) {
+        report(Seq("Log fire", datas(idx)._1.name, output_stream.payload))
       }
 
       when(output_stream.fire && (time_since_syscnt.counter.value >> time_bits) =/= 0) {
@@ -486,20 +490,26 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
 
     emit(s"#define ${getName().toUpperCase}_FULL_TIME_ID 0x${((1 << index_size) - 1).toHexString}")
 
+    def get_field_name(n : String): String = {
+      if(n.matches("[0-9*].*"))
+        s"_${n}"
+      else n
+    }
+
     for(key <- defined.keys) {
       val exemplar = datas(defined(key).head._2)._1
       exemplar match {
         case b : MultiData => {
           emit(s"typedef struct ${getName()}_${key}_t {")
           b.elements.foreach(x => {
-            val prefix = s"${x._1}"
+            val prefix = get_field_name(x._1)
             emit(s"\t${getCType(x._2)} ${prefix};")
           })
           emit(s"} ${getName()}_${key}_t;")
 
           emit(s"#define ${getName()}_${key}_FIELDS(HANDLE_FIELD) \\")
           b.elements.foreach(x => {
-            val prefix = s"${x._1}"
+            val prefix = get_field_name(x._1)
             emit(s"\tHANDLE_FIELD(${prefix}) \\")
           })
           emit("")
@@ -548,7 +558,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
           emit(s"\treturn (${getName()}_${typeName}_t) {")
           b.elements.foreach(x => {
             val prefix = s"${parent_name}_${x._1}"
-            emit(s"\t\t.${x._1} = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH),")
+            emit(s"\t\t.${get_field_name(x._1)} = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH),")
           })
           emit("\t};")
           emit("}")
@@ -599,7 +609,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
     }
     emit(
       s"""
-         |   case ${(1 << index_size) - 1}: ctx->last_timestamp = ${getName()}_parse_field(tx, 1 + ${this.name}_INDEX_BITS, 64); break;
+         |   case ${(1 << index_size) - 1}: ctx->last_timestamp = ${getName()}_parse_field(tx, 1 + ${syscnt_padding}, 64); break;
          |   default: fprintf(stderr, "Unknown id %d\\n", id);
          |  }
          |}

@@ -30,6 +30,8 @@ abstract class IDDR(reqs : DDRRequirements) extends Component with ComponentWith
 }
 
 abstract class ODDR(reqs : DDRRequirements) extends Component with ComponentWithKnownLatency {
+  require(reqs.signal_multiple > 1)
+
   def input_per_output : Int = reqs.signal_multiple
   val io = new Bundle {
     //       D0 D1 Dx DN
@@ -61,7 +63,10 @@ abstract class ODDR(reqs : DDRRequirements) extends Component with ComponentWith
 
 }
 
-case class DDRRequirements(signal_multiple : Int = 2, delayable : Boolean = false) {
+case class DDRRequirements(signal_multiple : Int = 2,
+                           delayable : Boolean = false,
+                           static_delay : TimeNumber = 0 fs
+                          ) {
 
 }
 
@@ -93,7 +98,7 @@ object IDDR {
 }
 
 
-case class ODDRArray[T <: BitVector](payloadType : HardType[T], reqs : DDRRequirements = DDRRequirements(), ODDRFactory : Option[(DDRRequirements) => ODDR] = None) extends ComponentWithKnownLatency {
+case class ODDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequirements = DDRRequirements(), ODDRFactory : Option[(DDRRequirements) => ODDR] = None) extends ComponentWithKnownLatency {
   val input_per_output = reqs.signal_multiple
 
   val bitsWidth = payloadType.getBitsWidth
@@ -133,7 +138,7 @@ case class ODDRArray[T <: BitVector](payloadType : HardType[T], reqs : DDRRequir
   override def latency(): Int = oddrs.head.latency()
 }
 
-case class IDDRArray[T <: BitVector](payloadType : HardType[T], reqs : DDRRequirements, IDDRFactory : Option[(DDRRequirements) => IDDR] = None) extends ComponentWithKnownLatency {
+case class IDDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequirements, IDDRFactory : Option[(DDRRequirements) => IDDR] = None) extends ComponentWithKnownLatency {
   val bitsWidth = payloadType.getBitsWidth
   val output_per_input = reqs.signal_multiple
   setDefinitionName(s"IDDR_x${output_per_input}_w${bitsWidth}")
@@ -170,18 +175,82 @@ case class IDDRArray[T <: BitVector](payloadType : HardType[T], reqs : DDRRequir
 }
 
 
-case class IODDRArray[T <: BitVector](payloadType : HardType[T],
-                                      in_reqs: DDRRequirements,
-                                      out_reqs: DDRRequirements) extends ComponentWithKnownLatency {
+case class IDDRArray[T <: BitVector](bitsWidth : Int, reqs : DDRRequirements, IDDRFactory : Option[(DDRRequirements) => IDDR] = None) extends ComponentWithKnownLatency {
+  val output_per_input = reqs.signal_multiple
+  setDefinitionName(s"IDDRArray_x${output_per_input}_w${bitsWidth}")
+  val iddrs = Array.fill(bitsWidth)(IDDRFactory.getOrElse(x => IDDR(x))(reqs))
+  val io = new Bundle {
+    val IN = Array.fill(bitsWidth)(slave(Flow(Bool())))
+    val ECLK = in(Bool())
+    val OUT = Array.fill(bitsWidth)(master(Flow(Vec(Bool(), output_per_input))))
+
+    val DELAY = iddrs.head.io.DELAY.map(x => slave(x.clone()))
+  }
+  io.DELAY.map(_.allowOverride())
+  io.DELAY.foreach(delay => iddrs.foreach(_.io.DELAY.get <> delay))
+
+  noIoPrefix()
+
+  for((iddr, bit_idx) <- iddrs.zipWithIndex) {
+    iddr.io.ECLK := io.ECLK
+    iddr.io.IN <> io.IN(bit_idx)
+    io.OUT(bit_idx) <> iddrs(bit_idx).io.OUT
+  }
+
+  for(g <- 0 until output_per_input) {
+    val v = Bits(bitsWidth bits)
+    for((iddr, bit_idx) <- iddrs.zipWithIndex) {
+      v(bit_idx) := iddr.io.OUT.payload(g)
+    }
+  }
+
+  override def latency(): Int = iddrs.head.latency()
+}
+
+case class ODDRArray[T <: BitVector](bitsWidth : Int, reqs : DDRRequirements = DDRRequirements(), ODDRFactory : Option[(DDRRequirements) => ODDR] = None) extends ComponentWithKnownLatency {
+  val input_per_output = reqs.signal_multiple
+
+  ///setDefinitionName(s"ODDR_x${input_per_output}_w${bitsWidth}")
+  val oddrs = Array.fill(bitsWidth)(ODDRFactory.getOrElse(x => ODDR(x))(reqs))
+  val io = new Bundle {
+    val IN = Array.fill(bitsWidth)(slave(Flow(Vec(Bool(), input_per_output))))
+    val ECLK = in(Bool())
+    val OUT = Array.fill(bitsWidth)(master(Flow(Bool())))
+
+    val BUSY = out(Bool())
+    val LAST_SEND = out(Bool())
+
+    val DELAY = oddrs.head.io.DELAY.map(x => slave(x.clone()))
+  }
+  io.DELAY.map(_.allowOverride())
+  io.DELAY.foreach(delay => oddrs.foreach(_.io.DELAY.get <> delay))
+
+  noIoPrefix()
+  for((oddr, bit_idx) <- oddrs.zipWithIndex) {
+    oddr.io.ECLK := io.ECLK
+
+    oddr.io.IN <> io.IN(bit_idx)
+    io.OUT(bit_idx) <> oddr.io.OUT
+  }
+
+  io.LAST_SEND := oddrs.head.io.LAST_SEND
+  io.BUSY := oddrs.head.io.BUSY
+
+  override def latency(): Int = oddrs.head.latency()
+}
+
+case class IODDRS[T <: BitVector](payloadType : HardType[T],
+                                  in_reqs: DDRRequirements,
+                                  out_reqs: DDRRequirements) extends ComponentWithKnownLatency {
   val bitsWidth = payloadType.getBitsWidth
   val gear = in_reqs.signal_multiple
   require(gear == out_reqs.signal_multiple)
 
   setDefinitionName(s"IODDR_x${gear}_w${bitsWidth}")
 
-  val data_in = IDDRArray(payloadType, in_reqs)
-  val data_out = ODDRArray(payloadType, out_reqs)
-  val tristates = TristateBufferArray(payloadType)
+  val data_in = IDDRS(payloadType, in_reqs)
+  val data_out = ODDRS(payloadType, out_reqs)
+  val tristates = TristateBuffers(payloadType)
 
   val io = new Bundle {
     val ECLK = in(Bool())
@@ -254,8 +323,8 @@ object ODDRArraySim extends App {
 
     val sclk = sclkDomain.readClockWire
     val sclkArea = new ClockingArea(sclkDomain ) {
-      val loddr = new ODDRArray(UInt(4 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(x => new LatticeODDR(x)))
-      val goddr = new ODDRArray(UInt(4 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(x => new GenericODDR(x, latency = loddr.latency())))
+      val loddr = new ODDRS(UInt(4 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(x => new LatticeODDR(x)))
+      val goddr = new ODDRS(UInt(4 bits), DDRRequirements(ddr_factor), ODDRFactory = Some(x => new GenericODDR(x, latency = loddr.latency())))
 
       valid.setAsReg() init(True)
       when(goddr.io.OUT.valid) {
@@ -279,8 +348,8 @@ object ODDRArraySim extends App {
   }.setDefinitionName("ODDRArraySim"))
 }
 
-object ODDRArray extends App {
-  Config.sim.doSim(new ODDRArray(UInt(8 bits))) { dut =>
+object ODDRS extends App {
+  Config.sim.doSim(new ODDRS(UInt(8 bits))) { dut =>
     dut.io.IN.valid #= false
     val clockDomain = ClockDomain(dut.io.ECLK)
     dut.clockDomain.forkStimulus(100 MHz)

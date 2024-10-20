@@ -19,19 +19,25 @@ class LatticeTristateBuffer() extends TristateBuffer {
   bb.I <> io.input
 }
 
-case class LatticeDelay() extends Component {
+case class LatticeDelay(static_delay : TimeNumber) extends Component {
   val io = new Bundle {
     val delay = slave Stream(UInt(8 bits))
 
     val IN = in Bool()
     val OUT = out Bool()
   }
+  require(static_delay >= (0 fs) && static_delay < (3.2 ns))
 
-  var delay_block = DELAYA(COARSE_DELAY_MODE="DYNAMIC")
+  val init_target = (static_delay / (12.5 ps)).rounded.toInt
+
+  var delay_block = DELAYA(COARSE_DELAY_MODE="DYNAMIC",
+    DEL_VALUE = (init_target % 128).toString(),
+    COARSE_DELAY = if(init_target >= 128) "1P6NS" else "0NS"
+  )
   delay_block.io.A := io.IN
   io.OUT := delay_block.io.Z
 
-  val target = RegNextWhen(io.delay.payload, io.delay.valid) init(0)
+  val target = RegNextWhen(io.delay.payload, io.delay.valid) init(init_target)
   val current_delay = CounterUpDown(128)
 
   delay_block.io.COARSE0 := False
@@ -91,10 +97,14 @@ class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithK
 
   (0 until gear).foreach(i => QD._2(i) := io.IN.payload(i))
 
-  if(reqs.delayable) {
-    val delay = LatticeDelay()
-    io.DELAY = Some(slave (delay.io.delay.clone()))
-    delay.io.delay <> io.DELAY.get
+  if(reqs.delayable || reqs.static_delay != (0 fs)) {
+    val delay = LatticeDelay(reqs.static_delay)
+    if(reqs.delayable) {
+      io.DELAY = Some(slave (delay.io.delay.clone()))
+      delay.io.delay <> io.DELAY.get
+    } else {
+      delay.io.delay.setIdle()
+    }
     delay.io.IN := QD._1
     io.OUT.payload := delay.io.OUT
   } else {
@@ -111,7 +121,7 @@ class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithK
       case _ => log2Up(gear) * 4 - 1
     }
   }
-  setDefinitionName(s"LatticeODDR_x${gear}_l${latency()}")
+  setDefinitionName(s"LatticeODDR_x${gear}_l${latency()}${if(reqs.delayable) "_delayable" else ""}")
 }
 
 class LatticeIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithKnownLatency {
@@ -148,7 +158,7 @@ class LatticeIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithK
   (0 until gear).foreach(i => io.OUT.payload(i) := QD._1(i))
 
   if(reqs.delayable) {
-    val delay = LatticeDelay()
+    val delay = LatticeDelay(reqs.static_delay)
     delay.io.IN := io.IN.payload
     QD._2 := delay.io.OUT
     io.DELAY = Some(slave (delay.io.delay.clone()))
