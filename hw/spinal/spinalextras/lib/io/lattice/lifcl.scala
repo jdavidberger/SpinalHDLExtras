@@ -121,7 +121,7 @@ class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithK
       case _ => log2Up(gear) * 4 - 1
     }
   }
-  setDefinitionName(s"LatticeODDR_x${gear}_l${latency()}${if(reqs.delayable) "_delayable" else ""}")
+  setDefinitionName(s"LatticeODDR_l${latency()}_${reqs.toString}")
 }
 
 class LatticeIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithKnownLatency {
@@ -167,7 +167,7 @@ class LatticeIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithK
     QD._2 := io.IN.payload
   }
 
-  setDefinitionName(s"LatticeIDDR_x${gear}_l${latency()}")
+  setDefinitionName(s"LatticeIDDR_l${latency()}_${reqs.toString}")
 
   override def latency(): Int = {
     gear match {

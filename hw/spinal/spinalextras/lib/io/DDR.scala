@@ -67,7 +67,11 @@ case class DDRRequirements(signal_multiple : Int = 2,
                            delayable : Boolean = false,
                            static_delay : TimeNumber = 0 fs
                           ) {
+  override def toString = {
 
+    s"x${signal_multiple}${if(delayable) "_delayable" else ""}" +
+    (if(static_delay > (0 fs)) s"_delay${static_delay.decomposeString.replace(".", "p").replace(" ", "")}" else "")
+  }
 }
 
 object ODDR {
@@ -172,71 +176,6 @@ case class IDDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequiremen
   io.OUT.valid := iddrs.head.io.OUT.valid
 
   override def latency(): Int = iddrs.head.latency()
-}
-
-
-case class IDDRArray[T <: BitVector](bitsWidth : Int, reqs : DDRRequirements, IDDRFactory : Option[(DDRRequirements) => IDDR] = None) extends ComponentWithKnownLatency {
-  val output_per_input = reqs.signal_multiple
-  setDefinitionName(s"IDDRArray_x${output_per_input}_w${bitsWidth}")
-  val iddrs = Array.fill(bitsWidth)(IDDRFactory.getOrElse(x => IDDR(x))(reqs))
-  val io = new Bundle {
-    val IN = Array.fill(bitsWidth)(slave(Flow(Bool())))
-    val ECLK = in(Bool())
-    val OUT = Array.fill(bitsWidth)(master(Flow(Vec(Bool(), output_per_input))))
-
-    val DELAY = iddrs.head.io.DELAY.map(x => slave(x.clone()))
-  }
-  io.DELAY.map(_.allowOverride())
-  io.DELAY.foreach(delay => iddrs.foreach(_.io.DELAY.get <> delay))
-
-  noIoPrefix()
-
-  for((iddr, bit_idx) <- iddrs.zipWithIndex) {
-    iddr.io.ECLK := io.ECLK
-    iddr.io.IN <> io.IN(bit_idx)
-    io.OUT(bit_idx) <> iddrs(bit_idx).io.OUT
-  }
-
-  for(g <- 0 until output_per_input) {
-    val v = Bits(bitsWidth bits)
-    for((iddr, bit_idx) <- iddrs.zipWithIndex) {
-      v(bit_idx) := iddr.io.OUT.payload(g)
-    }
-  }
-
-  override def latency(): Int = iddrs.head.latency()
-}
-
-case class ODDRArray[T <: BitVector](bitsWidth : Int, reqs : DDRRequirements = DDRRequirements(), ODDRFactory : Option[(DDRRequirements) => ODDR] = None) extends ComponentWithKnownLatency {
-  val input_per_output = reqs.signal_multiple
-
-  ///setDefinitionName(s"ODDR_x${input_per_output}_w${bitsWidth}")
-  val oddrs = Array.fill(bitsWidth)(ODDRFactory.getOrElse(x => ODDR(x))(reqs))
-  val io = new Bundle {
-    val IN = Array.fill(bitsWidth)(slave(Flow(Vec(Bool(), input_per_output))))
-    val ECLK = in(Bool())
-    val OUT = Array.fill(bitsWidth)(master(Flow(Bool())))
-
-    val BUSY = out(Bool())
-    val LAST_SEND = out(Bool())
-
-    val DELAY = oddrs.head.io.DELAY.map(x => slave(x.clone()))
-  }
-  io.DELAY.map(_.allowOverride())
-  io.DELAY.foreach(delay => oddrs.foreach(_.io.DELAY.get <> delay))
-
-  noIoPrefix()
-  for((oddr, bit_idx) <- oddrs.zipWithIndex) {
-    oddr.io.ECLK := io.ECLK
-
-    oddr.io.IN <> io.IN(bit_idx)
-    io.OUT(bit_idx) <> oddr.io.OUT
-  }
-
-  io.LAST_SEND := oddrs.head.io.LAST_SEND
-  io.BUSY := oddrs.head.io.BUSY
-
-  override def latency(): Int = oddrs.head.latency()
 }
 
 case class IODDRS[T <: BitVector](payloadType : HardType[T],
