@@ -19,14 +19,20 @@ class LatticeTristateBuffer() extends TristateBuffer {
   bb.I <> io.input
 }
 
-case class LatticeDelay(static_delay : TimeNumber) extends Component {
+case class LatticeDelay(var static_delay : TimeNumber) extends Component {
   val io = new Bundle {
     val delay = slave Stream(UInt(8 bits))
 
     val IN = in Bool()
     val OUT = out Bool()
   }
-  require(static_delay >= (0 fs) && static_delay < (3.2 ns))
+
+  require(static_delay >= (0 fs))
+
+  if(static_delay >= (3.2 ns)) {
+    SpinalWarning(s"Static delay for LIFCL delay blocks has a max of 3.2ns; capping given value of ${static_delay}")
+    static_delay = static_delay.min((3.2 ns) - (12.5 ps))
+  }
 
   val init_target = (static_delay / (12.5 ps)).rounded.toInt
 

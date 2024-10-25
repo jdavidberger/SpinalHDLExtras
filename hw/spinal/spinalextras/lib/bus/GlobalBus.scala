@@ -98,6 +98,11 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
       case _ => mapping
     }
 
+    slaves.foreach(s => {
+      require(!s._2.hit(newMapping.lowerBound))
+      require(!newMapping.hit(s._2.lowerBound))
+    })
+
     slaves.append((topBus, newMapping, Set(tags:_*)))
 
     rtn
@@ -213,6 +218,7 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
     {
       val ctx = Component.push(Component.toplevel)
       GlobalLogger(
+        tags = Set("memory"),
         WishboneBusLogger.flows(InvertMapping(SizeMapping(0xb9000000L, 1 KiB)), masters.map(_._1): _*),
       )
       ctx

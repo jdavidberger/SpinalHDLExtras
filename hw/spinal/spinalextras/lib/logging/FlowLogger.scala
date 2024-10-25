@@ -14,7 +14,7 @@ import scala.collection.mutable
 import scala.language.postfixOps
 
 class GlobalLogger {
-  val signals = new mutable.ArrayBuffer[(Data, Flow[Bits], ClockDomain)]()
+  val signals = new mutable.ArrayBuffer[(Data, Flow[Bits], ClockDomain, Set[String])]()
 
   var built = false
   var topComponent = {
@@ -51,10 +51,10 @@ class GlobalLogger {
     intermediate_bus
   }
 
-  def add(s: (Data, Flow[Bits])*): Unit = {
+  def add(tags: Set[String], s: (Data, Flow[Bits])*): Unit = {
     assert(!built)
     assert(ClockDomain.current != null)
-    signals.appendAll(s.map(x => (x._1, topify(x._2), ClockDomain.current)))
+    signals.appendAll(s.map(x => (x._1, topify(x._2), ClockDomain.current, tags)))
   }
 
   var output_path = "."
@@ -62,29 +62,38 @@ class GlobalLogger {
     output_path = fn
   }
 
-  def build(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String, outputStream : Option[Stream[Bits]] = None): Unit = {
+  def build(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String,
+            outputStream : Option[Stream[Bits]] = None,
+            tags : Set[String] = Set()): Unit = {
     if(built) {
       return
     }
     built = true;
-    val ctx = Component.push(Component.toplevel)
-    val logger = FlowLogger(this.signals)
-    logger.setName(name)
-    logger.codeDefinitions(output_path)
-    logger.sqliteHandlers(output_path)
-    logger.create_logger_port(sysBus, address, depth, outputStream)
-    ctx.restore()
+    val signals = this.signals.filter(s => {
+      s._4.intersect(tags).nonEmpty || tags.isEmpty
+    }).map(s => (s._1, s._2, s._3))
 
+    if(signals.nonEmpty) {
+      val ctx = Component.push(Component.toplevel)
+      val logger = FlowLogger(signals)
+      logger.setName(name)
+      logger.codeDefinitions(output_path)
+      logger.sqliteHandlers(output_path)
+      logger.create_logger_port(sysBus, address, depth, outputStream)
+      ctx.restore()
+    } else {
+      outputStream.foreach(_.setIdle())
+    }
   }
   def create_logger_stream(depth: Int, outputStream : Stream[Bits]): Unit = {
     Component.toplevel.addPrePopTask(() => {
       this.build(null, 0, depth, "GlobalLogger", Some(outputStream))
     })
   }
-  def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String, outputStream : Option[Stream[Bits]] = None): Unit = {
-    sysBus.addPreBuildTask(() => build(sysBus, address, depth, name, outputStream))
+  def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String, outputStream : Option[Stream[Bits]] = None, tags : Set[String] = Set()): Unit = {
+    sysBus.addPreBuildTask(() => build(sysBus, address, depth, name, outputStream, tags))
     Component.toplevel.addPrePopTask(() => {
-      this.build(sysBus, address, depth, name, outputStream)
+      this.build(sysBus, address, depth, name, outputStream, tags)
     })
   }
 }
@@ -99,9 +108,14 @@ object GlobalLogger {
     sysLogger.get
   }
 
-  def apply(signals: Seq[(Data, Flow[Bits])]*): Unit = {
-    signals.foreach(x => get().add(x:_*))
+  def apply(tags: Set[String], signals: Seq[(Data, Flow[Bits])]*): Unit = {
+    signals.foreach(x => get().add(tags = tags, x:_*))
   }
+
+  def apply(signals: Seq[(Data, Flow[Bits])]*): Unit = {
+    signals.foreach(x => get().add(tags = Set(), x:_*))
+  }
+
   def set_output_path(fn : String): Unit = {
     get().set_output_path(fn)
   }
@@ -109,12 +123,145 @@ object GlobalLogger {
     get().create_logger_stream(depth, outputStream = outputStream)
   }
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String = Component.toplevel.name + "Logger",
-                         outputStream : Option[Stream[Bits]] = None): Unit = {
-    get().create_logger_port(sysBus, address, depth, name = name, outputStream = outputStream)
+                         outputStream : Option[Stream[Bits]] = None, tags: Set[String] = Set()): Unit = {
+    get().create_logger_port(sysBus, address, depth, name = name, outputStream = outputStream, tags = tags)
   }
 }
 
-class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Component {
+class FlowLoggerDataCapture(logger : FlowLogger, dataType : HardType[Bits], datum : (Data, ClockDomain), idx : Int) extends Component {
+  val io = new Bundle {
+    val flow = slave Flow(dataType)
+    val manual_trigger = in Bool()
+    val channel_active = in Bool()
+
+    val flow_fire = out Bool()
+    val needs_syscnt = out Bool()
+
+    val time_since_syscnt = in(logger.time_since_syscnt.counter.value.clone())
+    val syscnt = in(logger.syscnt.value.clone())
+
+    val stamped_stream = master(logger.io.log.clone())
+  }
+
+  val output_stream = {
+    val r = Flow(io.flow.payload.clone())
+    r.payload := io.flow.payload
+    var manual_trigger =  io.manual_trigger
+    if(ClockDomain.current != datum._2) {
+      new ClockingArea(datum._2) {
+        manual_trigger = BufferCC(manual_trigger)
+      }
+    }
+    r.valid := (io.channel_active && io.flow.valid) || manual_trigger
+    if(ClockDomain.current == datum._2) {
+      io.flow_fire := r.valid
+      //r.stage().toStream
+      r.toStream
+    } else {
+      val rCCed = r.toStream.queue(4, pushClock = datum._2, popClock = ClockDomain.current)
+      rCCed.setName(s"${datum._1.name}_fifo_cc")
+      io.flow_fire := rCCed.fire
+      rCCed
+    }
+  }
+  val logBits = logger.logBits
+  val index_size = logger.index_size
+
+  val time_bits = logBits - output_stream.payload.getBitsWidth - index_size
+  assert(time_bits > 0, s"${io.flow} has too many bits for logger ${logBits} ${output_stream.payload.getBitsWidth} ${index_size}")
+
+//  if (minimum_time_bits > time_bits) {
+//    minimum_time_bits = time_bits
+//  }
+  when(output_stream.fire) {
+    report(Seq("Log fire", datum._1.name, output_stream.payload))
+  }
+
+  io.needs_syscnt := False
+  when(output_stream.fire && (io.time_since_syscnt >> time_bits) =/= 0) {
+    io.needs_syscnt := True
+  }
+
+  val stamped_stream = output_stream.map(p => io.syscnt.resize(time_bits bits) ## p ## B(idx, index_size bits))
+
+  when(stamped_stream.fire) {
+    report(Seq(io.flow.name, io.flow.payload))
+  }
+
+  stamped_stream.stage().s2mPipe() <> io.stamped_stream
+}
+
+class ArbiterNode[T <: Data](dataType: HardType[T], cnt : Int) extends Component {
+  val io = new Bundle {
+    val ins = Array.fill(cnt)(slave Stream(dataType))
+    val out = master Stream(dataType)
+  }
+
+  io.out <> {
+    cnt match {
+      case 1 => io.ins.head
+      case 2 => {
+        val out = io.out.clone()
+        io.ins.foreach(_.setBlocked())
+        when(io.ins.head.valid) {
+          io.ins.head <> out
+        } otherwise  {
+          io.ins.last <> out
+        }
+        out
+      }
+      case n => {
+        ArbiterNode(Seq(ArbiterNode(io.ins.drop(1).toSeq), io.ins.head))
+      }
+    }
+  }
+}
+
+object ArbiterNode {
+  def apply[T <: Data](streams : Seq[Stream[T]]): Stream[T] = {
+    streams.size match {
+      case 1 => streams(0)
+      case n => {
+        val tree = new ArbiterNode[T](streams.head.payload, n)
+        tree.io.ins.zip(streams).foreach(x => x._1 <> x._2)
+        tree.io.out
+      }
+    }
+  }
+}
+
+class StreamArbiterTree[T <: Data](dataType: HardType[T], cnt : Int) extends Component {
+  val io = new Bundle {
+    val ins = Array.fill(cnt)(slave Stream(dataType))
+    val out = master Stream(dataType)
+  }
+
+  io.out <> {
+    cnt match {
+      case 1 => io.ins.head
+      case 2 => StreamArbiterFactory.lowerFirst.noLock.on(io.ins)
+      case n => {
+        val (a, b) = io.ins.splitAt(n / 2)
+        StreamArbiterTree(Seq(StreamArbiterTree(a), StreamArbiterTree(b)))
+      }
+    }
+  }
+}
+
+object StreamArbiterTree {
+  def apply[T <: Data](streams : Seq[Stream[T]]): Stream[T] = {
+    streams.size match {
+      case 1 => streams(0)
+      case n => {
+        val tree = new StreamArbiterTree[T](streams.head.payload, n)
+        tree.io.ins.zip(streams).foreach(x => x._1 <> x._2)
+        tree.io.out
+      }
+    }
+  }
+}
+
+class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends Component {
   val signature = datas.map(_.toString()).hashCode().abs
   val io = new Bundle {
     val flows = datas.map(b => slave Flow (Bits(b._1.getBitsWidth bits)))
@@ -182,48 +329,22 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
   val encoded_streams = {
     for ((stream, idx) <- flows()) yield {
 
-      val output_stream = {
-        val r = Flow(stream.payload.clone())
-        r.payload := stream.payload
-        var manual_trigger =  io.manual_trigger.fire && io.manual_trigger.payload(idx) === True
-        if(ClockDomain.current != datas(idx)._2) {
-          new ClockingArea(datas(idx)._2) {
-            manual_trigger = BufferCC(manual_trigger)
-          }
-        }
-        r.valid := (!io.inactive_channels(idx) && stream.valid) || manual_trigger
-        if(ClockDomain.current == datas(idx)._2) {
-          io.flowFires(idx) := r.valid
-          r.stage().toStream
-        } else {
-          val rCCed = r.toStream.queue(4, pushClock = datas(idx)._2, popClock = ClockDomain.current)
-          io.flowFires(idx) := rCCed.fire
-          rCCed
-        }
-      }
-      val time_bits = logBits - output_stream.payload.getBitsWidth - index_size
-      assert(time_bits > 0, s"${stream}[${idx}] has too many bits for logger ${logBits} ${output_stream.payload.getBitsWidth} ${index_size}")
-
-      if (minimum_time_bits > time_bits) {
-        minimum_time_bits = time_bits
-      }
-      when(output_stream.fire) {
-        report(Seq("Log fire", datas(idx)._1.name, output_stream.payload))
-      }
-
-      when(output_stream.fire && (time_since_syscnt.counter.value >> time_bits) =/= 0) {
+      val data_log_capture = new FlowLoggerDataCapture(this, Bits(stream.payload.getBitsWidth bits), datas(idx), idx)
+      data_log_capture.setName(s"data_tap_${stream.name}_${idx}")
+      data_log_capture.io.flow <> stream
+      data_log_capture.io.flow_fire <> io.flowFires(idx)
+      data_log_capture.io.manual_trigger := io.manual_trigger.fire && io.manual_trigger.payload(idx) === True
+      data_log_capture.io.channel_active := !io.inactive_channels(idx)
+      when(data_log_capture.io.needs_syscnt) {
         needs_syscnt := True
       }
 
-      val stamped_stream = output_stream.map(p => syscnt.resize(time_bits bits) ## p ## B(idx, index_size bits))
-
-      when(stamped_stream.isStall) {
+      data_log_capture.io.time_since_syscnt := time_since_syscnt.counter.value
+      data_log_capture.io.syscnt := syscnt.value
+      when(data_log_capture.io.stamped_stream.isStall) {
         dropped_events := dropped_events + 1
       }
-      when(stamped_stream.fire) {
-        report(Seq(stream.name, stream.payload))
-      }
-      stamped_stream.stage().s2mPipe()
+      data_log_capture.io.stamped_stream
     }
   }
 
@@ -233,6 +354,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], logBits: Int = 95) extends Com
   }
 
   io.log <> StreamArbiterFactory.lowerFirst.noLock.on(encoded_streams ++ Seq(syscnt_stream.stage())).stage()
+  //io.log <> StreamArbiterTree(encoded_streams ++ Seq(syscnt_stream.stage())).stage()
+
   def getTypeName(d: Data): String = {
     d match {
       case b: Bundle => if(b.getTypeString.contains("$") || b.getTypeString.isEmpty) d.getName() else b.getTypeString
