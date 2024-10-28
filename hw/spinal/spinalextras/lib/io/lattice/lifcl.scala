@@ -44,7 +44,7 @@ case class LatticeDelay(var static_delay : TimeNumber) extends Component {
   io.OUT := delay_block.io.Z
 
   val target = RegNextWhen(io.delay.payload, io.delay.valid) init(init_target)
-  val current_delay = CounterUpDown(128)
+  val current_delay = CounterUpDown(128) init(init_target & 0x7f)
 
   delay_block.io.COARSE0 := False
   delay_block.io.COARSE1 := target.msb
@@ -52,12 +52,16 @@ case class LatticeDelay(var static_delay : TimeNumber) extends Component {
   delay_block.io.DIRECTION := RegNext(current_delay > target.resize(7 bits)) init(False)
 
   val needs_change = RegNext(current_delay =/= target.resize(7 bits))
-  val bring_pulse_low = RegNext(delay_block.io.MOVE)
+  val bring_pulse_low = RegNext(delay_block.io.MOVE) init(False)
   delay_block.io.MOVE := needs_change && ~bring_pulse_low
 
   io.delay.ready := False
   when(!needs_change && Delay(io.delay.valid, 2)) {
     io.delay.ready := True
+  }
+
+  when(delay_block.io.CFLAG) {
+    assert(current_delay.value === 0 || current_delay.value.andR === True)
   }
 
   when(delay_block.io.MOVE.rise(False)) {

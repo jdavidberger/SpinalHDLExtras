@@ -65,6 +65,8 @@ object SignalLogger {
   def concat(name : String, signals: Any*): Seq[(Data, Flow[Bits])] = {
     val signal_elments = signals.flatMap(s => {
       s match {
+        case v : Vector[Data] =>
+          v.map(d => (d.getName(), d))
         case b : Bundle => b.elements
         case d : Data => Seq((d.getName(), d))
         case e : Seq[(String, Data)] => e

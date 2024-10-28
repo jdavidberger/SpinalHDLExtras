@@ -6,7 +6,7 @@ import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig, PipelinedMemoryBusRsp}
 import spinalextras.lib.HardwareMemory._
-import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, PDPSC512K_Mem}
+import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, PDPSC16K_Mem, PDPSC512K_Mem}
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.misc.ComponentWithKnownLatency
 
@@ -419,6 +419,16 @@ object LatticeMemories {
         }
       }
     )
+  }
+
+  def find_ebr[T <: Data](requirements : MemoryRequirement[T]): ()=>HardwareMemory[Bits] = {
+    () => {
+      val latency = requirements.latencyRange._2.min(2)
+      (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
+        case (1, 1, 0) => new PDPSC16K_Mem(data_pins = requirements.dataType.getBitsWidth,target_latency = latency)
+        case _ => new MemBackedHardwardMemory[Bits](requirements.asBits)
+      }
+    }
   }
 
   def apply[T <: Data](memKind : MemTechnologyKind)(requirements : MemoryRequirement[T]): HardwareMemory[T] = {

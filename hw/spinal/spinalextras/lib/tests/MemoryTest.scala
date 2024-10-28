@@ -60,8 +60,13 @@ object AddressHash {
   }
 }
 
-case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1, test_masking : Boolean = true,
-                           address_mask : BigInt = 0xffffffffL) extends Component {
+class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1,
+                           address_mask : BigInt = 0xffffffffL,
+                           writesPerIteration : BigInt,
+                           readsPerIteration : BigInt,
+                           address_to_data : (UInt, Int) => Bits,
+                           address_to_data_mask : Option[(UInt, Int) => Bits] = None
+                          ) extends Component {
   val io = new Bundle {
     val bus = master(PipelinedMemoryBus(cfg))
 
@@ -86,9 +91,9 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
     timeout_counter.clear()
   }
 
-  val iterationCount = 1 << 8
-  val writeCnt = Counter(iterationCount - 1) init (0)
-  val read_cnt = Counter(iterationCount - 2) init (0)
+  require(writesPerIteration >= readsPerIteration)
+  val writeCnt = Counter(writesPerIteration) init (0)
+  val read_cnt = Counter(readsPerIteration) init (0)
   val readMode = Reg(Bool()) init (False)
 
   val readAddress, writeAddress, responseAddress, lastGoodResponse = Reg(UInt(cfg.addressWidth bits)) init (0)
@@ -96,8 +101,8 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   val dataWidth = cfg.dataWidth
   val incPerOp = dataWidth / 8
   //cmd_stream.address := (0x000 + incPerOp * writeCnt.value).resized
-  cmd_stream.data := AddressHash(cmd_stream.address, dataWidth).resized
-  val cmdHash = if(test_masking) AddressMaskHash(cmd_stream.address, dataWidth) else null
+  cmd_stream.data := address_to_data(cmd_stream.address, dataWidth).resized
+  val cmdHash = address_to_data_mask.map(_(cmd_stream.address, dataWidth)).orNull
   if(cmdHash != null) {
     cmd_stream.mask := cmdHash.resized
   } else {
@@ -143,15 +148,15 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   io.valid.setAsReg() init (True)
 
   val bitMask, expected_value = Bits(dataWidth bits)
-  val byteMask = AddressMaskHash(responseAddress, dataWidth)
-  val bitMaskVal = if (test_masking) ByteMaskToBitMask(byteMask) else null
+  val byteMask = address_to_data_mask.map(_(responseAddress, dataWidth)).getOrElse(~B(0, (dataWidth / 8) bits))
+  val bitMaskVal = if (byteMask != null && byteMask.getBitsWidth > 0) ByteMaskToBitMask(byteMask) else null
   if(bitMaskVal != null) {
     bitMask := bitMaskVal
   } else {
     bitMask.setAll()
   }
 
-  expected_value := AddressHash(responseAddress, dataWidth).resized
+  expected_value := address_to_data(responseAddress, dataWidth).resized
 
   val outstanding_count = CounterUpDown((1L << 32), incWhen = io.bus.cmd.fire && ~io.bus.cmd.write, decWhen = io.bus.rsp.fire)
   assert(~outstanding_count.msb, "~outstanding_count.msb")
@@ -161,23 +166,30 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
     val timeout_counts = UInt(32 bits)
   }.setAsReg()
 
-  val read_timeout = Timeout(iterationCount * 16)
-  val masked_data = access.rsp.data & bitMask
+  val read_timeout = Timeout(writesPerIteration * 16)
 
   val eval_flow = access.rsp
-    .map(x => TupleBundle(x.data & bitMask, expected_value.asBits & bitMask, responseAddress))
+    .map(x => TupleBundle(x.data & bitMask, expected_value.asBits & bitMask, responseAddress, byteMask))
     .stage()
-    .map(x => TupleBundle(x._1 === x._2, x._1, x._2, x._3))
+    .map(x => TupleBundle(x._1 === x._2, x._1, x._2, x._3, x._4))
     .stage()
 
   when(access.rsp.fire) {
     responseAddress := (responseAddress + incPerOp) & address_mask
   }
 
+  val invalid_data = Flow(HardwareMemoryWriteCmd(cmd_stream.config.copy(dataWidth = 32)))
+  invalid_data.valid := False
+  invalid_data.assignDontCareToUnasigned()
+
   when(eval_flow.fire) {
     read_timeout.clear()
-    val (valid_value, given_data, expected_value, responseAddress) =
-      (eval_flow.payload._1, eval_flow.payload._2, eval_flow.payload._3, eval_flow.payload._4)
+    val (valid_value, given_data, expected_value, responseAddress, byteMask) =
+      (eval_flow.payload._1, eval_flow.payload._2, eval_flow.payload._3, eval_flow.payload._4, eval_flow.payload._5)
+
+    invalid_data.payload.data := given_data // (given_data ^ expected_value).resized
+    invalid_data.payload.address := responseAddress
+    invalid_data.payload.mask := byteMask
 
     io.valid := (io.valid && valid_value && hasExpectedLatency)// && ~timeout_counter.willOverflowIfInc)
     when(~valid_value) {
@@ -185,9 +197,11 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
       count_vals.total_invalid := count_vals.total_invalid + 1
     }
 
+
     when(!valid_value) {
-      report(Seq("Invalid value found given ", access.rsp.data, " vs expected ", expected_value, " at ", responseAddress, " for ", ClockDomain.current.frequency.getValue.decomposeString))
+      report(Seq("Invalid value found given ", given_data, " vs expected ", expected_value, " at ", responseAddress, " for ", ClockDomain.current.frequency.getValue.decomposeString))
       assert(False, "Invalid value found")
+      invalid_data.valid := True
     } otherwise {
       lastGoodResponse := responseAddress
       io.valid_count := io.valid_count + 1
@@ -205,17 +219,12 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   val timer = Timeout(1000 ms)
   timer.clearWhen(timer.state)
 
-//  val invalid_data = Flow(HardwareMemoryWriteCmd(cmd_stream.config.copy(dataWidth = 32)))
-//  invalid_data.valid := !valid_value
-//  invalid_data.payload.data := (access.rsp.data ^ expected_value).resized
-//  invalid_data.payload.address := responseAddress
-//  invalid_data.payload.mask := RegNext(byteMask).resized
-
-
   GlobalLogger(
+    tags = Set("meta"),
     SignalLogger.concat(100 ms, "counts", count_vals.total_invalid, count_vals.total_valid),
     SignalLogger.concat(100 ms, "error_counts", lastGoodResponse, count_vals.timeout_counts),
-    //FlowLogger.flows(invalid_data)
+    SignalLogger.concat("mode", readMode),
+    FlowLogger.flows(invalid_data)
   )
 
   if(unique_name) {
@@ -224,7 +233,33 @@ case class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean
   }
 }
 
+object MemoryTestBench {
+  def apply(
+             cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1, test_masking : Boolean = true,
+             address_mask : BigInt = 0xffffffffL): MemoryTestBench = {
+    val iterationCount = 1 << 8
+    new MemoryTestBench(cfg, unique_name, latency, address_mask,
+      iterationCount - 1, iterationCount - 2 ,
+      address_to_data = AddressHash.apply,
+      address_to_data_mask = if (test_masking) Some(AddressMaskHash.apply) else None)
+  }
 
+  def linear(
+             cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1,
+             address_mask : BigInt = 0xffffffffL): MemoryTestBench = {
+    new MemoryTestBench(cfg, unique_name, latency, address_mask,
+      512, 512,
+      address_to_data = (address : UInt, dw : Int) => address.asBits)
+  }
+
+  def constant(
+              cfg : PipelinedMemoryBusConfig, constant : BigInt, unique_name : Boolean = false, latency : Int = -1,
+              address_mask : BigInt = 0xffffffffL): MemoryTestBench = {
+    new MemoryTestBench(cfg, unique_name, latency, address_mask,
+      512, 512,
+      address_to_data = (address : UInt, dw : Int) => B(constant, dw bits))
+  }
+}
 
 class MemMemoryTest extends AnyFunSuite {
   def doTest[T <: Data](reqs : MemoryRequirement[T], technologyKind : MemTechnologyKind = auto, factory : (MemoryRequirement[T], MemTechnologyKind) => HardwareMemory[T] = Memories.apply[T] _): Unit = {

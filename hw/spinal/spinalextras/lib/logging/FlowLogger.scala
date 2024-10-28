@@ -85,9 +85,9 @@ class GlobalLogger {
       outputStream.foreach(_.setIdle())
     }
   }
-  def create_logger_stream(depth: Int, outputStream : Stream[Bits]): Unit = {
+  def create_logger_stream(depth: Int, outputStream : Stream[Bits], tags: Set[String] = Set()): Unit = {
     Component.toplevel.addPrePopTask(() => {
-      this.build(null, 0, depth, "GlobalLogger", Some(outputStream))
+      this.build(null, 0, depth, "GlobalLogger", Some(outputStream), tags = tags)
     })
   }
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String, outputStream : Option[Stream[Bits]] = None, tags : Set[String] = Set()): Unit = {
@@ -119,8 +119,8 @@ object GlobalLogger {
   def set_output_path(fn : String): Unit = {
     get().set_output_path(fn)
   }
-  def create_logger_stream(depth: Int, outputStream : Stream[Bits]) : Unit = {
-    get().create_logger_stream(depth, outputStream = outputStream)
+  def create_logger_stream(depth: Int, outputStream : Stream[Bits], tags: Set[String] = Set()) : Unit = {
+    get().create_logger_stream(depth, outputStream = outputStream, tags = tags)
   }
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String = Component.toplevel.name + "Logger",
                          outputStream : Option[Stream[Bits]] = None, tags: Set[String] = Set()): Unit = {
