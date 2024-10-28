@@ -19,6 +19,73 @@ class LatticeTristateBuffer() extends TristateBuffer {
   bb.I <> io.input
 }
 
+case class LatticeDelayController(var static_delay : TimeNumber) extends Component with DelayController {
+  val io = new Bundle {
+    val delay = slave Stream(UInt(8 bits))
+
+    val COARSE0, COARSE1, LOAD_N, DIRECTION, MOVE = out Bool()
+    val CFLAG = in Bool()
+  }
+
+  require(static_delay >= (0 fs))
+
+  if(static_delay >= (3.2 ns)) {
+    SpinalWarning(s"Static delay for LIFCL delay blocks has a max of 3.2ns; capping given value of ${static_delay}")
+    static_delay = static_delay.min((3.2 ns) - (12.5 ps))
+  }
+
+  val init_target = (static_delay / (12.5 ps)).rounded.toInt
+
+  def create_delay_block(): DELAYA = {
+    val delay_block = DELAYA(COARSE_DELAY_MODE="DYNAMIC",
+      DEL_VALUE = (init_target % 128).toString(),
+      COARSE_DELAY = if(init_target >= 128) "1P6NS" else "0NS"
+    )
+
+    delay_block.io.COARSE0 := io.COARSE0
+    delay_block.io.COARSE1 := io.COARSE1
+    delay_block.io.LOAD_N := io.LOAD_N
+    delay_block.io.DIRECTION := io.DIRECTION
+    delay_block.io.MOVE := io.MOVE
+
+    delay_block
+  }
+
+  val target = RegNextWhen(io.delay.payload, io.delay.valid) init(init_target)
+  val current_delay = CounterUpDown(128) init(init_target & 0x7f)
+  val direction = RegNext(current_delay > target.resize(7 bits)) init(False)
+
+  val needs_change = RegNext(current_delay =/= target.resize(7 bits))
+  val bring_pulse_low = RegNext(io.MOVE) init(False)
+  val move = needs_change && ~bring_pulse_low
+
+  io.COARSE0 := False
+  io.COARSE1 := target.msb
+  io.LOAD_N := ~ClockDomain.current.readResetWire
+  io.DIRECTION := direction
+  io.MOVE := move
+
+
+  io.delay.ready := False
+  when(!needs_change && Delay(io.delay.valid, 2)) {
+    io.delay.ready := True
+  }
+
+  when(io.CFLAG) {
+    assert(current_delay.value === 0 || current_delay.value.andR === True)
+  }
+
+  when(move.rise(False)) {
+    when(io.DIRECTION) {
+      current_delay.decrement()
+    } otherwise {
+      current_delay.increment()
+    }
+  }
+
+  override def delay: Stream[UInt] = io.delay
+}
+
 case class LatticeDelay(var static_delay : TimeNumber) extends Component {
   val io = new Bundle {
     val delay = slave Stream(UInt(8 bits))
@@ -108,20 +175,29 @@ class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithK
   (0 until gear).foreach(i => QD._2(i) := io.IN.payload(i))
 
   if(reqs.delayable || reqs.static_delay != (0 fs)) {
-    val delay = LatticeDelay(reqs.static_delay)
-    if(reqs.delayable) {
-      io.DELAY = Some(slave (delay.io.delay.clone()))
-      delay.io.delay <> io.DELAY.get
-    } else {
-      delay.io.delay.setIdle()
-    }
-    delay.io.IN := QD._1
-    io.OUT.payload := delay.io.OUT
+    //delay.io.IN := QD._1
+    //io.OUT.payload := delay.io.OUT
   } else {
     io.OUT.payload := QD._1
   }
 
-
+  override def create_delay_controller(): DelayController = {
+    if(reqs.delayable || reqs.static_delay != (0 fs)) {
+      LatticeDelayController(reqs.static_delay)
+    } else {
+      null
+    }
+  }
+  override def attach_delay_controller(controller : DelayController): Unit = {
+    if(controller != null) {
+      withAutoPull()
+      var restoreStack = Component.push(this)
+      val delay_block = controller.create_delay_block()
+      delay_block.IN := QD._1
+      io.OUT.payload := delay_block.OUT
+      restoreStack.restore()
+    }
+  }
 
   override def latency(): Int = {
     gear match {
@@ -168,16 +244,29 @@ class LatticeIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithK
   (0 until gear).foreach(i => io.OUT.payload(i) := QD._1(i))
 
   if(reqs.delayable) {
-    val delay = LatticeDelay(reqs.static_delay)
-    delay.io.IN := io.IN.payload
-    QD._2 := delay.io.OUT
-    io.DELAY = Some(slave (delay.io.delay.clone()))
-    delay.io.delay <> io.DELAY.get
+//    val delay = LatticeDelay(reqs.static_delay)
+//    delay.io.IN := io.IN.payload
+//    QD._2 := delay.io.OUT
+//    io.DELAY = Some(slave (delay.io.delay.clone()))
+//    delay.io.delay <> io.DELAY.get
   } else {
     QD._2 := io.IN.payload
   }
 
-  setDefinitionName(s"LatticeIDDR_l${latency()}_${reqs.toString}")
+  override def create_delay_controller(): DelayController = {
+    LatticeDelayController(reqs.static_delay)
+  }
+
+  override def attach_delay_controller(controller : DelayController): Unit = {
+    withAutoPull()
+    val restoreStack = Component.push(this)
+    val delay_block = controller.create_delay_block()
+    delay_block.IN := io.IN.payload
+    QD._2 := delay_block.OUT
+    restoreStack.restore()
+  }
+
+  //setDefinitionName(s"LatticeIDDR_l${latency()}_${reqs.toString}")
 
   override def latency(): Int = {
     gear match {

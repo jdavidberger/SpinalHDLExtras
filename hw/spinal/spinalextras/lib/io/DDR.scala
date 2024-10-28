@@ -12,6 +12,16 @@ import spinalextras.lib.misc.{ComponentWithKnownLatency, DelayedSignal}
 import scala.collection.mutable
 import scala.language.postfixOps
 
+trait DelayBlock {
+  def IN : Bool
+  def OUT : Bool
+}
+
+trait DelayController {
+  def delay : Stream[UInt]
+  def create_delay_block() : DelayBlock
+}
+
 abstract class IDDR(reqs : DDRRequirements) extends Component with ComponentWithKnownLatency {
   def output_per_input : Int = reqs.signal_multiple
   val io = new Bundle {
@@ -19,7 +29,7 @@ abstract class IDDR(reqs : DDRRequirements) extends Component with ComponentWith
     val ECLK = in(Bool())
     val OUT = master(Flow(Bits(output_per_input bits)))
 
-    var DELAY : Option[Stream[UInt]] = None
+    //var DELAY : Option[Stream[UInt]] = None
   }
 
   val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
@@ -27,6 +37,9 @@ abstract class IDDR(reqs : DDRRequirements) extends Component with ComponentWith
     valid := ((valid << 1) | io.IN.valid.asBits.resized).resized
     io.OUT.valid := valid.msb
   }
+
+  def create_delay_controller(): DelayController = ???
+  def attach_delay_controller(controller : DelayController): Unit = ???
 }
 
 abstract class ODDR(reqs : DDRRequirements) extends Component with ComponentWithKnownLatency {
@@ -45,8 +58,11 @@ abstract class ODDR(reqs : DDRRequirements) extends Component with ComponentWith
     val BUSY = out(Bool())
     val LAST_SEND = out(Bool())
 
-    var DELAY : Option[Stream[UInt]] = None
+    //var DELAY : Option[Stream[UInt]] = None
   }
+
+  def create_delay_controller(): DelayController = ???
+  def attach_delay_controller(controller : DelayController): Unit = ???
 
   val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
     val valid = DelayedSignal(latency(), crossClockDomain = true)
@@ -108,6 +124,10 @@ case class ODDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequiremen
   val bitsWidth = payloadType.getBitsWidth
   ///setDefinitionName(s"ODDR_x${input_per_output}_w${bitsWidth}")
   val oddrs = Array.fill(bitsWidth)(ODDRFactory.getOrElse(x => ODDR(x))(reqs))
+
+  val delay_controller = oddrs.head.create_delay_controller()
+  oddrs.foreach(_.attach_delay_controller(delay_controller))
+
   val io = new Bundle {
     val IN= slave(Flow(Vec(payloadType, input_per_output)))
     val ECLK = in(Bool())
@@ -115,10 +135,9 @@ case class ODDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequiremen
     val BUSY = out(Bool())
     val LAST_SEND = out(Bool())
 
-    val DELAY = oddrs.head.io.DELAY.map(x => slave(x.clone()))
+    val DELAY = if(delay_controller != null) Some(slave(delay_controller.delay.clone())) else None
   }
-  io.DELAY.map(_.allowOverride())
-  io.DELAY.foreach(delay => oddrs.foreach(_.io.DELAY.get <> delay))
+  io.DELAY.foreach(_ <> delay_controller.delay)
 
   noIoPrefix()
   for((oddr, bit_idx) <- oddrs.zipWithIndex) {
@@ -147,15 +166,18 @@ case class IDDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequiremen
   val output_per_input = reqs.signal_multiple
   setDefinitionName(s"IDDR_x${output_per_input}_w${bitsWidth}")
   val iddrs = Array.fill(bitsWidth)(IDDRFactory.getOrElse(x => IDDR(x))(reqs))
+
+  val delay_controller = iddrs.head.create_delay_controller()
+  iddrs.foreach(_.attach_delay_controller(delay_controller))
+
   val io = new Bundle {
     val IN = slave(Flow(payloadType))
     val ECLK = in(Bool())
     val OUT = master(Flow(Vec(payloadType, output_per_input)))
 
-    val DELAY = iddrs.head.io.DELAY.map(x => slave(x.clone()))
+    val DELAY = if(delay_controller != null) Some(slave(delay_controller.delay.clone())) else None
   }
-  io.DELAY.map(_.allowOverride())
-  io.DELAY.foreach(delay => iddrs.foreach(_.io.DELAY.get <> delay))
+  io.DELAY.foreach(_ <> delay_controller.delay)
 
   noIoPrefix()
 

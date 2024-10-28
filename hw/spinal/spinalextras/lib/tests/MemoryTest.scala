@@ -223,7 +223,6 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
     tags = Set("meta"),
     SignalLogger.concat(100 ms, "counts", count_vals.total_invalid, count_vals.total_valid),
     SignalLogger.concat(100 ms, "error_counts", lastGoodResponse, count_vals.timeout_counts),
-    SignalLogger.concat("mode", readMode),
     FlowLogger.flows(invalid_data)
   )
 

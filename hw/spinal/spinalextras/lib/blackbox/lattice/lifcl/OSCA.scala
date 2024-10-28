@@ -32,9 +32,9 @@ object OSCAConfig {
     if(x.freq == (0 MHz)) {
       None
     } else {
-      if(x.tolerance < .10) {
-        throw new IllegalArgumentException("The HF clocks are +- 10% by default")
-      }
+//      if(x.tolerance < .10) {
+//        throw new IllegalArgumentException("The HF clocks are +- 10% by default")
+//      }
       if(x.freq < (1.75 MHz) || x.freq > (225 MHz)) {
         throw new IllegalArgumentException("The HF clocks must be between 1.75 and 225")
       }

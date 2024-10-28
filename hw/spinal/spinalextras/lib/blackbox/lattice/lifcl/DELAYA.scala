@@ -2,6 +2,7 @@ package spinalextras.lib.blackbox.lattice.lifcl
 
 
 import spinal.core._
+import spinalextras.lib.io.DelayBlock
 
 import scala.language.postfixOps
 
@@ -18,7 +19,7 @@ case class DELAYA(
   EDGE_MONITOR: String = "DISABLED",
   // Used for SPI4.2 implementation.
   WAIT_FOR_EDGE: String = "DISABLED"
-) extends BlackBox {
+) extends BlackBox with DelayBlock {
 
   addGeneric("DEL_MODE", DEL_MODE)
   addGeneric("DEL_VALUE", DEL_VALUE)
@@ -60,4 +61,8 @@ case class DELAYA(
 
   // Map the BlackBox IO to the Verilog module ports
   noIoPrefix()
+
+  override def IN: Bool = io.A
+
+  override def OUT: Bool = io.Z
 }
