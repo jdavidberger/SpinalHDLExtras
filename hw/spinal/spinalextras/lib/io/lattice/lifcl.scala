@@ -13,9 +13,17 @@ import scala.language.postfixOps
 
 class LatticeTristateBuffer() extends TristateBuffer {
   val bb = new BB()
+
+  // Connection to pad
   bb.B <> io.phy
+
+  // Tri-state control
   bb.T := ~io.output_enable
+
+  // Data from pad
   bb.O <> io.output
+
+  // Data to pad
   bb.I <> io.input
 }
 
