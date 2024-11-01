@@ -83,7 +83,10 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
 object WishboneToPipelinedMemoryBus {
   def apply(bus: Wishbone, rspQueue : Int): PipelinedMemoryBus = {
     val config = PipelinedMemoryBusConfig(addressWidth = bus.config.addressWidth, dataWidth = bus.config.dataWidth)
+    WishboneToPipelinedMemoryBus(bus, rspQueue, config)
+  }
 
+  def apply(bus: Wishbone, rspQueue : Int, config : PipelinedMemoryBusConfig): PipelinedMemoryBus = {
     if(bus.isMasterInterface ^ (bus.component == Component.current)) {
       val adapter = new WishboneToPipelinedMemoryBus(config, bus.config, rspQueue)
       adapter.io.wb <> bus

@@ -2,7 +2,7 @@ package spinalextras.lib.misc
 
 import spinal.core.internals.ExpressionContainer
 import spinal.core.native.RefOwnerType
-import spinal.core.{BlackBox, Bundle, ClockDomain, Component, Data, GlobalData, HardType, HertzNumber, Nameable, out}
+import spinal.core.{BlackBox, Bundle, ClockDomain, Component, Data, GlobalData, HardType, HertzNumber, Nameable, SpinalEnum, SpinalEnumCraft, out}
 import spinal.lib.fsm.StateMachineTask
 
 import scala.collection.mutable
@@ -44,6 +44,17 @@ class Obfuscater() {
     handled.add(component)
 
     component match {
+      case e: SpinalEnumCraft[_] => {
+        processNameable(e)
+        e.spinalEnum.elements.foreach(el => {
+          el.setName(nextName())
+        })
+      }
+      case e: SpinalEnum => {
+        if(!shouldExclude(e)) {
+          processNameable(e)
+        }
+      }
       case b: Bundle => {
         if(!shouldExclude(b)) {
           processBundle(b)
@@ -90,7 +101,7 @@ class Obfuscater() {
 
   def processNameable(nameable: Nameable): Unit = {
     nameable.foreachReflectableNameables(that => apply (that))
-    if (nameable.name != null) {
+    if (nameable.name != null && nameable.name != "") {
       nameable.setName(nextName())
     }
   }
@@ -124,6 +135,7 @@ class Obfuscater() {
       component.getGroupedIO(true).foreach(exclude)
       processNameable(component.asInstanceOf[Nameable])
     }
+    component.dslBody.walkDeclarations(x => apply(x))
     component.children.foreach(x => apply(x))
     component
   }
