@@ -148,6 +148,15 @@ case class LatticeDelay(var static_delay : TimeNumber) extends Component {
   }
 }
 
+object LatticeODDR {
+  def apply(reqs : DDRRequirements) : ODDR = {
+    if(reqs.signal_multiple == 2) {
+      new LatticeODDR(reqs)
+    } else {
+      new SynthODDR(reqs)
+    }
+  }
+}
 class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithKnownLatency {
   def gear = reqs.signal_multiple
   val QD = gear match {
@@ -218,6 +227,16 @@ class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithK
   setDefinitionName(s"LatticeODDR_l${latency()}_${reqs.toString}")
 }
 
+object LatticeIDDR {
+  def apply(reqs: DDRRequirements): IDDR = {
+    if (reqs.signal_multiple == 2) {
+      new LatticeIDDR(reqs)
+    } else {
+      new SynthIDDR(reqs)
+    }
+  }
+}
+
 class LatticeIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithKnownLatency {
   val gear = reqs.signal_multiple
   assert(gear >= 2)
@@ -262,10 +281,13 @@ class LatticeIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithK
   }
 
   override def create_delay_controller(): DelayController = {
-    LatticeDelayController(reqs.static_delay)
+    if(reqs.delayable) LatticeDelayController(reqs.static_delay) else null
   }
 
   override def attach_delay_controller(controller : DelayController): Unit = {
+    if(controller == null) {
+      return
+    }
     withAutoPull()
     val restoreStack = Component.push(this)
     val delay_block = controller.create_delay_block()

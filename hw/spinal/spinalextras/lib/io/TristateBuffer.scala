@@ -24,8 +24,8 @@ class GenericTristate() extends TristateBuffer {
 
 object TristateBuffer {
   def factory = new ImplementationSpecificFactory[TristateBuffer, Unit] {
-    AddHandler { case _ => { _ => new GenericTristate()}}
     AddHandler { case Device("lattice", family, name, resetKind) => { _ => new LatticeTristateBuffer()}}
+    AddHandler { case _ => { _ => new GenericTristate()}}
   }
 
   def apply() = factory(())

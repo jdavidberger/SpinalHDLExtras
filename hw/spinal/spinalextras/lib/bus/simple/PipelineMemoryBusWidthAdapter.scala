@@ -16,7 +16,7 @@ object PipelineMemoryBusClockAdapter {
     val busNew = PipelinedMemoryBus(bus.config)
     val inFactor = (newClock.frequency.getValue / busClock.frequency.getValue).floatValue().ceil.toInt
 
-    val queue_size = 1 << log2Up(inFactor.max(4))
+    val queue_size = 1 << log2Up(inFactor.max(4)) + 1
     val overflow = Bool()
     if (bus.isMasterInterface) {
       busNew.cmd.queue(inFactor.max(32), newClock, busClock) >> bus.cmd
@@ -25,7 +25,7 @@ object PipelineMemoryBusClockAdapter {
       bus.cmd.queue(queue_size, busClock, newClock) <> busNew.cmd
       busNew.rsp.toStream(overflow).queue(queue_size, newClock, busClock).toFlow <> bus.rsp
     }
-    assert(overflow)
+    assert(!overflow, s"Clocked bus pipeline has overflowed ${busClock.frequency.getValue} vs ${newClock.frequency.getValue}")
 
     busNew
   }

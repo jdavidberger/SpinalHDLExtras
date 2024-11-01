@@ -90,10 +90,65 @@ case class DDRRequirements(signal_multiple : Int = 2,
   }
 }
 
+
+class SynthODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithKnownLatency {
+  require(input_per_output > 2 && input_per_output % 2 == 0)
+
+  lazy val cnt = CounterFreeRun(input_per_output / 2)
+
+  lazy val reqs_x2 = reqs.copy(signal_multiple = 2)
+  lazy val edge_clock_area = new ClockingArea(new ClockDomain(io.ECLK, config = ClockDomain.current.config.copy(resetKind = BOOT))) {
+    val oddr = ODDR(reqs_x2)
+    val input = BufferCC(io.IN)
+    oddr.io.ECLK := io.ECLK
+    val edge_cnt = BufferCC(cnt.value)
+    oddr.io.IN.valid := input.valid
+    oddr.io.IN.payload.assignDontCare()
+    when(input.valid) {
+      oddr.io.IN.payload := (input.payload >> (edge_cnt * 2)).resized
+    }
+    io.OUT.payload <> oddr.io.OUT.payload
+  }
+
+  override def create_delay_controller(): DelayController = edge_clock_area.oddr.create_delay_controller()
+  override def attach_delay_controller(controller : DelayController): Unit = edge_clock_area.oddr.attach_delay_controller(controller)
+
+  override def latency(): Int = edge_clock_area.oddr.latency() + 2
+}
+
+class SynthIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithKnownLatency {
+  require(output_per_input > 2 && output_per_input % 2 == 0)
+
+  lazy val cnt = CounterFreeRun(output_per_input / 2)
+
+  lazy val reqs_x2 = reqs.copy(signal_multiple = 2)
+  lazy val edge_clock_area = new ClockingArea(new ClockDomain(io.ECLK, reset = ClockDomain.current.reset)) {
+    val iddr = IDDR(reqs_x2)
+
+    iddr.io.ECLK := io.ECLK
+    val edge_cnt = BufferCC(cnt.value)
+    val payload = Reg(io.OUT.payload.clone())
+
+    when(iddr.io.IN.valid) {
+      payload((edge_cnt * 2), 2 bits) := iddr.io.OUT.payload
+    }
+
+    iddr.io.IN.valid := io.IN.valid
+    io.IN.payload <> iddr.io.IN.payload
+  }
+
+  io.OUT.payload := BufferCC(edge_clock_area.payload)
+
+  override def create_delay_controller(): DelayController = edge_clock_area.iddr.create_delay_controller()
+  override def attach_delay_controller(controller : DelayController): Unit = edge_clock_area.iddr.attach_delay_controller(controller)
+
+  override def latency(): Int = edge_clock_area.iddr.latency() + 2
+}
+
 object ODDR {
   def factory = new ImplementationSpecificFactory[ODDR, DDRRequirements] {
     simulationHandler = {case _ => (reqs => new GenericODDR(reqs))}
-    AddHandler { case Device("lattice", "lifcl", name, resetKind) => { reqs => new LatticeODDR(reqs)}}
+    AddHandler { case Device("lattice", "lifcl", name, resetKind) => { reqs => LatticeODDR(reqs)}}
     AddHandler { case _ => reqs => {
       println(s"Warning: Using simulation driver for ODDR since no device matches found.")
       new GenericODDR(reqs)
@@ -108,7 +163,7 @@ object ODDR {
 object IDDR {
   def factory = new ImplementationSpecificFactory[IDDR, DDRRequirements] {
     simulationHandler = {case _ => (reqs => new GenericIDDR(reqs))}
-    AddHandler { case Device("lattice", "lifcl", name, resetKind) => { reqs => new LatticeIDDR(reqs)}}
+    AddHandler { case Device("lattice", "lifcl", name, resetKind) => { reqs => LatticeIDDR(reqs)}}
     AddHandler { case _ => reqs => {
       println(s"Warning: Using simulation driver for IDDR since no device matches found.")
       new GenericIDDR(reqs)
