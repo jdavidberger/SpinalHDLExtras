@@ -3,7 +3,7 @@ package spinalextras.lib.blackbox.lattice.lifcl
 import spinal.core._
 import spinal.lib._
 import spinalextras.lib
-import spinalextras.lib.{Config, FixedRangeFrequency}
+import spinalextras.lib.{Config, FixedFrequencyWithError, FixedRangeFrequency}
 import spinalextras.lib.blackbox.lattice.lifcl.PLLConfig.to_bin_string
 import spinalextras.lib.misc._
 import spinalextras.lib.tests.TestClockGen
@@ -1237,6 +1237,27 @@ object PLLConfig {
 }
 
 object PLL extends App {
+  def apply(inputClock : ClockDomain, outputClocks : ClockSpecification*): Seq[ClockDomain] = {
+    val pll_input = {
+      if(inputClock == null) {
+        val osc = new OSCD(OSCDConfig.create(ClockSpecification(60 MHz, tolerance=.1)))
+        osc.hf_clk().get
+      } else {
+        inputClock
+      }
+    }
+
+    new ClockingArea(clockDomain = pll_input) {
+      val pll = new PLL(PLLConfig.create(ClockSpecification.fromClock(pll_input),
+        outputClocks:_*
+      ))
+    }.pll.ClockDomains
+  }
+
+  def apply(outputClocks : ClockSpecification*): Seq[ClockDomain] = {
+    apply(null, outputClocks:_*)
+  }
+
   Config.spinal.generateVerilog(
     new Component {
       val gen = new TestClockGen(41.6666667, 1)
