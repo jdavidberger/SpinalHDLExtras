@@ -25,6 +25,7 @@ case class MIPIToPixel(cfg : MIPIConfig,
     val tx_rdy = in(Bool()) default(True)
 
     val pixelFlow = master(PixelFlow(cfg.DT_WIDTH))
+    def pixelFragment = PixelFlow2Fragment(pixelFlow)
   }
   val byte_freq = cfg.dphy_byte_freq
 
