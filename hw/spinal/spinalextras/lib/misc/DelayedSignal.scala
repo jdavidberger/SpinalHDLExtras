@@ -5,7 +5,8 @@ import spinal.core._
 import scala.language.postfixOps
 
 case class DelayedSignal(latency : Int, crossClockDomain : Boolean = false) extends Component {
-  setDefinitionName(s"DelayedSignal${if(crossClockDomain) "CC" else ""}_l${latency}")
+  setDefinitionName(s"DelayedSignal${if(crossClockDomain) "CC" else ""}_l${latency}", false)
+
   require(latency >= 0)
 
   val io = new Bundle {

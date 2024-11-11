@@ -219,7 +219,7 @@ case class ODDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequiremen
 case class IDDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequirements, IDDRFactory : Option[(DDRRequirements) => IDDR] = None) extends ComponentWithKnownLatency {
   val bitsWidth = payloadType.getBitsWidth
   val output_per_input = reqs.signal_multiple
-  setDefinitionName(s"IDDR_x${output_per_input}_w${bitsWidth}")
+  setDefinitionName(s"IDDR_x${output_per_input}_w${bitsWidth}", false)
   val iddrs = Array.fill(bitsWidth)(IDDRFactory.getOrElse(x => IDDR(x))(reqs))
 
   val delay_controller = iddrs.head.create_delay_controller()
@@ -262,7 +262,7 @@ case class IODDRS[T <: BitVector](payloadType : HardType[T],
   val gear = in_reqs.signal_multiple
   require(gear == out_reqs.signal_multiple)
 
-  setDefinitionName(s"IODDR_x${gear}_w${bitsWidth}")
+  setDefinitionName(s"IODDR_x${gear}_w${bitsWidth}", false)
 
   val data_in = IDDRS(payloadType, in_reqs)
   val data_out = ODDRS(payloadType, out_reqs)

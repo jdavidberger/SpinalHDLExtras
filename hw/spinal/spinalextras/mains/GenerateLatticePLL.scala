@@ -66,7 +66,7 @@ object GenerateLatticePLL extends App {
     val config: PLLSpecification = mapper.readValue(reader, classOf[PLLSpecification])
 
     Config.spinal.copy(rtlHeader  = mapper.writeValueAsString(config)).generateVerilog(
-      new LatticePLL(config).setDefinitionName(config.name + "_pll")
+      LatticePLL(config).setDefinitionName(config.name + "_pll")
     )
   } else {
     val exampleYaml = mapper.writeValueAsString(new PLLSpecification(

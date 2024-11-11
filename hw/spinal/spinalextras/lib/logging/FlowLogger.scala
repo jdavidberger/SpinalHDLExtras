@@ -52,8 +52,15 @@ class GlobalLogger {
   }
 
   def add(tags: Set[String], s: (Data, Flow[Bits])*): Unit = {
-    assert(!built)
+    if(built) {
+      println(s"Warning: ${s} with tags ${tags} was added after the logger was created")
+      return
+    }
     assert(ClockDomain.current != null)
+    for (elem <- s) {
+      assert(elem._1.name != null && elem._1.name.nonEmpty)
+      //assert(elem._2.name != null && elem._2.name.size > 0)
+    }
     signals.appendAll(s.map(x => (x._1, topify(x._2), ClockDomain.current, tags)))
   }
 
@@ -65,29 +72,35 @@ class GlobalLogger {
   def build(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String,
             outputStream : Option[Stream[Bits]] = None,
             tags : Set[String] = Set()): Unit = {
+    val clockDomain = outputStream.map(_.valid.clockDomain).getOrElse(ClockDomain.current)
+
     if(built) {
       return
     }
-    built = true;
     val signals = this.signals.filter(s => {
       s._4.intersect(tags).nonEmpty || tags.isEmpty
     }).map(s => (s._1, s._2, s._3))
 
-    if(signals.nonEmpty) {
-      val ctx = Component.push(Component.toplevel)
-      val logger = FlowLogger(signals)
-      logger.setName(name)
-      logger.codeDefinitions(output_path)
-      logger.sqliteHandlers(output_path)
-      logger.create_logger_port(sysBus, address, depth, outputStream)
-      ctx.restore()
-    } else {
-      outputStream.foreach(_.setIdle())
+    built = true;
+    val loggerName = name
+    new ClockingArea(clockDomain) {
+      if (signals.nonEmpty) {
+        val ctx = Component.push(Component.toplevel)
+        val logger = FlowLogger(signals)
+        logger.setName(loggerName)
+        logger.codeDefinitions(output_path)
+        logger.sqliteHandlers(output_path)
+        logger.create_logger_port(sysBus, address, depth, outputStream)
+        ctx.restore()
+      } else {
+        outputStream.foreach(_.setIdle())
+      }
     }
   }
   def create_logger_stream(depth: Int, outputStream : Stream[Bits], tags: Set[String] = Set()): Unit = {
     Component.toplevel.addPrePopTask(() => {
-      this.build(null, 0, depth, "GlobalLogger", Some(outputStream), tags = tags)
+      val sysBus : GlobalBus_t = null
+      this.build(sysBus, 0, depth, "GlobalLogger", Some(outputStream), tags = tags)
     })
   }
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int, name : String, outputStream : Option[Stream[Bits]] = None, tags : Set[String] = Set()): Unit = {
@@ -614,6 +627,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
     emit(s"#define ${getName().toUpperCase}_FULL_TIME_ID 0x${((1 << index_size) - 1).toHexString}")
 
     def get_field_name(n : String): String = {
+      assert(n.nonEmpty)
+
       if(n.matches("[0-9*].*"))
         s"_${n}"
       else n

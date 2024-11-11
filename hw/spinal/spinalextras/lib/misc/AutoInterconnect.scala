@@ -6,14 +6,14 @@ import spinal.lib.{IMasterSlave, growableAnyPimped}
 import scala.collection.mutable
 
 object AutoInterconnect {
-  def buildInterconnect(components_iterable: Iterable[Component], io : Bundle, renames: Map[String, String] = Map.empty): Unit = {
+  def buildInterconnect(components_iterable: Iterable[Component], io : Bundle, renames: Map[String, String] = Map.empty, include_used_outputs : Boolean = true): Unit = {
     val unhandled_ios = new mutable.HashMap[String, Data]()
-    val components = components_iterable.toSeq
+    val components = components_iterable.toSeq.filter(_ != null)
     for (c <- components) {
 
-      def hasAssignments(io: Data): Boolean = {
+      def shouldTreatAsAssigned(io: Data): Boolean = {
         if(io.isInstanceOf[Bundle]) {
-          val assigned = io.asInstanceOf[Bundle].elements.map(_._2).filter(x => x.isInput || x.isInstanceOf[Bundle]).map(hasAssignments)
+          val assigned = io.asInstanceOf[Bundle].elements.map(_._2).filter(x => x.isInput || x.isInstanceOf[Bundle]).map(shouldTreatAsAssigned)
           assigned.headOption.getOrElse(false)
         } else if(io.isInput) {
           io match {
@@ -21,11 +21,11 @@ object AutoInterconnect {
             case _ => false
           }
         } else {
-          false
+          !include_used_outputs
         }
       }
 
-      val c_ios = c.getGroupedIO(true).filter(io => !hasAssignments(io) && io.parent != null && (io.parent.name == "" || io.parent.name == "io"))
+      val c_ios = c.getGroupedIO(true).filter(io => !shouldTreatAsAssigned(io) && io.parent != null && (io.parent.name == "" || io.parent.name == "io"))
       for (io <- c_ios) {
         val name = renames.getOrElse(io.name, io.name)
         if (unhandled_ios.contains(name)) {

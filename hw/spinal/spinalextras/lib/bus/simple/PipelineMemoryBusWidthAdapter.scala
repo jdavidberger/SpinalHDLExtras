@@ -6,8 +6,10 @@ import spinal.core.sim._
 import spinal.lib.bus.simple._
 import spinal.lib._
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
+import spinal.lib.bus.regif.BusIf
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinalextras.lib.Config
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger, PipelinedMemoryBusLogger, SignalLogger}
 
 import scala.language.postfixOps
 
@@ -16,16 +18,21 @@ object PipelineMemoryBusClockAdapter {
     val busNew = PipelinedMemoryBus(bus.config)
     val inFactor = (newClock.frequency.getValue / busClock.frequency.getValue).floatValue().ceil.toInt
 
-    val queue_size = 1 << log2Up(inFactor.max(4)) + 1
+    val queue_size = 32 //1 << log2Up(inFactor.max(4)) + 1
     val overflow = Bool()
     if (bus.isMasterInterface) {
       busNew.cmd.queue(inFactor.max(32), newClock, busClock) >> bus.cmd
       bus.rsp.toStream(overflow).queue(inFactor.max(32), busClock, newClock).toFlow >> busNew.rsp
     } else {
       bus.cmd.queue(queue_size, busClock, newClock) <> busNew.cmd
-      busNew.rsp.toStream(overflow).queue(queue_size, newClock, busClock).toFlow <> bus.rsp
+      busNew.rsp.toStream(overflow).queue(queue_size, newClock, busClock).toFlow >> bus.rsp
     }
     assert(!overflow, s"Clocked bus pipeline has overflowed ${busClock.frequency.getValue} vs ${newClock.frequency.getValue}")
+
+    GlobalLogger(
+      Set("asserts"),
+      SignalLogger.concat("pmbCCC", overflow.setName("overflow"))
+    )
 
     busNew
   }
@@ -83,7 +90,7 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
       val (toOut, toQueue) = StreamFork2(cmdStream)
       val indices = toQueue.throwWhen(toQueue.payload._1.write).map(_._2)
 
-      val q = if(rspQueue > 1) indices.queueLowLatency(rspQueue) else indices.s2mPipe()
+      val q = if(rspQueue > 1) indices.queue(rspQueue) else indices.s2mPipe()
       toOut.map(_._1) <> io.output.cmd
 
       StreamJoin(q, io.output.rsp.toStream).map( matched_rsp => {
@@ -92,6 +99,13 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
         rsp
       }).toFlow <> io.input.rsp
     }
+
+  def attach_debug_registers(busSlaveFactory: BusIf): Unit = {
+    PipelinedMemoryBusLogger.attach_debug_registers(busSlaveFactory,
+      io.input.setName("in_width_bus"),
+      io.output.setName("out_width_bus"),
+    )
+  }
 }
 
 object PipelineMemoryBusWidthAdapter {

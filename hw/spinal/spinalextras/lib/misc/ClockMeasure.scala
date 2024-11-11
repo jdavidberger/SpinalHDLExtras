@@ -2,6 +2,8 @@ package spinalextras.lib.misc
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.regif.AccessType.RO
+import spinal.lib.bus.regif.BusIf
 
 import scala.language.postfixOps
 
@@ -41,6 +43,14 @@ class ClockMeasure(cntTil : BigInt = 1000000, cntBits : Int = 32) extends Compon
 
   when(io.output_cnt.payload < io.min_output_cnt) {
     io.min_output_cnt := io.output_cnt.payload
+  }
+
+  def attach_bus(busSlaveFactory: BusIf): Unit = {
+    val clk_reg = busSlaveFactory.newReg(f"${name} clk reg_0x${cntTil.hexString()}")
+    val clk_reg_cnt = clk_reg.field(io.output_cnt.payload.clone(), RO, s"${name}_CLK_0x${cntTil.hexString()}")
+    clk_reg_cnt := io.output_cnt.payload
+
+    io.flush := clk_reg.hitDoWrite
   }
 }
 

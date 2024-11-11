@@ -4,17 +4,19 @@ package spinalextras.lib.testing
 import spinal.core.native.globalData
 import spinal.core.sim._
 import spinal.core._
-import spinal.lib.Stream
+import spinal.lib.{CounterUpDown, Stream}
+import spinal.lib.bus.simple.PipelinedMemoryBus
 import spinal.lib.sim.{ScoreboardInOrder, StreamDriver, StreamMonitor}
 import spinalextras.lib.Config
+import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
 import spinalextras.lib.misc.ComponentWithKnownLatency
 
 import scala.collection.mutable
 
 object test_funcs {
 
-  def assertStreamContract[T <: Data](stream : Stream[T]): Unit = {
-    if(globalData.config.flags.contains(GenerationFlags.simulation)) {
+  def assertStreamContract[T <: Data](stream: Stream[T]): Unit = {
+    if (globalData.config.flags.contains(GenerationFlags.simulation)) {
       val wasValid = RegNext(stream.valid) init (False)
       val payload = RegNext(stream.payload)
       val wasFired = RegNext(stream.fire) init (False)
@@ -37,11 +39,12 @@ object test_funcs {
       }
     }
   }
-  def assign(payload : SInt, v : Int): Unit = {
+
+  def assign(payload: SInt, v: Int): Unit = {
     payload #= v
   }
 
-  def recover(payload : SInt) : Int = {
+  def recover(payload: SInt): Int = {
     payload.toInt
   }
 
@@ -52,8 +55,8 @@ object test_funcs {
                                                                   assign: (InT, TestInT) => Unit,
                                                                   recover: OutT => TestOutT,
                                                                   factor: Option[Float] = None,
-                                                                  compare: (TestOutT, TestOutT) => Boolean = (a:TestOutT, b:TestOutT) => a == b,
-                                                                  timeout: TimeNumber = 100 us, setup: (CT) => Unit = ((c : CT) => {}), latency1to1 : Boolean = true,
+                                                                  compare: (TestOutT, TestOutT) => Boolean = (a: TestOutT, b: TestOutT) => a == b,
+                                                                  timeout: TimeNumber = 100 us, setup: (CT) => Unit = ((c: CT) => {}), latency1to1: Boolean = true,
                                                                  ): Unit = {
     Output.ready #= false
     Input.valid #= false
@@ -65,7 +68,7 @@ object test_funcs {
 
     val outerCompare = compare
     val scoreboard = new ScoreboardInOrder[TestOutT] {
-      override def compare(ref : TestOutT, dut : TestOutT) = outerCompare(ref, dut)
+      override def compare(ref: TestOutT, dut: TestOutT) = outerCompare(ref, dut)
     }
     for (e <- expectedOutput) {
       scoreboard.pushRef(e)
@@ -80,7 +83,7 @@ object test_funcs {
       queue += (payload => assign(payload, i))
     }
 
-    var sysclk : BigInt = 0
+    var sysclk: BigInt = 0
     dut.clockDomain.onSamplings({
       sysclk = sysclk + 1
     })
@@ -119,15 +122,15 @@ object test_funcs {
         println(s"Latency of the DUT: ${staged.latency} / ${latencies.min} / ${latencies.max} (factor: ${factor})")
 
         var latencyCompareVal = latencies.head
-        if(factor.getOrElse(0) == 1) {
+        if (factor.getOrElse(0) == 1) {
           val cyclesPerElement = (sysclkIn.last - sysclkIn.head + 1).toInt / sysclkIn.length
           println(s"cyclesPerElement ${cyclesPerElement}", (sysclkIn.last - sysclkIn.head).toInt, sysclkIn.length)
           assert(cyclesPerElement == staged.pipelineCyclesPerElement(), s"Values should equal ${cyclesPerElement} vs ${staged.pipelineCyclesPerElement()}")
-          if(latency1to1) {
+          if (latency1to1) {
             latencyCompareVal = latencies.max
           }
         }
-        if(latency1to1 || factor.getOrElse(0) == 1) {
+        if (latency1to1 || factor.getOrElse(0) == 1) {
           assert(staged.latency == latencyCompareVal, s"Values should match ${staged.latency} == ${latencyCompareVal}")
         }
       }
@@ -136,6 +139,17 @@ object test_funcs {
       }
     }
     scoreboard.checkEmptyness()
+  }
+
+  def assertPMBContract(pmb: PipelinedMemoryBus) = if (globalData.config.flags.contains(GenerationFlags.simulation)) {
+    new Area {
+      test_funcs.assertStreamContract(pmb.cmd)
+
+      val outstanding_cnt = CounterUpDown(1L << 32, pmb.cmd.fire && !pmb.cmd.write, pmb.rsp.valid)
+      val pmb_rsp_bounded = outstanding_cnt.value.asBits.andR =/= True
+      assert(pmb_rsp_bounded, "PMB has miscounted responses")
+
+    }.setName("assertPMBContract")
   }
 
   var fastClockDomain: Option[ClockDomain] = None

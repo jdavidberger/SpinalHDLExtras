@@ -63,19 +63,26 @@ object SignalLogger {
     })
   }
   def concat(name : String, signals: Any*): Seq[(Data, Flow[Bits])] = {
-    val signal_elments = signals.flatMap(s => {
+    def process_signal(s : Any): Seq[(String, Data)] = {
       s match {
         case v : Vector[Data] =>
           v.map(d => (d.getName(), d))
-        case b : Bundle => b.elements
-        case d : Data => Seq((d.getName(), d))
-        case e : Seq[(String, Data)] => e
+        case b : Bundle =>
+          b.elements
+        case d : Data =>
+          Seq((d.getName(), d))
+        case e : Seq[_] =>
+          e.flatMap(x => process_signal(x))
+        case t : (String, Data) => Seq(t)
         case _ => {
           assert(false)
           Seq()
         }
       }
-    })
+    }
+
+    val signal_elments = signals.flatMap(process_signal)
+    signal_elments.foreach(x => assert(x._1.nonEmpty))
 
     val bundle = new Bundle {
       elements.append(signal_elments:_*)

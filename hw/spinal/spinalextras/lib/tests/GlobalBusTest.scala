@@ -12,7 +12,7 @@ import spinalextras.lib.misc._
 
 import scala.language.postfixOps
 
-object WishboneGlobalBus extends GlobalBusFactory[Wishbone] {
+object WishboneGlobalBus extends GlobalBusFactory[WishboneGlobalBus] {
   override def create_global_bus(): WishboneGlobalBus = new WishboneGlobalBus(WishboneConfig(32, 32))
 }
 

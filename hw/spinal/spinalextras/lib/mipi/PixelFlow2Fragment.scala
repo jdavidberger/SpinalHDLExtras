@@ -24,6 +24,7 @@ class PixelFlow2Fragment[T <: Data](val dataType: HardType[T]) extends Component
       addFragmentLast(~io.pixelFlow.frame_valid).toFlow
 
   GlobalLogger(
+    Set("mipi"),
     SignalLogger.concat("p2f", io.pixelFragment.lastFire.setName("lastFire"), io.pixelFlow.frame_valid, overflow)
   )
 }

@@ -6,7 +6,7 @@ import spinal.core.in.Bool
 import spinal.lib._
 import spinal.lib.bus.misc.BusSlaveFactory
 import spinal.lib.bus.regif.AccessType._
-import spinal.lib.bus.regif.{BusIf, SymbolName}
+import spinal.lib.bus.regif.{BusIf, RegInst, SymbolName}
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.mipi.{MIPIConfig, MIPIIO, MIPIPacketHeader}
 import spinalextras.lib.misc.{AsyncToSyncReset, ClockMeasure, GlobalSignals}
@@ -431,22 +431,36 @@ class dphy_rx(cfg : MIPIConfig,
       clk_meas.io.flush := lastWriteAddress === (U(dphy_reg.addr) ## True).resized
     }
 
+    def crossClock(reg: RegInst, field: UInt, newClock: ClockDomain): UInt = {
+      val stream = Stream(cloneOf(field))
+      stream.valid := reg.hitDoWrite
+      stream.payload := field
+      val toggledCC = stream.ccToggle(field.clockDomain, newClock)
+      new ClockingArea(io.byte_clock_domain()) {
+        toggledCC.ready := RegNext(toggledCC.valid)
+        val r = RegNextWhen(toggledCC.payload, toggledCC.valid)
+      }.r
+    }
+
     val dphy_data_ctrl = busSlaveFactory.newReg("rxcsr_datsettlecyc")
     val dphy_data_settle =
       dphy_data_ctrl.field(io.rxcsr_datsettlecyc_i.clone(), RW, "Controls the tHS-SETTLE protocol timing parameter. Check the t-HSZERO parameter of the D-PHY transmitter to ensure the tHS-SETTLE setting can properly detect the Start-of-Transmit pattern.") init(default_datsettlecyc)
-    GlobalSignals.externalize(io.rxcsr_datsettlecyc_i) := dphy_data_settle
+
+    GlobalSignals.externalize(io.rxcsr_datsettlecyc_i) := crossClock(dphy_data_ctrl, dphy_data_settle, io.byte_clock_domain())
 
     val pktdelay_ctrl = busSlaveFactory.newReg("rxcsr_rxfifo_pktdly")
     val pktdelay =
       pktdelay_ctrl.field(io.rxcsr_rxfifo_pktdly_i.clone(), RW, "Packet delay on fifo") init(2)
-    GlobalSignals.externalize(io.rxcsr_rxfifo_pktdly_i) := pktdelay
+
+    GlobalSignals.externalize(io.rxcsr_rxfifo_pktdly_i) := crossClock(pktdelay_ctrl, pktdelay, io.byte_clock_domain())
+
 
     val fifo_signals = if(io.fifo_misc_signals != null) Seq(
       io.fifo_misc_signals.fifo_ovflw_err_o, io.fifo_misc_signals.rxque_full_o,
       io.fifo_misc_signals.rxfullfr0_o, io.fifo_misc_signals.rxfullfr1_o) else Seq()
 
     for(error_signal <- Seq(
-      io.hs_sync_o.rise().setPartialName("hs_sync_rise"),
+      BufferCC(io.hs_sync_o).rise().setPartialName("hs_sync_rise"),
       BufferCC(io.misc_signals.term_clk_en_o).rise().setPartialName("term_clk_en_rise"),
       BufferCC(io.misc_signals.term_d_en_o(0)).rise().setPartialName("term_d_en_o0"),
       io.misc_signals.hs_d_en_o,
@@ -462,7 +476,7 @@ class dphy_rx(cfg : MIPIConfig,
       val reg = busSlaveFactory.newReg(error_signal.name)(SymbolName(s"${error_signal.name}"))
       val cnt = reg.field(UInt(32 bits), WC, error_signal.name)(SymbolName(s"${error_signal.name}_cnt")) init(0)
       when(BufferCC(error_signal)) {
-        cnt := cnt + 1
+        cnt := RegNext(cnt + 1)
       }
     }
   }

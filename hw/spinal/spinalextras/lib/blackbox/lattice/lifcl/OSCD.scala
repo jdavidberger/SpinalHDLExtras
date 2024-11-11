@@ -1,10 +1,11 @@
 package spinalextras.lib.blackbox.lattice.lifcl
 
 import spinal.core._
-import spinalextras.lib.{FixedFrequencyWithError, misc}
+import spinalextras.lib.{Constraints, FixedFrequencyWithError, misc}
 import spinalextras.lib.misc.ClockSpecification
 
 import scala.language.postfixOps
+import scala.collection.Seq
 
 class OSCDConfig(
                        DTR_EN : Boolean = true, // DTR block enable from MIB
@@ -60,4 +61,20 @@ class OSCD(cfg: OSCDConfig) extends BlackBox {
   def hf_clk() = cfg.hf_frequency.map(f => ClockDomain(io.HFCLKOUT, reset = ClockDomain.current.readResetWire, frequency = f))
   def hf_sed_clk() = cfg.hf_sed_frequency.map(f => ClockDomain(io.HFSDCOUT, reset = ClockDomain.current.readResetWire, frequency = f))
   def lf_clk() = cfg.lf_frequency.map(f => ClockDomain(io.LFCLKOUT, reset = ClockDomain.current.readResetWire, frequency = f))
+  def clocks = Seq(hf_clk(), hf_sed_clk(), lf_clk()).flatten
+
+  addPrePopTask( () => {
+    clocks.foreach(cfg_clk => {
+      Constraints.create_clock(cfg_clk.readClockWire, cfg_clk.frequency.getValue)
+    })
+    Constraints.add_clock_group(true, clocks.map(_.readClockWire):_*)
+  })
+}
+
+object OSCD {
+  def apply(cfg: OSCDConfig): OSCD = {
+    new ClockingArea(new ClockDomain(False)) {
+      val oscd = new OSCD(cfg)
+    }
+  }.oscd
 }

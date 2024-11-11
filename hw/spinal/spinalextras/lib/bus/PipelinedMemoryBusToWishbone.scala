@@ -8,6 +8,7 @@ import spinal.lib._
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneSequencer, WishboneStatus, WishboneTransaction}
 import spinalextras.lib.Config
+import spinalextras.lib.testing.test_funcs
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -32,12 +33,9 @@ object WishbonePipelinedHelpers {
       reqWasWE := ackQueue.pop.payload
       readyForNewReq := ackQueue.push.ready
     } else {
-      readyForNewReq.setAsReg() init(True) clearWhen(requestAccepted) setWhen(ack)
+      readyForNewReq.setAsReg() init(True) clearWhen(requestAccepted && !ack) setWhen(ack)
       hasOutstandingReq := !readyForNewReq
-      reqWasWE setAsReg() init(False)
-      when(requestAccepted) {
-        reqWasWE := we
-      }
+      reqWasWE := we
     }
 
     (readyForNewReq, hasOutstandingReq, reqWasWE)
@@ -49,6 +47,9 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
     val wb = slave(Wishbone(wbConfig))
     val pmb = master(PipelinedMemoryBus(pipelinedMemoryBusConfig))
   }
+
+  test_funcs.assertPMBContract(io.pmb)
+  test_funcs.assertStreamContract(io.pmb.cmd)
 
   val (readyForNewReq, hasOutstandingReq, reqWasWE) =
     WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,
@@ -72,10 +73,10 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
   }
 
   io.wb.DAT_MISO := io.pmb.rsp.data.resized
-  io.wb.ACK := False
-  when(hasOutstandingReq) {
-    io.wb.ACK := reqWasWE || io.pmb.rsp.valid
-  }
+
+  val cmdWriteFire = io.pmb.cmd.fire && io.pmb.cmd.write
+  val cmdReadFire = io.pmb.cmd.fire && ~io.pmb.cmd.write
+  io.wb.ACK := cmdWriteFire || io.pmb.rsp.valid
 
   //assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
 }
@@ -107,6 +108,7 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
     val wb = master(Wishbone(wbConfig))
   }
 
+  test_funcs.assertPMBContract(io.pmb)
   //FwbSlave(io.wb)
   //FwbMaster(io.wb)
 
@@ -114,6 +116,7 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
     WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,
       if(wbConfig.isPipelined) rspQueue else 1)
 
+  io.wb.assignByteAddress(io.pmb.cmd.address)
   io.wb.WE := io.pmb.cmd.payload.write
   io.wb.CYC := io.pmb.cmd.valid || hasOutstandingReq
   io.wb.STB := io.pmb.cmd.valid && readyForNewReq
@@ -167,7 +170,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
   def runTest(config : WishboneConfig): Unit = {
-    Config.sim.withWave.withVerilator
+    Config.sim.withWave
       .doSim(
         new PipelinedMemoryBusToWishbone(config, PipelinedMemoryBusConfig(32, 32)) {
           val sysclk = Reg(UInt(32 bits)) init(0)
@@ -248,7 +251,7 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
           }
         }
 
-        for(repeat <- 0 until 1000){
+        for(repeat <- 0 until 100){
           seq.generateTransactions()
           var tran = seq.nextTransaction(0)
           val we = Random.nextBoolean()

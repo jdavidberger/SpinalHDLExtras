@@ -32,3 +32,32 @@ class JtagLoggerTap(bitWidth : Int, instr : Int = 0x24) extends Component {
 
   JtagLoggerTap(io.log_stream, ctrl.tap, jtag_cd, instr)
 }
+
+class JtagChain(device_count : Int) extends Component {
+  val io = new Bundle {
+    val jtag = slave(Jtag())
+    val jtags = Array.fill(device_count)(master(Jtag()))
+  }
+  noIoPrefix()
+
+  var td = io.jtag.tdi
+  io.jtags.foreach(jtag_tap => {
+    jtag_tap.tck := io.jtag.tck
+    jtag_tap.tms := io.jtag.tms
+    jtag_tap.tdi := td
+    td = jtag_tap.tdo
+  })
+  io.jtag.tdo := td
+}
+
+object JtagChain {
+  def apply(jtag_devs : Jtag*): JtagChain = {
+    val c = new JtagChain(jtag_devs.size)
+
+    for (elem <- jtag_devs.zip(c.io.jtags)) {
+      elem._2 <> elem._1
+    }
+
+    c
+  }
+}

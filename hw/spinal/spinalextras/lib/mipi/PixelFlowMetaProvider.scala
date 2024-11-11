@@ -2,6 +2,7 @@ package spinalextras.lib.mipi
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.regif.SymbolName
 
 import scala.language.postfixOps
 
@@ -49,5 +50,13 @@ case class PixelFlowMetaProvider(WIDTH : Int) extends Component {
     cols := 0
     rows := 0
     words := 1
+  }
+}
+
+object PixelFlowMetaProvider {
+  def apply(pixelFragment: Flow[Fragment[Bits]])(implicit symbol: SymbolName): Flow[PixelFlowMeta] = {
+    val dut = new PixelFlowMetaProvider(pixelFragment.payload.getWidth)
+    dut.io.pixelFragment <> pixelFragment
+    dut.io.meta.setName(symbol.name)
   }
 }

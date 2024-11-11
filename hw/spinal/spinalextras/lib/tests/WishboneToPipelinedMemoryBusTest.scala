@@ -15,16 +15,16 @@ import scala.util.Random
 
 class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
   def runTest(config: WishboneConfig, rspQueue: Int): Unit = {
-    Config.sim.withWave.withVerilator
-      .addRtl("/home/justin/source/cr/fpga-depth/third_party/formal_verification/fwb_master.v")
-      .addRtl("/home/justin/source/cr/fpga-depth/third_party/formal_verification/fwb_slave.v")
+    Config.sim.withWave
+      //.addRtl("/home/justin/source/cr/fpga-depth/third_party/formal_verification/fwb_master.v")
+      //.addRtl("/home/justin/source/cr/fpga-depth/third_party/formal_verification/fwb_slave.v")
       //.addSimulatorFlag("-g2012")
       .doSim(
         new WishboneToPipelinedMemoryBus(PipelinedMemoryBusConfig(32, 32), config, rspQueue = rspQueue) {
           val sysclk = Reg(UInt(32 bits)) init (0)
           sysclk := sysclk + 1
           SimPublic(sysclk)
-        }.setDefinitionName("ToF_WishboneToPipelinedMemoryBus")
+        }.setDefinitionName("WishboneToPipelinedMemoryBus")
       ) { dut =>
         dut.io.pmb.cmd.ready #= false
         dut.io.pmb.rsp.valid #= false
@@ -44,23 +44,20 @@ class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
         var running = true
 
         val wb_thread = fork {
-          var q = new mutable.Queue[(BigInt, Boolean)]()
+          var q = new mutable.Queue[BigInt]()
 
           while (running) {
             dut.io.pmb.rsp.valid #= false
 
             if (q.nonEmpty) {
               dut.io.pmb.rsp.data #= 0xcafecafeL
+              println(s"Q has ${q.size} entries")
               if (dut.io.pmb.rsp.valid.randomize()) {
-                val (addr, was_write) = q.dequeue()
-                if (!was_write) {
-                  val response = BigInt(Random.nextInt(1000))
-                  println(s"Pushing ${addr} ${response} ${dut.sysclk.toBigInt}")
-                  dut.io.pmb.rsp.data #= response
-                  pmb_resp.pushRef(response)
-                } else {
-                  dut.io.pmb.rsp.data #= 0xbeefbeefL
-                }
+                val addr = q.dequeue()
+                val response = BigInt(Random.nextInt(1000))
+                println(s"Pushing ${addr} ${response} ${dut.sysclk.toBigInt}")
+                dut.io.pmb.rsp.data #= response
+                pmb_resp.pushRef(response)
               }
             }
 
@@ -70,8 +67,11 @@ class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
             }
 
             if (dut.io.pmb.cmd.valid.toBoolean && dut.io.pmb.cmd.ready.toBoolean) {
-              println(s"Need response for ${dut.io.pmb.cmd.address.toBigInt} ${dut.io.pmb.cmd.write.toBoolean} ${dut.sysclk.toBigInt} ${simTime()}")
-              q.enqueue((dut.io.pmb.cmd.address.toBigInt, dut.io.pmb.cmd.write.toBoolean))
+              println(s"Need response for address ${dut.io.pmb.cmd.address.toBigInt} write: ${dut.io.pmb.cmd.write.toBoolean} ${dut.sysclk.toBigInt} ${simTime()}")
+
+              if(!dut.io.pmb.cmd.write.toBoolean) {
+                q.enqueue(dut.io.pmb.cmd.address.toBigInt)
+              }
 
               val tran = WishboneTransaction(dut.io.pmb.cmd.address.toBigInt, dut.io.pmb.cmd.data.toBigInt)
               println(s"Popping ${tran}")
@@ -98,7 +98,7 @@ class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
           if (!we) {
             tran = tran.copy(data = BigInt(0xdeadbeefL))
           }
-          println(s"Pushing ${tran} ${we} ${dut.sysclk.toBigInt}")
+          println(s"Pushing ${tran} write: ${we} ${dut.sysclk.toBigInt}")
           sco.pushRef(tran)
           dut.io.wb.DAT_MOSI #= tran.data
           dri.drive(tran, we)
@@ -110,7 +110,7 @@ class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
       }
   }
 
-  test("WishboneToPipelinedMemoryBus_std") {
+  test("WishboneToPipelinedMemoryBus_non_pipelined") {
     runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE), 10)
   }
   test("WishboneToPipelinedMemoryBus_no_queue") {

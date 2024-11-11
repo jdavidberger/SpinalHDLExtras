@@ -224,7 +224,7 @@ class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithK
       case _ => log2Up(gear) * 4 - 1
     }
   }
-  setDefinitionName(s"LatticeODDR_l${latency()}_${reqs.toString}")
+  setDefinitionName(s"LatticeODDR_l${latency()}_${reqs.toString}", false)
 }
 
 object LatticeIDDR {

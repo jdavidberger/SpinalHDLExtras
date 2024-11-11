@@ -6,7 +6,7 @@ import spinal.lib.bus.misc._
 import spinal.lib.bus.regif._
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
-import spinalextras.lib.logging.{GlobalLogger, WishboneBusLogger}
+import spinalextras.lib.logging.{GlobalLogger, PipelinedMemoryBusLogger, SignalLogger, WishboneBusLogger}
 
 import scala.collection.mutable
 
@@ -76,6 +76,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
   }
 
   def add_master(name : String, tags : String*) : T = {
+    assert(!built)
     add_master(name, Set(tags:_*))
   }
   def add_master(name : String, tags : Set[String] = Set()) : T = {
@@ -125,14 +126,20 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     busIf
   }
 
-  def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
-    val busIf = shared_bus_interfaces.filter(_._1.overlap(mapping)).headOption.map(_._2).getOrElse({
-      val port = add_slave(name, mapping, tags:_*)
-      val busIf = bus_interface(port, mapping)
-      busIf
+  def apply_staging(bus : T, m2s_stage : Boolean, s2m_stage : Boolean): T = {
+    bus
+  }
+
+  def add_bus_interface(name: String, mapping: SizeMapping, m2s_stage : Boolean, s2m_stage : Boolean, tags: String*): BusIf = {
+    val busIf = shared_bus_interfaces.find(_._1.overlap(mapping)).map(_._2).getOrElse({
+      val port = apply_staging(add_slave(name, mapping, tags:_*), m2s_stage, s2m_stage)
+      bus_interface(port, mapping)
     })
     busIf.regPtrReAnchorAt(mapping.base)
     busIf
+  }
+  def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
+    add_bus_interface(name, mapping, false, false, tags:_*)
   }
 
   def add_slave_factory(name: String, mapping: SizeMapping, tags: String*): BusSlaveFactory = {
@@ -182,8 +189,8 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
   }
 }
 
-trait GlobalBusFactory[T <: IMasterSlave with Nameable with Bundle] {
-  type GlobalBus_t = GlobalBus[T]
+trait GlobalBusFactory[GBT <: GlobalBus[_]] {
+  type GlobalBus_t = GBT
   def create_global_bus() : GlobalBus_t
   var sysBus : Option[GlobalBus_t] = None
   def apply(): GlobalBus_t = {
@@ -213,6 +220,10 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
   }
   override def bus_interface(port : Wishbone, mapping: SizeMapping) : WishboneBusInterface = WishboneBusInterface(port, mapping)
   override def slave_factory(port : Wishbone) = WishboneSlaveFactory(port)
+
+  override def apply_staging(bus: Wishbone, m2s_stage: Boolean, s2m_stage: Boolean): Wishbone = {
+    WishboneStage(bus, m2s_stage, s2m_stage)
+  }
 
   override def build(): Unit = {
     {
@@ -272,6 +283,9 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
   }
 
 }
+object PipelineMemoryGlobalBus {
+  def Default = PipelineMemoryGlobalBus(PipelinedMemoryBusConfig(32,32))
+}
 
 case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends GlobalBus[PipelinedMemoryBus] {
   override def create_bus(): PipelinedMemoryBus = PipelinedMemoryBus(config)
@@ -287,11 +301,16 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
 
     for((topBus, mapping, tags) <- slaves) {
       interconn.addSlave(topBus, mapping)
+      //interconn.noTransactionLockOn(topBus)
     }
 
     interconn.addMasters(interconnect_spec():_*)
 
     ctx.restore()
+  }
+
+  def attach_debug_registers(busIf: BusIf) = {
+    PipelinedMemoryBusLogger.attach_debug_registers(busIf, this.masters.map(_._1):_*)
   }
 
   override def bus_interface(port: PipelinedMemoryBus, addressMapping: SizeMapping): BusIf = ???
