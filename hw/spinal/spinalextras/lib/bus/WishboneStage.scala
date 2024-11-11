@@ -168,7 +168,7 @@ object WishboneStage {
       PipelinedMemoryBusToWishbone(adapter_pmb.cmdM2sPipe(), 1, bus.config)
   }
 
-  def apply(bus: Wishbone, m2s_stage: Boolean, s2m_stage: Boolean): Wishbone = {
+  def apply(bus: Wishbone, m2s_stage: Boolean, s2m_stage: Boolean = false): Wishbone = {
     {
       val adapter_pmb = WishboneToPipelinedMemoryBus(bus, 1)
       val out_bus = PipelinedMemoryBusToWishbone(
