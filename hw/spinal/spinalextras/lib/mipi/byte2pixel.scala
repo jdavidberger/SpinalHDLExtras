@@ -4,7 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
-import spinal.lib.bus.regif.AccessType.{ROV, WC}
+import spinal.lib.bus.regif.AccessType.{RO, ROV, WC}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinalextras.lib.Config
@@ -58,7 +58,7 @@ case class byte2pixel(cfg : MIPIConfig,
   }
 
   val lcm_width = lcm(cfg.GEARED_LANES, cfg.DT_WIDTH)
-  val fifo_min_depth = Math.pow(2, (1 + Math.log(lcm_width / cfg.GEARED_LANES) / Math.log(2)).ceil).toInt
+  val fifo_min_depth = 16 // Math.pow(2, (1 + Math.log(lcm_width / cfg.GEARED_LANES) / Math.log(2)).ceil).toInt
 
   val byte_cd_freq = byte_cd.frequency.getValue
   val byte_phy_freq = cfg.dphy_byte_freq
@@ -94,6 +94,16 @@ case class byte2pixel(cfg : MIPIConfig,
 
   val byte_clk_area = new ClockingArea(byte_cd) {
     val isRefDt, fv = RegInit(False)
+
+    val watermarkReg = RegInit(fifo.io.pushOccupancy)
+    when(fifo.io.pushOccupancy > watermarkReg) {
+      watermarkReg := fifo.io.pushOccupancy
+    }
+
+    val stallCount = Counter(32 bits)
+    when(fifo.io.push.isStall) {
+      stallCount.increment()
+    }
 
     when(io.mipi_header.fire) {
       when(io.mipi_header.is_long_av_packet) {
@@ -138,6 +148,11 @@ case class byte2pixel(cfg : MIPIConfig,
     fifo.io.pop.ready := True
     val fv = RegNextWhen(fifo.io.pop.payload._1(1), fifo.io.pop.fire)
 
+    val watermarkReg = RegInit(fifo.io.popOccupancy)
+    when(fifo.io.popOccupancy > watermarkReg) {
+      watermarkReg := fifo.io.popOccupancy
+    }
+
     if(byte_clock_fifo) {
       io.pixelFlow.frame_valid := fv
       io.pixelFlow.valid := fifo.io.pop.fire && fifo.io.pop.payload._1(0)
@@ -169,8 +184,17 @@ case class byte2pixel(cfg : MIPIConfig,
     val sig = busSlaveFactory.newReg("b2p start")
     val signature = sig.field(Bits(32 bit), ROV, BigInt("F000A803", 16), "ip sig")
 
+    for(counter : UInt <- Seq(
+      byte_clk_area.stallCount.value.setName("stall"),
+      byte_clk_area.watermarkReg.setName("push_occ_watermark"),
+      pixel_clk_area.watermarkReg.setName("pop_occ_watermark")
+    )) {
+      val reg = busSlaveFactory.newReg(counter.name)(SymbolName(s"${counter.name}"))
+      val cnt = reg.field(UInt(32 bits), RO, counter.name)(SymbolName(s"${counter.name}_cnt"))
+      cnt := BufferCC(counter).resized
+    }
+
     for(error_signal <- Seq(
-      BufferCC(~fifo.io.push.ready).setPartialName("fifo_full"),
       BufferCC(io.pixelFlow.line_valid).setPartialName("line_valid"),
       BufferCC(io.pixelFlow.frame_valid).setPartialName("frame_valid"),
       BufferCC(~io.pixelFlow.frame_valid).setPartialName("not_frame_valid"),

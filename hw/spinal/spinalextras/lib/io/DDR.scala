@@ -185,8 +185,10 @@ case class ODDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequiremen
 
   val io = new Bundle {
     val IN= slave(Flow(Vec(payloadType, input_per_output)))
+
     val ECLK = in(Bool())
     val OUT = master(Flow(payloadType))
+
     val BUSY = out(Bool())
     val LAST_SEND = out(Bool())
 
@@ -271,7 +273,10 @@ case class IODDRS[T <: BitVector](payloadType : HardType[T],
   val io = new Bundle {
     val ECLK = in(Bool())
     val OUT = slave(Flow(Vec(payloadType, gear)))
+    val OUTPUT_SUPPRESS = in(Bits(bitsWidth bits)) default(0)
+
     val OUT_VALID = out(Bool())
+
     val IN_CAPTURE = in(Bool())
     val PHY = inout(Analog(Bits(bitsWidth bits)))
     val IN = master(Flow(Vec(payloadType, gear)))
@@ -282,7 +287,6 @@ case class IODDRS[T <: BitVector](payloadType : HardType[T],
     val DELAY_IN = data_in.io.DELAY.map(x => slave(x.clone()))
     val DELAY_OUT = data_out.io.DELAY.map(x => slave(x.clone()))
   }
-
   data_in.io.DELAY.foreach(_ <> io.DELAY_IN.get)
   data_out.io.DELAY.foreach(_ <> io.DELAY_OUT.get)
 
@@ -301,6 +305,7 @@ case class IODDRS[T <: BitVector](payloadType : HardType[T],
   tristates.io.input <> data_out.io.OUT.payload
   tristates.io.output <> data_in.io.IN.payload
   tristates.io.output_enable <> data_out.io.OUT.valid
+  tristates.io.output_enable_suppress <> io.OUTPUT_SUPPRESS
 
   override val latency: Int = data_out.oddrs.head.latency()
 }

@@ -8,7 +8,7 @@ import spinalextras.lib.Config
 import spinalextras.lib.memory.MemoryBackedFifo
 
 class MemoryBackedFifoTest extends AnyFunSuite {
-  def doTest[T <: BitVector](dataType: HardType[T], depth: Int): Unit = {
+  def doTest[T <: BitVector](dataType: HardType[T], depth: Int, throughputTest : Boolean = false): Unit = {
     Config.sim.doSim(
       new MemoryBackedFifo(dataType, depth)
     ) { dut =>
@@ -25,10 +25,10 @@ class MemoryBackedFifoTest extends AnyFunSuite {
         datum => {
           println(s"Got ${datum.toBigInt}")
           sco.pushDut(datum.toBigInt)
-          dut.io.pop.ready #= false
+          dut.io.pop.ready #= throughputTest
         }
       }
-      dut.io.pop.ready #= false
+      dut.io.pop.ready #= throughputTest
 
       for (i <- 0 until depth * 3) {
         dut.io.push.valid #= true
@@ -59,6 +59,7 @@ class MemoryBackedFifoTest extends AnyFunSuite {
         // dut.io.pop.ready.randomize()
         dut.io.pop.ready #= true
       }
+      dut.clockDomain.waitSampling(10)
 
       sco.checkEmptyness()
     }
@@ -67,5 +68,9 @@ class MemoryBackedFifoTest extends AnyFunSuite {
   test("basic") {
     doTest(Bits(95 bits), 1000)
     doTest(Bits(96 bits), 1000)
+  }
+
+  test("Throughput") {
+    doTest(Bits(96 bits), 1000, throughputTest = true)
   }
 }

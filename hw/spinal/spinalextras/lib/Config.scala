@@ -28,8 +28,8 @@ object Config {
 
   def spinal = spinalConfig
 
-  def sim = SimConfig.withConfig(spinal.includeSimulation).withIVerilog//.withGhdl
+  def sim = SimConfig.withConfig(spinal.includeSimulation).withIVerilog
     .withFstWave
-    .allOptimisation
+    //.allOptimisation
     .workspacePath("simulations/")
 }

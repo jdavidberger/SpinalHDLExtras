@@ -347,7 +347,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
       data_log_capture.io.flow <> stream
       data_log_capture.io.flow_fire <> io.flowFires(idx)
       data_log_capture.io.manual_trigger := io.manual_trigger.fire && io.manual_trigger.payload(idx) === True
-      data_log_capture.io.channel_active := !io.inactive_channels(idx)
+      data_log_capture.io.channel_active := ~(io.inactive_channels(idx))
       when(data_log_capture.io.needs_syscnt) {
         needs_syscnt := True
       }
@@ -371,8 +371,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
 
   def getTypeName(d: Data): String = {
     d match {
-      case b: Bundle => if(b.getTypeString.contains("$") || b.getTypeString.isEmpty) d.getName() else b.getTypeString
-      case _ => d.getName()
+      case b: Bundle => (if(b.getTypeString.contains("$") || b.getTypeString.isEmpty) d.getName() else b.getTypeString)  + "_" + d.getBitsWidth.toString
+      case _ => d.getName()  + "_" + d.getBitsWidth.toString
     }
   }
 
@@ -756,8 +756,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
 
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int,
                          outputStream : Option[Stream[Bits]] = None): Unit = {
-    //val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
-    val loggerFifo = new MemoryBackedFifo(cloneOf(io.log.payload), depth)
+    val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
+    //val loggerFifo = new MemoryBackedFifo(cloneOf(io.log.payload), depth)
     loggerFifo.setName(s"loggerFifo_${depth}")
     loggerFifo.io.push <> io.log
 
@@ -846,6 +846,25 @@ object FlowLogger {
     flow.valid := RegNext(reg.readBits) =/= reg.readBits
     flow.payload := reg.readBits
     (map, flow)
+  }
+
+  def profile_signal(name : String, evt : Bool, duration : TimeNumber = 1000 ms) = {
+    val timeout = Timeout(duration)
+    val counter = Reg(UInt(64 bit))
+    val eventsPerDuration = Flow(cloneOf(counter))
+    eventsPerDuration.payload := counter
+    eventsPerDuration.valid := timeout
+
+    when(evt) {
+      counter := counter + 1
+    }
+
+    when(timeout) {
+      timeout.clear()
+      counter := 0
+    }
+
+    FlowLogger.flows(eventsPerDuration.setName(name))
   }
 
   def flows[T <: Data](flows: Flow[T]*): Seq[(Data, Flow[Bits])] = {

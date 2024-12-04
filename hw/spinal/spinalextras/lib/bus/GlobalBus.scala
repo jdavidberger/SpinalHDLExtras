@@ -6,6 +6,7 @@ import spinal.lib.bus.misc._
 import spinal.lib.bus.regif._
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
+import spinalextras.lib.bus.simple.PipelinedMemoryBusInterface
 import spinalextras.lib.logging.{GlobalLogger, PipelinedMemoryBusLogger, SignalLogger, WishboneBusLogger}
 
 import scala.collection.mutable
@@ -298,6 +299,7 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
     val ctx = Component.push(Component.toplevel)
     val interconn = PipelinedMemoryBusInterconnect()
     interconn.perfConfig()
+    interconn.arbitrationPendingRspMaxDefault = 16
 
     for((topBus, mapping, tags) <- slaves) {
       interconn.addSlave(topBus, mapping)
@@ -313,7 +315,7 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
     PipelinedMemoryBusLogger.attach_debug_registers(busIf, this.masters.map(_._1):_*)
   }
 
-  override def bus_interface(port: PipelinedMemoryBus, addressMapping: SizeMapping): BusIf = ???
+  override def bus_interface(port: PipelinedMemoryBus, addressMapping: SizeMapping): BusIf = PipelinedMemoryBusInterface(port, addressMapping)
 
   override def slave_factory(port: PipelinedMemoryBus): BusSlaveFactory = ???
 

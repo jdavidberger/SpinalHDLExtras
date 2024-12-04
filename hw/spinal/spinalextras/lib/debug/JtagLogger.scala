@@ -52,9 +52,10 @@ class JtagChain(device_count : Int) extends Component {
 
 object JtagChain {
   def apply(jtag_devs : Jtag*): JtagChain = {
-    val c = new JtagChain(jtag_devs.size)
+    val jtag_devs_nonnull = jtag_devs.filter(_ != null)
+    val c = new JtagChain(jtag_devs_nonnull.size)
 
-    for (elem <- jtag_devs.zip(c.io.jtags)) {
+    for (elem <- jtag_devs_nonnull.zip(c.io.jtags)) {
       elem._2 <> elem._1
     }
 

@@ -141,7 +141,7 @@ class dphy_rx(cfg : MIPIConfig,
      */
     val rxcsr_datsettlecyc_i = cfg_datsettle_cyc generate in UInt(8 bits) default(default_datsettlecyc)
 
-    val rxcsr_rxfifo_pktdly_i = (cfg_fifo_read_delay && cfg_has_fifo) generate in UInt(16 bits) default(2)
+    val rxcsr_rxfifo_pktdly_i = (cfg_fifo_read_delay && cfg_has_fifo) generate in UInt(16 bits) default(1)
 
     def byte_clock_domain(): ClockDomain = {
       if(byte_cd == null) {
@@ -450,7 +450,7 @@ class dphy_rx(cfg : MIPIConfig,
 
     val pktdelay_ctrl = busSlaveFactory.newReg("rxcsr_rxfifo_pktdly")
     val pktdelay =
-      pktdelay_ctrl.field(io.rxcsr_rxfifo_pktdly_i.clone(), RW, "Packet delay on fifo") init(2)
+      pktdelay_ctrl.field(io.rxcsr_rxfifo_pktdly_i.clone(), RW, "Packet delay on fifo") init(1)
 
     GlobalSignals.externalize(io.rxcsr_rxfifo_pktdly_i) := crossClock(pktdelay_ctrl, pktdelay, io.byte_clock_domain())
 

@@ -98,6 +98,8 @@ class MemoryRequirementBits(dataWidth : Int, num_elements : BigInt, numReadWrite
 abstract class HardwareMemory[T <: Data]() extends Component {
   def requirements : MemoryRequirement[T] = ???
   lazy val latency : Int = 1
+  lazy val cmd_latency : Int = 0
+
   lazy val num_elements = requirements.num_elements
   lazy val dataType = requirements.dataType
 

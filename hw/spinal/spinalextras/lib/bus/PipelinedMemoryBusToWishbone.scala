@@ -55,7 +55,8 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
     WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,
       if(wbConfig.isPipelined) rspQueue else 1)
 
-  io.pmb.cmd.payload.address := addressMap(io.wb.byteAddress()).resized
+  assert(io.pmb.cmd.valid === False || (io.wb.byteAddress() & (io.wb.config.wordAddressInc() - 1)) === 0, "PMB needs word alignment")
+  io.pmb.cmd.payload.address := addressMap(io.wb.wordAddress()).resized
   io.pmb.cmd.payload.write := io.wb.WE
   io.pmb.cmd.payload.data := io.wb.DAT_MOSI.resized
   io.pmb.cmd.valid := io.wb.CYC && io.wb.STB && readyForNewReq
@@ -83,7 +84,7 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
 
 object WishboneToPipelinedMemoryBus {
   def apply(bus: Wishbone, rspQueue : Int): PipelinedMemoryBus = {
-    val config = PipelinedMemoryBusConfig(addressWidth = bus.config.addressWidth, dataWidth = bus.config.dataWidth)
+    val config = PipelinedMemoryBusConfig(addressWidth = bus.config.addressWidth - log2Up(bus.config.wordAddressInc()), dataWidth = bus.config.dataWidth)
     WishboneToPipelinedMemoryBus(bus, rspQueue, config)
   }
 
@@ -109,14 +110,12 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
   }
 
   test_funcs.assertPMBContract(io.pmb)
-  //FwbSlave(io.wb)
-  //FwbMaster(io.wb)
 
   val (readyForNewReq, hasOutstandingReq, reqWasWE) =
     WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,
       if(wbConfig.isPipelined) rspQueue else 1)
 
-  io.wb.assignByteAddress(io.pmb.cmd.address)
+  io.wb.assignWordAddress(io.pmb.cmd.address)
   io.wb.WE := io.pmb.cmd.payload.write
   io.wb.CYC := io.pmb.cmd.valid || hasOutstandingReq
   io.wb.STB := io.pmb.cmd.valid && readyForNewReq
@@ -251,6 +250,7 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
           }
         }
 
+        val word_shift = log2Up(config.wordAddressInc())
         for(repeat <- 0 until 100){
           seq.generateTransactions()
           var tran = seq.nextTransaction(0)
@@ -258,12 +258,13 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
           if(!we) {
             tran = tran.copy(data = BigInt(0xdeadbeefL))
           }
-          println(s"Pushing ${tran} ${we} ${dut.sysclk.toBigInt}")
+          println(s"Pushing ${tran} ${tran.address << word_shift} ${we} ${dut.sysclk.toBigInt}")
           sco.pushRef(tran)
-          dut.io.pmb.cmd.address #= tran.address
+          dut.io.pmb.cmd.address #= tran.address >> word_shift
           dut.io.pmb.cmd.write #= we
           dut.io.pmb.cmd.valid #= true
           dut.io.pmb.cmd.data #= tran.data
+          dut.io.pmb.cmd.mask #= (1 << dut.io.pmb.cmd.mask.getBitsWidth) - 1
           dut.clockDomain.waitSamplingWhere(dut.io.pmb.cmd.ready.toBoolean)
           dut.io.pmb.cmd.valid #= false
           dut.clockDomain.waitSampling()
@@ -272,6 +273,13 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
         wb_thread.join()
 
       }
+  }
+
+  test("PipelinedMemoryBusToWishbone_word_std") {
+    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.WORD))
+  }
+  test("PipelinedMemoryBusToWishbone_word") {
+    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.WORD).pipelined)
   }
 
   test("PipelinedMemoryBusToWishbone_std") {

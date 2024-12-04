@@ -1,8 +1,8 @@
 package spinalextras.lib.misc
 
-import spinal.core.{B, Bundle, Component, False, IntToBuilder, RegNextWhen, TimeNumber, True, when}
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
-import spinal.lib.{Timeout, master, slave}
+import spinal.core._
+import spinal.lib.bus.simple._
+import spinal.lib._
 
 case class PipelinedMemoryBusTimeout(config : PipelinedMemoryBusConfig, timeout : TimeNumber = 100 us) extends Component {
   val io = new Bundle {
@@ -36,4 +36,39 @@ object PipelinedMemoryBusTimeout {
     dut.io.pmb_m <> bus
     dut.io.pmb_s
   }
+}
+
+case class PipelinedMemoryBusBuffered(cfg : PipelinedMemoryBusConfig, inFlightMax : Int) extends Component {
+  val io = new Bundle {
+    val config = cfg
+    val cmd = slave(Stream(PipelinedMemoryBusCmd(config)))
+    val rsp = master(Stream(PipelinedMemoryBusRsp(config)))
+
+    val bus = master(PipelinedMemoryBus(config))
+
+  }
+//  val fifo = StreamFifo(io.rsp.payload, inFlightMax)
+//  fifo.io.push.payload := io.rsp.payload
+//  fifo.io.push.valid := io.rsp.valid
+//  assert(~fifo.io.push.isStall, "Bus Buffered Stalled")
+//  fifo.io.pop <> io.rsp
+
+  val overflow = Bool()
+  io.rsp <> io.bus.rsp.toStream(overflow)
+  assert(~overflow, "Bus Buffered Stalled")
+
+  val inFlight = new CounterUpDown(inFlightMax, handleOverflow = false)
+  when(io.bus.cmd.fire) { inFlight.increment() }
+  when(io.bus.rsp.fire) { inFlight.decrement() }
+
+  io.cmd.takeWhen(io.rsp.ready && ~inFlight.willOverflowIfInc) >> io.bus.cmd
+}
+
+object PipelinedMemoryBusBuffered {
+  def apply(bus: PipelinedMemoryBus, rspQueue : Int) = {
+    val dut = new PipelinedMemoryBusBuffered(bus.config, rspQueue)
+    dut.io.bus <> bus
+    dut.io
+  }
+
 }

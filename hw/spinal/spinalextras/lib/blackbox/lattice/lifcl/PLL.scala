@@ -1256,7 +1256,7 @@ object PLLConfig {
     // And it seems like the ref clock is internally driven
 
     var solution = solve_non_fractional(inputClock, actualOutputClocks:_*)
-    //solution = None
+    solution = None
     if(solution.isEmpty) {
       solution = solve_fractional(inputClock, actualOutputClocks: _*)
     }
@@ -1278,7 +1278,7 @@ object PLL extends App {
   def apply(inputClock : ClockDomain, outputClocks : ClockSpecification*): Seq[ClockDomain] = {
     val pll_input = {
       if(inputClock == null) {
-        val osc = new OSCD(OSCDConfig.create(ClockSpecification(60 MHz, tolerance=.1)))
+        val osc = OSCD(OSCDConfig.create(ClockSpecification(60 MHz, tolerance=.1)))
         osc.hf_clk().get
       } else {
         inputClock

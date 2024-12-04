@@ -36,6 +36,8 @@ case class TristateBuffers[T <: BitVector](payloadType : HardType[T]) extends Co
   setDefinitionName(s"Tristate_w${bitsWidth}")
   val io = new Bundle {
     val output_enable = in Bool()
+    val output_enable_suppress = in(Bits(bitsWidth bits))
+
     val input = in (payloadType)
     val output = out (payloadType)
     val phy = inout(Analog(Bits(bitsWidth bits)))
@@ -45,7 +47,7 @@ case class TristateBuffers[T <: BitVector](payloadType : HardType[T]) extends Co
     val bb = TristateBuffer()
     bb.setName(s"TristateBufferArray_${i}")
     bb.io.phy <> io.phy(i)
-    bb.io.output_enable := io.output_enable
+    bb.io.output_enable := io.output_enable && ~io.output_enable_suppress(i)
     bb.io.output <> io.output(i)
     bb.io.input <> io.input(i)
   }

@@ -10,6 +10,7 @@ import spinal.lib.bus.regif.BusIf
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinalextras.lib.Config
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, PipelinedMemoryBusLogger, SignalLogger}
+import spinalextras.lib.testing.test_funcs
 
 import scala.language.postfixOps
 
@@ -34,6 +35,13 @@ object PipelineMemoryBusClockAdapter {
       SignalLogger.concat("pmbCCC", overflow.setName("overflow"))
     )
 
+    new ClockingArea(busClock) {
+      test_funcs.assertPMBContract(bus)
+    }
+    new ClockingArea(newClock) {
+      test_funcs.assertPMBContract(busNew)
+    }
+
     busNew
   }
 }
@@ -48,6 +56,8 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
 
   val input_words = pmbIn.dataWidth / 8
   val output_words = pmbOut.dataWidth / 8
+  val shift_in = log2Up(input_words)
+  val shift_out = log2Up(output_words)
 
   val work =
     if(pmbIn.dataWidth == pmbOut.dataWidth) new Area {
@@ -55,32 +65,34 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
     } else if(pmbIn.dataWidth > pmbOut.dataWidth) new Area {
       val factor = pmbIn.dataWidth / pmbOut.dataWidth
 
-      StreamTransactionExtender(io.input.cmd, io.output.cmd, factor - 1, noDelay = true) {
+      val cmd = cloneOf(io.output.cmd)
+      StreamTransactionExtender(io.input.cmd, cmd, factor - 1, noDelay = true) {
         (id, payload, _) => {
           val cmd = PipelinedMemoryBusCmd(pmbOut)
-          cmd.address := payload.address + id * output_words
+          cmd.address := (payload.address << (shift_in - shift_out)) + id
           cmd.data := (payload.data >> (cmd.data.getWidth * id)).resized
           cmd.write := payload.write
           cmd.mask := (payload.mask >> (output_words * id)).resized
           cmd
         }
       }
+      cmd.throwWhen(cmd.write && cmd.mask === 0).stage() <> io.output.cmd
 
       val rspStream = Stream(io.input.rsp.data.clone())
-      StreamWidthAdapter(io.output.rsp.map(_.data).toStream, rspStream, endianness = LITTLE)
+      val overflow = Bool()
+      StreamWidthAdapter(io.output.rsp.map(_.data).toStream(overflow = overflow), rspStream, endianness = LITTLE)
+      assert(!overflow, "Width adapter overflow")
 
       rspStream.ready := True
       io.input.rsp.valid := rspStream.valid
       io.input.rsp.data := rspStream.payload
     } else new Area {
-      val shift_in = log2Up(input_words)
-      val shift_out = log2Up(output_words)
       val input_size_per_output_size = shift_out - shift_in
 
       val cmdStream = io.input.cmd.map(payload => {
         val cmd = PipelinedMemoryBusCmd(pmbOut)
-        val index = (payload.address >> shift_in).resize((input_size_per_output_size) bits)
-        cmd.address := (payload.address >> shift_out) << shift_out
+        val index = payload.address.resize((input_size_per_output_size) bits)
+        cmd.address := (payload.address >> (shift_out - shift_in)).resized
         cmd.data := (payload.data << (pmbIn.dataWidth * index)).resized
         cmd.mask := (payload.mask << (input_words * index)).resized
         cmd.write := payload.write
@@ -93,11 +105,13 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
       val q = if(rspQueue > 1) indices.queue(rspQueue) else indices.s2mPipe()
       toOut.map(_._1) <> io.output.cmd
 
-      StreamJoin(q, io.output.rsp.toStream).map( matched_rsp => {
+      val overflow = Bool()
+      StreamJoin(q, io.output.rsp.toStream(overflow).stage()).map( matched_rsp => {
         val rsp = PipelinedMemoryBusRsp(pmbIn)
         rsp.data := (matched_rsp._2.data >> (pmbIn.dataWidth * matched_rsp._1)).resized
         rsp
       }).toFlow <> io.input.rsp
+      assert(!overflow, "Width adapter overflow 114")
     }
 
   def attach_debug_registers(busSlaveFactory: BusIf): Unit = {
@@ -129,7 +143,7 @@ object PipelineMemoryBusWidthAdapter {
 
 case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
                                 mapping : AddressMapping = SizeMapping(0, 65535),
-                                config : PipelinedMemoryBusConfig = null) extends Component {
+                                config : PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32)) extends Component {
   val io = new Bundle {
     val bus = slave(PipelinedMemoryBus(config))
   }
@@ -145,6 +159,15 @@ case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
   }
 
   io.bus.cmd.ready := True
+
+  val write_counter, read_counter = Counter(32 bits)
+  when(io.bus.cmd.fire && io.bus.cmd.write) {
+    write_counter.increment()
+  }
+
+  when(io.bus.cmd.fire && !io.bus.cmd.write) {
+    read_counter.increment()
+  }
 
   var port = mem.readWriteSyncPort(maskWidth = io.bus.cmd.mask.getWidth)
   port.address := mapping.removeOffset(io.bus.cmd.address).resized
@@ -190,7 +213,7 @@ class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
           val data = (i + 101) % (1L << configIn.dataWidth - 1)
           dut.io.bus.cmd.valid #= true
           dut.io.bus.cmd.data #= data
-          dut.io.bus.cmd.address #= i * (configIn.dataWidth / 8)
+          dut.io.bus.cmd.address #= i
           dut.io.bus.cmd.write #= true
           sco.pushRef(data)
           dut.clockDomain.waitSamplingWhere(dut.io.bus.cmd.ready.toBoolean)
@@ -200,7 +223,7 @@ class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
         for(i <- 0 until 1000) {
           dut.io.bus.cmd.valid #= true
           dut.io.bus.cmd.data #= 0xdeadbeefL % (1L << configIn.dataWidth - 1)
-          dut.io.bus.cmd.address #= i * (configIn.dataWidth / 8)
+          dut.io.bus.cmd.address #= i
           dut.io.bus.cmd.write #= false
           dut.clockDomain.waitSamplingWhere(dut.io.bus.cmd.ready.toBoolean)
           dut.io.bus.cmd.valid #= false
@@ -215,7 +238,7 @@ class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
   for(inWidth <- Seq(8, 16, 32, 64, 128)) {
     for(outWidth <- Seq(8, 16, 32, 64, 128)) {
       test(s"PipelinedMemoryBusToWishboneTest_${inWidth}_${outWidth}") {
-        runTest(PipelinedMemoryBusConfig(32, inWidth), PipelinedMemoryBusConfig(32, outWidth))
+        runTest(PipelinedMemoryBusConfig(32 - log2Up(inWidth/8), inWidth), PipelinedMemoryBusConfig(32 - log2Up(outWidth/8), outWidth))
       }
     }
   }

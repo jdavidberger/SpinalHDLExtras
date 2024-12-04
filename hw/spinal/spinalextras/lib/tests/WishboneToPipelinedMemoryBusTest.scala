@@ -73,7 +73,7 @@ class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
                 q.enqueue(dut.io.pmb.cmd.address.toBigInt)
               }
 
-              val tran = WishboneTransaction(dut.io.pmb.cmd.address.toBigInt, dut.io.pmb.cmd.data.toBigInt)
+              val tran = WishboneTransaction(dut.io.pmb.cmd.address.toBigInt * config.wordAddressInc(), dut.io.pmb.cmd.data.toBigInt)
               println(s"Popping ${tran}")
               sco.pushDut(tran)
 

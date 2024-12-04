@@ -141,13 +141,18 @@ object test_funcs {
     scoreboard.checkEmptyness()
   }
 
-  def assertPMBContract(pmb: PipelinedMemoryBus) = if (globalData.config.flags.contains(GenerationFlags.simulation)) {
+  def assertPMBContract(pmb: PipelinedMemoryBus) = {
     new Area {
       test_funcs.assertStreamContract(pmb.cmd)
 
       val outstanding_cnt = CounterUpDown(1L << 32, pmb.cmd.fire && !pmb.cmd.write, pmb.rsp.valid)
       val pmb_rsp_bounded = outstanding_cnt.value.asBits.andR =/= True
-      assert(pmb_rsp_bounded, "PMB has miscounted responses")
+      assert(pmb_rsp_bounded, s"${pmb} PMB has miscounted responses")
+
+      GlobalLogger(
+        Set("asserts"),
+        SignalLogger.concat(s"${pmb.name}_asserts", pmb_rsp_bounded.setName(s"${pmb.name}_rsp_bounded"))
+      )
 
     }.setName("assertPMBContract")
   }

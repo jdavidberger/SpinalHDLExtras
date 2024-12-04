@@ -37,7 +37,7 @@ class AddressHash(width : Int = 12, dataWidth : Int = 32) extends Component {
 object AddressMaskHash {
   def apply(that : UInt, dw : Int): Bits = {
     if(dw % 8 != 0) {
-      return null
+      return ~B(0, (that.getWidth / 8) bits)
     }
     val addressHash = new AddressMaskHash(that.getWidth, dw)
     addressHash.io.input := that
@@ -99,7 +99,7 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
   val readAddress, writeAddress, responseAddress, lastGoodResponse = Reg(UInt(cfg.addressWidth bits)) init (0)
 
   val dataWidth = cfg.dataWidth
-  val incPerOp = dataWidth / 8
+  val incPerOp = 1 // dataWidth / 8
   //cmd_stream.address := (0x000 + incPerOp * writeCnt.value).resized
   cmd_stream.data := address_to_data(cmd_stream.address, dataWidth).resized
   val cmdHash = address_to_data_mask.map(_(cmd_stream.address, dataWidth)).orNull
@@ -118,9 +118,9 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
   }
   when(cmd_stream.fire) {
     when(cmd_stream.write) {
-      writeAddress := (writeAddress + incPerOp) & address_mask
+      writeAddress := ((writeAddress + incPerOp).resized & address_mask).resized
     } otherwise {
-      readAddress := (readAddress + incPerOp) & address_mask
+      readAddress := ((readAddress + incPerOp).resized & address_mask).resized
     }
     writeCnt.increment()
     read_cnt.increment()
@@ -151,7 +151,7 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
   val byteMask = address_to_data_mask.map(_(responseAddress, dataWidth)).getOrElse(~B(0, (dataWidth / 8) bits))
   val bitMaskVal = if (byteMask != null && byteMask.getBitsWidth > 0) ByteMaskToBitMask(byteMask) else null
   if(bitMaskVal != null) {
-    bitMask := bitMaskVal
+    bitMask := bitMaskVal.resized
   } else {
     bitMask.setAll()
   }
@@ -175,7 +175,7 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
     .stage()
 
   when(access.rsp.fire) {
-    responseAddress := (responseAddress + incPerOp) & address_mask
+    responseAddress := ((responseAddress + incPerOp).resized & address_mask).resized
   }
 
   val invalid_data = Flow(HardwareMemoryWriteCmd(cmd_stream.config.copy(dataWidth = 32)))
@@ -187,9 +187,9 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
     val (valid_value, given_data, expected_value, responseAddress, byteMask) =
       (eval_flow.payload._1, eval_flow.payload._2, eval_flow.payload._3, eval_flow.payload._4, eval_flow.payload._5)
 
-    invalid_data.payload.data := given_data // (given_data ^ expected_value).resized
+    invalid_data.payload.data := (given_data ^ expected_value).resized
     invalid_data.payload.address := responseAddress
-    invalid_data.payload.mask := byteMask
+    invalid_data.payload.mask := byteMask.resized
 
     io.valid := (io.valid && valid_value && hasExpectedLatency)// && ~timeout_counter.willOverflowIfInc)
     when(~valid_value) {
@@ -278,8 +278,8 @@ class MemMemoryTest extends AnyFunSuite {
       dut.clockDomain.forkStimulus(100 MHz)
       dut.clockDomain.waitSampling(10)
 
-      val valid_count = dut.getAllIo.find(_.name == "io_valid_count").get.asInstanceOf[UInt]
-      val valid = dut.getAllIo.find(_.name == "io_valid").get.asInstanceOf[Bool]
+      val valid_count = dut.getAllIo.find(_.name == "valid_count").get.asInstanceOf[UInt]
+      val valid = dut.getAllIo.find(_.name == "valid").get.asInstanceOf[Bool]
 
       while(valid_count.toBigInt < 2 * reqs.num_elements) {
         println(s"Valids: ${valid_count.toBigInt} ${valid.toBoolean}")

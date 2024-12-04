@@ -49,7 +49,7 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
 
   var base = 0
   val fifos = sizes.zip(io.fifos).map(sm_fifo => {
-    val fifo = new PipelinedMemoryBusFIFO(dataType, (base, sm_fifo._1.toInt), Some(sysBus), localFifoDepth = localFifoDepth)
+    val fifo = new PipelinedMemoryBusFIFO(dataType, (base, sm_fifo._1.toInt), Some(sysBus), localPopDepth = mem.latency)
     base = base + sm_fifo._1.toInt
     fifo.io.push <> sm_fifo._2.push
     fifo.io.pop <> sm_fifo._2.pop
