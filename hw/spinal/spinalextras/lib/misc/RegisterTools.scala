@@ -12,6 +12,15 @@ object RegisterTools {
     field := value.asBits.resized
   }
 
+  def Register[T <: Data](busIf : BusIf, name : String, initValue: T): T = {
+    val reg = busIf.newReg(name)(SymbolName(name))
+    val field = reg.field(Bits(initValue.getBitsWidth bits), RW) init(initValue.asBits)
+
+    val value = cloneOf(initValue)
+    value.assignFromBits(field.asBits)
+    value
+  }
+
   def create_counter(reg: UInt, cond : Bool, clockDomain: ClockDomain): Unit = {
     if(reg.clockDomain != clockDomain) {
       val r = new ClockingArea(clockDomain) {
