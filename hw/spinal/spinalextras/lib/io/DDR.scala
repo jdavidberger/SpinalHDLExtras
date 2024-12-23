@@ -38,8 +38,8 @@ abstract class IDDR(reqs : DDRRequirements) extends Component with ComponentWith
     io.OUT.valid := valid.msb
   }
 
-  def create_delay_controller(): DelayController = ???
-  def attach_delay_controller(controller : DelayController): Unit = ???
+  def create_delay_controller(): DelayController = null
+  def attach_delay_controller(controller : DelayController): Unit = { }
 }
 
 abstract class ODDR(reqs : DDRRequirements) extends Component with ComponentWithKnownLatency {
@@ -61,8 +61,8 @@ abstract class ODDR(reqs : DDRRequirements) extends Component with ComponentWith
     //var DELAY : Option[Stream[UInt]] = None
   }
 
-  def create_delay_controller(): DelayController = ???
-  def attach_delay_controller(controller : DelayController): Unit = ???
+  def create_delay_controller(): DelayController = null
+  def attach_delay_controller(controller : DelayController): Unit = {}
 
   val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
     val valid = DelayedSignal(latency(), crossClockDomain = true)

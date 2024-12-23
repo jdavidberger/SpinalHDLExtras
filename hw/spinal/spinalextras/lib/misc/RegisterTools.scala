@@ -6,6 +6,12 @@ import spinal.lib.bus.regif.AccessType.{RO, RW}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 
 object RegisterTools {
+  def inc_addr(b : BusIf): BusIf = {
+    val r = (b.getRegPtr() & 0xFFFFFF00L) + 0x100L
+    b.regPtrReAnchorAt(r)
+    b
+  }
+
   def ReadOnly[T <: Data](busIf : BusIf, name : String, value: T): Unit = {
     val reg = busIf.newReg(name)(SymbolName(name))
     val field = reg.field(Bits(32 bits), RO)
@@ -47,10 +53,11 @@ object RegisterTools {
     }
   }
 
-  def Counter(busIf : BusIf, name : String, event : Bool, clockDomain: ClockDomain = ClockDomain.current): Unit = {
+  def Counter(busIf : BusIf, name : String, event : Bool, clockDomain: ClockDomain = ClockDomain.current) = {
     val reg = busIf.newReg(name)(SymbolName(name))
     val field = reg.field(UInt(32 bits), if (ClockDomain.current == clockDomain) RW else RO)
     create_counter(field, event, clockDomain)
+    field
   }
 
   def newSection(b : BusIf) = {

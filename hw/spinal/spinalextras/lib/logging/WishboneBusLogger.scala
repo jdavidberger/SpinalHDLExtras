@@ -3,6 +3,7 @@ package spinalextras.lib.logging
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim.{SimBaseTypePimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout}
+import spinal.idslplugin.Location
 import spinal.lib._
 import spinal.lib.bus.misc.{AddressMapping, AllMapping}
 import spinal.lib.bus.wishbone._
@@ -52,6 +53,16 @@ object WishboneBusLogger {
 }
 
 object SignalLogger {
+  var assert_id = 0
+  def log_assert(must_be_true: Bool, msg : String = "")(implicit location: Location): Unit = {
+    val st = new Throwable().getStackTrace.mkString("\n")
+    GlobalLogger.add_comment(s"Assert ${assert_id}: \n${st}")
+    GlobalLogger(
+      Set("asserts"),
+      SignalLogger.concat(s"${must_be_true.name}_asserts_${assert_id}", must_be_true)
+    )
+    assert_id = assert_id + 1
+  }
   def flows(signals: Data*): Seq[(Data, Flow[Bits])] = {
     val signalWidth = signals.map(_.getBitsWidth).max
     signals.map(signal => {

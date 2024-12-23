@@ -32,6 +32,7 @@ case class PipelinedMemoryBusInterface(bus: PipelinedMemoryBus, sizeMap: SizeMap
 
   bus.cmd.ready := !halted && bus.cmd.valid
   bus.rsp.payload.data := readData
+  bus.rsp.valid := RegNext(doRead) init(False)
 
   override def readHalt(): Unit = halted := True
 

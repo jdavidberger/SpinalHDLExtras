@@ -2,9 +2,86 @@ package spinalextras.lib.misc
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.fsm.{EntryPoint, State, StateMachine}
 import spinalextras.lib.testing.test_funcs
 
+import scala.collection.mutable
 import scala.language.postfixOps
+
+
+class AdaptWidthByState[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends Component {
+  val io = new Bundle {
+    val in = slave(Stream(dataTypeIn))
+    val out = master(Stream(dataTypeOut))
+  }
+
+  require(dataTypeIn.getBitsWidth < dataTypeOut.getBitsWidth)
+
+  var last_remainder = dataTypeIn.getBitsWidth
+  val remainders = new mutable.ArrayBuffer[Int]()
+  while(last_remainder != 0) {
+    last_remainder = last_remainder + dataTypeIn.getBitsWidth - dataTypeOut.getBitsWidth
+    remainders.append(last_remainder)
+  }
+
+  val last_value = RegNextWhen(io.in.payload, io.in.fire)
+
+  val fsm = new StateMachine {
+    val start = new State with EntryPoint
+
+    val remainder_states = remainders.map(rem => new State().setName(s"remainder_state_${rem}"))
+    for(i <- remainder_states.indices) {
+      val remainder = remainders(i)
+      remainder_states(i).whenIsActive {
+        io.in.ready := io.out.ready
+        io.out.payload.assignFromBits((io.in.payload ## last_value.asBits(0, remainder bits)).resized)
+        io.out.valid := io.in.valid
+        when(io.in.fire) {
+          if(i == remainder_states.size - 1) {
+            goto(start)
+          } else {
+            goto(remainder_states(i + 1))
+          }
+        }
+      }
+    }
+
+    start.whenIsActive {
+      io.in.ready := True
+      when(io.in.fire) {
+        goto(remainder_states(0))
+      }
+    }
+  }
+
+
+  // 21 - 16
+
+  // 48
+  // 48* (96-64) 32
+  // 48* (80-64) 16
+  // 48* (64-64)
+
+  // 64
+  // 64* (128-72) 56
+  // 64* (120-72) 48
+  // 64* (112-72) 40
+  // 64* (104-72) 36
+
+  // 64
+  // 64 (128-84) 44
+  // 64 (108-84) 24
+  // 64 (88-84) 4
+  // 64 (68-
+
+  // 64 * n > 84 * (n-1)
+  // 64 * n > 84 * n - 84
+  // 0 > 20 * n - 84
+  // 84 > 20 * n
+  // 84 / 20 > n
+
+
+}
 
 class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends Component {
   val io = new Bundle {

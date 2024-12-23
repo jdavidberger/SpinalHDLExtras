@@ -101,8 +101,13 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     }
 
     slaves.foreach(s => {
-      require(!s._2.hit(newMapping.lowerBound))
-      require(!newMapping.hit(s._2.lowerBound))
+      //println(s"Checking ${s._2} vs ${newMapping}")
+      val no_overlap = !s._2.hit(newMapping.lowerBound) && !newMapping.hit(s._2.lowerBound)
+      if(!no_overlap) {
+        println("Invalid memory settings, overlap between two slave devices:")
+        println(s"${s} overlaps with ${name} (${newMapping})")
+      }
+      require(no_overlap)
     })
 
     slaves.append((topBus, newMapping, Set(tags:_*)))
@@ -285,7 +290,7 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
 
 }
 object PipelineMemoryGlobalBus {
-  def Default = PipelineMemoryGlobalBus(PipelinedMemoryBusConfig(32,32))
+  def Default = PipelineMemoryGlobalBus(PipelinedMemoryBusConfig(30,32))
 }
 
 case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends GlobalBus[PipelinedMemoryBus] {

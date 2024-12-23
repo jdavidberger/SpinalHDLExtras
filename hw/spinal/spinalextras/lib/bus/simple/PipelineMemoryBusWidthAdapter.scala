@@ -16,33 +16,33 @@ import scala.language.postfixOps
 
 object PipelineMemoryBusClockAdapter {
   def apply(bus: PipelinedMemoryBus, busClock: ClockDomain, newClock: ClockDomain = ClockDomain.current): PipelinedMemoryBus = {
-    val busNew = PipelinedMemoryBus(bus.config)
-    val inFactor = (newClock.frequency.getValue / busClock.frequency.getValue).floatValue().ceil.toInt
+    new Area {
+      val busNew = PipelinedMemoryBus(bus.config)
+      val inFactor = (newClock.frequency.getValue / busClock.frequency.getValue).floatValue().ceil.toInt
 
-    val queue_size = 32 //1 << log2Up(inFactor.max(4)) + 1
-    val overflow = Bool()
-    if (bus.isMasterInterface) {
-      busNew.cmd.queue(inFactor.max(32), newClock, busClock) >> bus.cmd
-      bus.rsp.toStream(overflow).queue(inFactor.max(32), busClock, newClock).toFlow >> busNew.rsp
-    } else {
-      bus.cmd.queue(queue_size, busClock, newClock) <> busNew.cmd
-      busNew.rsp.toStream(overflow).queue(queue_size, newClock, busClock).toFlow >> bus.rsp
-    }
-    assert(!overflow, s"Clocked bus pipeline has overflowed ${busClock.frequency.getValue} vs ${newClock.frequency.getValue}")
+      val queue_size = 32 //1 << log2Up(inFactor.max(4)) + 1
+      val overflow = Bool()
+      if (bus.isMasterInterface) {
+        busNew.cmd.queue(inFactor.max(32), newClock, busClock) >> bus.cmd
+        bus.rsp.toStream(overflow).queue(inFactor.max(32), busClock, newClock).toFlow >> busNew.rsp
+      } else {
+        bus.cmd.queue(queue_size, busClock, newClock) <> busNew.cmd
+        busNew.rsp.toStream(overflow).queue(queue_size, newClock, busClock).toFlow >> bus.rsp
+      }
+      assert(!overflow, s"Clocked bus pipeline has overflowed ${busClock.frequency.getValue} vs ${newClock.frequency.getValue}")
 
-    GlobalLogger(
-      Set("asserts"),
-      SignalLogger.concat("pmbCCC", overflow.setName("overflow"))
-    )
+      GlobalLogger(
+        Set("asserts"),
+        SignalLogger.concat("pmbCCC", overflow.setName("overflow"))
+      )
 
-    new ClockingArea(busClock) {
-      test_funcs.assertPMBContract(bus)
-    }
-    new ClockingArea(newClock) {
-      test_funcs.assertPMBContract(busNew)
-    }
-
-    busNew
+      new ClockingArea(busClock) {
+        test_funcs.assertPMBContract(bus)
+      }
+      new ClockingArea(newClock) {
+        test_funcs.assertPMBContract(busNew)
+      }
+    }.setName("Adapter").busNew
   }
 }
 
@@ -80,6 +80,7 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
 
       val rspStream = Stream(io.input.rsp.data.clone())
       val overflow = Bool()
+
       StreamWidthAdapter(io.output.rsp.map(_.data).toStream(overflow = overflow), rspStream, endianness = LITTLE)
       assert(!overflow, "Width adapter overflow")
 
@@ -154,7 +155,7 @@ case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
 
   val mem = Mem(Bits(data_width bits), if(init.nonEmpty) init.size.toBigInt else mapping.highestBound - mapping.lowerBound)
   if (init.nonEmpty) {
-    val paddedInit = init ++ Seq.fill((1 << addr_width) - init.length)(BigInt(0xFA))
+    val paddedInit = init ++ Seq.fill(mem.wordCount - init.length)(BigInt(0xFA))
     mem.init(paddedInit.map(B(_)))
   }
 

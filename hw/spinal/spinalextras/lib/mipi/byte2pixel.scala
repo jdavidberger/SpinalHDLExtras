@@ -63,8 +63,18 @@ case class byte2pixel(cfg : MIPIConfig,
   val byte_cd_freq = byte_cd.frequency.getValue
   val byte_phy_freq = cfg.dphy_byte_freq
 
-  require(byte_cd_freq >= byte_phy_freq)
-  require(byte_phy_freq * cfg.GEARED_LANES <= pixel_cd.frequency.getValue * cfg.DT_WIDTH)
+  val byte_clock_fast_enough = byte_cd_freq >= byte_phy_freq
+  val pixel_clock_fast_enough = byte_phy_freq * cfg.GEARED_LANES <= pixel_cd.frequency.getValue * cfg.DT_WIDTH
+
+  if(!byte_clock_fast_enough || !pixel_clock_fast_enough) {
+    println("Byte To pixel component configuration not viable")
+    println(s"Byte Clock: ${byte_cd_freq}")
+    println(s"Pixel Clock: ${pixel_cd.frequency.getValue}")
+    println(s"Byte data rate: ${byte_phy_freq * cfg.GEARED_LANES}")
+    println(s"Pixel data rate: ${pixel_cd.frequency.getValue * cfg.DT_WIDTH}")
+  }
+  require(byte_clock_fast_enough)
+  require(pixel_clock_fast_enough)
 
   val byte_count = 2400
   val clock_ratio = (byte_phy_freq / pixel_cd.frequency.getValue).toDouble

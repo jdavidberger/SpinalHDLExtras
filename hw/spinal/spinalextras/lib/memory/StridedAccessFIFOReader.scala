@@ -6,18 +6,200 @@ import spinal.core._
 import spinal.lib.bus.regif.BusIf
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.sim.StreamMonitor
-import spinal.lib.{Counter, CounterUpDown, Flow, Fragment, StreamFifo, StreamJoin, master}
+import spinal.lib.{Counter, CounterUpDown, Flow, Fragment, Stream, StreamDemux, StreamFifo, StreamJoin, master}
 import spinalextras.lib.Config
 import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.bus.simple.SimpleMemoryProvider
 import spinalextras.lib.logging.PipelinedMemoryBusLogger
 import spinalextras.lib.misc.{CounterTools, CounterUpDownUneven, PipelinedMemoryBusBuffered, RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
-import spinal.lib.Stream
+import spinalextras.lib.misc._
 
 import scala.collection.mutable
 import scala.language.postfixOps
 
+
+case class StridedAccessFIFOReaderAsync[T <: Data](
+                                                    dataType: HardType[T],
+                                               /** Depth in units of dataType */
+                                                    depth: Int,
+                                                    baseAddress: BigInt,
+                                                    outCnt: Int,
+                                                    busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
+                                                    rsp_latency : Int = 0
+                                                  ) extends Component {
+  //val lcmWidth = StreamTools.lcm(dataType.getBitsWidth, busConfig.dataWidth)
+  //val midDatatype = Vec(dataType, lcmWidth / dataType.getBitsWidth) //Bits(StreamTools.lcm(dataType.getBitsWidth, busConfig.dataWidth) bits)
+
+  var outSize = (busConfig.dataWidth / dataType.getBitsWidth.floatValue()).ceil.toInt
+  while(depth % outSize != 0) {
+    outSize += 1
+  }
+
+  val outDatatype = Vec(dataType, outSize )
+
+  val io = new Bundle {
+    val pop = master (AsyncStream (TupleBundle(outDatatype, UInt(log2Up(outCnt) bits))))
+    val lastFire = out Bool()
+    val bus = master(PipelinedMemoryBus(busConfig))
+  }
+  io.lastFire := False
+
+  require(depth % outCnt == 0)
+
+  def div_assert_even(num : Int, den : Int): Int = {
+    require((num % den) == 0)
+    num / den
+  }
+
+  val outWordsPerFrame = div_assert_even(depth, outDatatype.size * outCnt)
+  test_funcs.assertPMBContract(io.bus)
+  test_funcs.assertAsyncStreamContract(io.pop)
+
+  val bufferSize = rsp_latency + 1
+  val minBufferSizeInBits = bufferSize * busConfig.dataWidth
+  //val bufferSizeInMidWords = ((minBufferSizeInBits + midDatatype.getBitsWidth - 1) / midDatatype.getBitsWidth)
+  var bufferSizeInOutWords = ((minBufferSizeInBits + outDatatype.getBitsWidth - 1) / outDatatype.getBitsWidth)
+  while(((bufferSizeInOutWords * outDatatype.getBitsWidth) % busConfig.dataWidth) != 0) {
+    bufferSizeInOutWords += 1
+  }
+  val bufferSizeInBits = bufferSizeInOutWords * outDatatype.getBitsWidth
+  val armRead = RegInit(True)
+
+  var roundrobin_idx_cmd, roundrobin_idx_rsp = Counter(outCnt)
+
+  val dt_words_per_out = div_assert_even(depth, outCnt)
+  //val dt_words_per_mid = midDatatype.getBitsWidth / dataType.getBitsWidth
+  //val mid_words_per_out = div_assert_even(dt_words_per_out, dt_words_per_mid)
+
+  // Bus -> Mid -> DT
+  val frameSizeInBits = dt_words_per_out * dataType.getBitsWidth
+  val busWordsPerOutputChannel = div_assert_even(frameSizeInBits, busConfig.dataWidth)
+
+  val bufferSizeInBusWords = div_assert_even(bufferSizeInBits, busConfig.dataWidth)
+  //val busWordsPerMidWord = midDatatype.getBitsWidth / busConfig.dataWidth
+  val chunks_per_frame = div_assert_even(frameSizeInBits, bufferSizeInBits)
+
+  //val read_port = PipelinedMemoryBusBuffered(io.bus, busConfig.dataWidth / dataType.getBitsWidth - 1)
+  val read_port = cloneOf(io.bus)
+  read_port >> io.bus
+
+  read_port.cmd.valid := False
+  read_port.cmd.write.assignDontCare()
+  read_port.cmd.payload.assignDontCare()
+  read_port.cmd.mask.assignDontCare()
+
+  val async_readys = io.pop.async_ready
+  val async_valids = io.pop.async_valid
+  async_valids := False
+
+  val signal_valid = new mutable.ArrayBuffer[Boolean]()
+  var remainder = busConfig.dataWidth
+  for(i <- 0 until bufferSizeInBusWords) {
+    remainder += busConfig.dataWidth
+    if(remainder > outDatatype.getBitsWidth) {
+      remainder -= outDatatype.getBitsWidth
+      signal_valid.append(true)
+    } else {
+      signal_valid.append(false)
+    }
+  }
+  val signal_valid_vec = Vec(signal_valid.map(Bool(_)))
+
+  val dbg_counter, dbg_counter_rsp = Counter(32 bits)
+  when(read_port.cmd.fire) {
+    dbg_counter.increment()
+  }
+  when(read_port.rsp.fire) {
+    dbg_counter_rsp.increment()
+  }
+
+  val chunk_cmd = new Area {
+    val read_address_words = Reg(UInt(read_port.config.addressWidth bits))
+
+    read_port.cmd.address := read_address_words
+    val cnt = Counter(bufferSizeInBusWords)
+    val chunk_idx = Counter(chunks_per_frame)
+
+    val roundrobin_idx_offset = CounterTools.multiply_by(roundrobin_idx_cmd, busWordsPerOutputChannel).valueNext
+    val chunkidx_offset = CounterTools.multiply_by(chunk_idx, bufferSizeInBusWords).valueNext
+
+    val read_address_words_logical =
+      baseAddress +^ ((roundrobin_idx_cmd.value * busWordsPerOutputChannel +^ chunk_idx.value * bufferSizeInBusWords +^ cnt.value))
+
+    read_address_words := (baseAddress +^ ((roundrobin_idx_offset +^ chunkidx_offset +^ cnt.valueNext))).resized
+
+    assert(read_address_words_logical === read_address_words, "Read address is wrong")
+
+    val stall = ~async_readys
+    when(!stall && armRead) {
+      read_port.cmd.valid := True
+      read_port.cmd.write := False
+
+      when(read_port.cmd.fire) {
+        cnt.increment()
+        async_valids := signal_valid_vec(cnt.value)
+
+        when(cnt.willOverflow) {
+          roundrobin_idx_cmd.increment()
+        }
+
+        when(roundrobin_idx_cmd.willOverflow && chunk_idx.willOverflow) {
+          armRead := False
+        }
+
+        when(roundrobin_idx_cmd.willOverflow) {
+          chunk_idx.increment()
+        }
+      }
+    }
+  }
+
+
+  val read_port_unpack = Flow(Bits(outDatatype.getBitsWidth bits))
+  StreamTools.AdaptWidth(read_port.rsp.map(_.data.asBits), read_port_unpack)
+
+  val popCounter = Counter(outWordsPerFrame * outCnt)
+
+  val chunk_rsp = new Area {
+    io.pop.flow.payload._1.assignFromBits(read_port_unpack.payload)
+    io.pop.flow.payload._2 := roundrobin_idx_rsp
+    io.pop.flow.valid := read_port_unpack.fire
+
+    when(read_port_unpack.fire) {
+      popCounter.increment()
+    }
+
+    when(popCounter.willOverflow) {
+      armRead := True
+      io.lastFire := True
+    }
+
+    val cnt = Counter(bufferSizeInOutWords)
+    when(read_port_unpack.fire) {
+      cnt.increment()
+      when(cnt.willOverflow) {
+        roundrobin_idx_rsp.increment()
+      }
+    }
+  }
+
+  def attach_bus(busSlaveFactory: BusIf): Unit = {
+    PipelinedMemoryBusLogger.attach_debug_registers(busSlaveFactory, io.bus.setName("strided_reader_bus"))
+
+    RegisterTools.newSection(busSlaveFactory)
+    RegisterTools.ReadOnly(busSlaveFactory, "chunk_cmd_cnt", chunk_cmd.cnt.value)
+    RegisterTools.ReadOnly(busSlaveFactory, "chunk_rsp_cnt", chunk_rsp.cnt.value)
+    RegisterTools.ReadOnly(busSlaveFactory, "roundrobin_idx_rsp", roundrobin_idx_rsp.value)
+    RegisterTools.ReadOnly(busSlaveFactory, "readAddress", chunk_cmd.read_address_words)
+
+    RegisterTools.ReadOnly(busSlaveFactory, "chunkidx_offset", chunk_cmd.chunkidx_offset)
+    RegisterTools.ReadOnly(busSlaveFactory, "cnt", chunk_cmd.cnt.value)
+    RegisterTools.ReadOnly(busSlaveFactory, "roundrobin_idx_cmd", roundrobin_idx_cmd.value)
+    RegisterTools.ReadOnly(busSlaveFactory, "fifo_reader_status", armRead ## chunk_cmd.stall)
+  }
+
+}
 case class StridedAccessFIFOReader[T <: Data](
     dataType: HardType[T],
     /** Depth in units of dataType */
@@ -39,6 +221,9 @@ case class StridedAccessFIFOReader[T <: Data](
     num / den
   }
 
+  val asyncReader = StridedAccessFIFOReaderAsync (dataType, depth, baseAddress, outCnt, busConfig, rsp_latency)
+  asyncReader.io.bus <> io.bus
+
   test_funcs.assertStreamContract(io.pop)
   test_funcs.assertPMBContract(io.bus)
   val midDatatype = Bits(StreamTools.lcm(dataType.getBitsWidth, busConfig.dataWidth) bits)
@@ -47,112 +232,17 @@ case class StridedAccessFIFOReader[T <: Data](
   val minBufferSizeInBits = bufferSize * busConfig.dataWidth
   val bufferSizeInMidWords = ((minBufferSizeInBits + midDatatype.getBitsWidth - 1) / midDatatype.getBitsWidth)
   val bufferSizeInBits = bufferSizeInMidWords * midDatatype.getBitsWidth
-  val armRead = RegInit(True)
 
   var fifos = (0 until outCnt).map(i => StreamFifo(midDatatype, bufferSizeInMidWords))
-  fifos.foreach(_.io.push.setIdle())
   fifos.foreach(_.logic.ram.addAttribute("syn_ramstyle", "distributed"))
 
-  val pushes = Vec(fifos.map(_.io.push))
-  var roundrobin_idx_cmd, roundrobin_idx_rsp = Counter(outCnt)
-
-  val dt_words_per_out = div_assert_even(depth, outCnt)
-
-  // Bus -> Mid -> DT
-
-  val busWordsPerOut = div_assert_even(dt_words_per_out * dataType.getBitsWidth, busConfig.dataWidth)
-  val bufferSizeInBusWords = div_assert_even(bufferSizeInBits, busConfig.dataWidth)
-  val chunks_per_frame = div_assert_even(busWordsPerOut * busConfig.dataWidth, bufferSizeInBits)
-
-  //val read_port = PipelinedMemoryBusBuffered(io.bus, busConfig.dataWidth / dataType.getBitsWidth - 1)
-  val read_port = cloneOf(io.bus)
-  read_port >> io.bus
-
-  read_port.cmd.valid := False
-  read_port.cmd.write.assignDontCare()
-  read_port.cmd.payload.assignDontCare()
-  read_port.cmd.mask.assignDontCare()
-
-  val usage = new CounterUpDownUneven(bufferSizeInBits, busConfig.dataWidth, midDatatype.getBitsWidth)
-  when( fifos.head.io.pop.fire) { usage.decrement() }
-  val usageIsMax = usage.isMax
-
-  val chunk_cmd = new Area {
-    val read_address_words = Reg(UInt(read_port.config.addressWidth bits))
-
-    read_port.cmd.address := read_address_words
-    val cnt = Counter(bufferSizeInBusWords)
-    val chunk_idx = Counter(chunks_per_frame)
-
-    val roundrobin_idx_offset = CounterTools.multiply_by(roundrobin_idx_cmd, busWordsPerOut).valueNext
-    val chunkidx_offset = CounterTools.multiply_by(chunk_idx, bufferSizeInBusWords).valueNext
-
-    val read_address_words_logical =
-      baseAddress +^ ((roundrobin_idx_cmd.value * busWordsPerOut +^ chunk_idx.value * bufferSizeInBusWords +^ cnt.value))
-
-    read_address_words := (baseAddress +^ ((roundrobin_idx_offset +^ chunkidx_offset +^ cnt.valueNext))).resized
-
-    assert(read_address_words_logical === read_address_words, "Read address is wrong")
-
-    val stall = roundrobin_idx_cmd === 0 && usageIsMax
-    when(!stall && armRead) {
-      read_port.cmd.valid := True
-      read_port.cmd.write := False
-
-      when(read_port.cmd.fire) {
-        cnt.increment()
-
-        when(cnt.willOverflow) {
-          roundrobin_idx_cmd.increment()
-        }
-
-        when(roundrobin_idx_cmd === 0) {
-          usage.incrementIt := True
-        }
-
-        when(roundrobin_idx_cmd.willOverflow && chunk_idx.willOverflow) {
-          armRead := False
-        }
-
-        when(roundrobin_idx_cmd.willOverflow) {
-          chunk_idx.increment()
-        }
-      }
-    }
+  for(idx <- 0 until outCnt) {
+    //fifos(idx).io.push <> asyncReader.io.pop(idx).toStream.map(_.asBits)
   }
 
-
-  val read_port_unpack = Flow(Bits(pushes(0).payload.getBitsWidth bits))
-  StreamTools.AdaptWidth(read_port.rsp.map(_.data.asBits), read_port_unpack)
-
-  val counter = Counter(640)
-  when(io.pop.fire) {
-    counter.increment()
-  }
-  when(io.pop.lastFire) {
-    counter.clear()
-  }
-  val chunk_rsp = new Area {
-    val cnt = Counter(bufferSizeInMidWords)
-
-    when(read_port_unpack.fire) {
-      pushes(roundrobin_idx_rsp).payload.assignFromBits(read_port_unpack.payload.asBits)
-      pushes(roundrobin_idx_rsp).valid := True
-      assert(pushes(roundrobin_idx_rsp).ready, "Ready should be true")
-
-      cnt.increment()
-      when(cnt.willOverflow) {
-        roundrobin_idx_rsp.increment()
-      }
-    }
-  }
-
-  val popCounter = Counter(dt_words_per_out, inc = io.pop.fire)
+  val popCounter = Counter(asyncReader.dt_words_per_out, inc = io.pop.fire)
   val adapedFifos = fifos.map(f => StreamTools.AdaptWidth(f.io.pop, Bits(dataType.getBitsWidth bits)).map(_.as(dataType)))
   io.pop <> StreamJoin.vec(adapedFifos).addFragmentLast(popCounter)
-  when(io.pop.lastFire) {
-    armRead := True
-  }
 
   def attach_bus(busSlaveFactory: BusIf): Unit = {
     PipelinedMemoryBusLogger.attach_debug_registers(busSlaveFactory, io.bus.setName("strided_reader_bus"))
@@ -160,17 +250,7 @@ case class StridedAccessFIFOReader[T <: Data](
     RegisterTools.newSection(busSlaveFactory)
     RegisterTools.Counter(busSlaveFactory, "pop_fire", io.pop.fire)
     RegisterTools.Counter(busSlaveFactory, "pop_lastFire", io.pop.lastFire)
-    RegisterTools.ReadOnly(busSlaveFactory, "chunk_cmd_cnt", chunk_cmd.cnt.value)
-    RegisterTools.ReadOnly(busSlaveFactory, "chunk_rsp_cnt", chunk_rsp.cnt.value)
-    RegisterTools.ReadOnly(busSlaveFactory, "roundrobin_idx_rsp", roundrobin_idx_rsp.value)
-    RegisterTools.ReadOnly(busSlaveFactory, "readAddress", chunk_cmd.read_address_words)
-
-    RegisterTools.ReadOnly(busSlaveFactory, "chunkidx_offset", chunk_cmd.chunkidx_offset)
-    RegisterTools.ReadOnly(busSlaveFactory, "cnt", chunk_cmd.cnt.value)
-    RegisterTools.ReadOnly(busSlaveFactory, "roundrobin_idx_cmd", roundrobin_idx_cmd.value)
-    RegisterTools.ReadOnly(busSlaveFactory, "fifo_reader_status", armRead ## chunk_cmd.stall ## usageIsMax)
     RegisterTools.ReadOnly(busSlaveFactory, "popCounter", popCounter.value)
-
   }
 
 }

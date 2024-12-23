@@ -7,6 +7,8 @@ import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.misc.{RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
 
+import scala.language.postfixOps
+
 case class StreamToBuffer[T <: Data](
     dataType: HardType[T],
     depth: Int,

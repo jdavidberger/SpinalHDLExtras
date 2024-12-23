@@ -92,7 +92,7 @@ class GenericIDDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1)
   }
   val pArea = new ClockingArea(pclock) {
     val c = regX(io.IN.payload)
-    val r = Reg(Vec(Bool(), output_per_input/2))
+    val r = Reg(Vec(Bool(), output_per_input/2)) addTag(crossClockDomain)
 
     val g = if(output_per_input > 2) {
       val gc = Counter((output_per_input + 1) / 2) init(0)
@@ -114,7 +114,7 @@ class GenericIDDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1)
 
   val nArea = new ClockingArea(nclock) {
     val c = regX(RegNext(io.IN.payload))
-    val r = Reg(Vec(Bool(), output_per_input/2))
+    val r = Reg(Vec(Bool(), output_per_input/2)) addTag(crossClockDomain)
 
     r(pArea.g) := c
   }

@@ -11,11 +11,12 @@ import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
 import java.io.PrintWriter
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
 class GlobalLogger {
   val signals = new mutable.ArrayBuffer[(Data, Flow[Bits], ClockDomain, Set[String])]()
-
+  val comments = new ArrayBuffer[String]()
   var built = false
   var topComponent = {
     val topComponent = Component.toplevel
@@ -50,7 +51,6 @@ class GlobalLogger {
 
     intermediate_bus
   }
-
   def add(tags: Set[String], s: (Data, Flow[Bits])*): Unit = {
     if(built) {
       println(s"Warning: ${s} with tags ${tags} was added after the logger was created")
@@ -88,6 +88,7 @@ class GlobalLogger {
         val ctx = Component.push(Component.toplevel)
         val logger = FlowLogger(signals)
         logger.setName(loggerName)
+        logger.add_comments(comments)
         logger.codeDefinitions(output_path)
         logger.sqliteHandlers(output_path)
         logger.create_logger_port(sysBus, address, depth, outputStream)
@@ -109,6 +110,12 @@ class GlobalLogger {
       this.build(sysBus, address, depth, name, outputStream, tags)
     })
   }
+
+
+
+  def add_comment(str: String) = {
+    comments += str
+  }
 }
 
 object GlobalLogger {
@@ -119,6 +126,10 @@ object GlobalLogger {
       sysLogger = Some(new GlobalLogger())
     }
     sysLogger.get
+  }
+
+  def add_comment(str: String): Unit = {
+    get().add_comment(str)
   }
 
   def apply(tags: Set[String], signals: Seq[(Data, Flow[Bits])]*): Unit = {
@@ -381,6 +392,11 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
     getTypeName(d)
   }
 
+  var comments = new ArrayBuffer[String]()
+  def add_comments(comments: ArrayBuffer[String]) = {
+    this.comments ++= comments
+  }
+
   def sqliteHandlers(output_path : String): Unit = {
     val file = new PrintWriter(s"${output_path}/${getName()}_sqlite.c")
     def emit(s : String): Unit = {
@@ -519,6 +535,10 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
                |#include "stdint.h"
                |#include "stdbool.h"
                |#include "stdio.h"
+               |
+               |/****
+               |${comments.mkString("\n\n")}
+               |**/
                |
                |#define ${this.name}_INDEX_BITS ${index_size}
                |#define ${this.name}_SIGNATURE 0x${signature.toHexString}
@@ -671,6 +691,18 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
     emit("    return \"UNKNOWN\";")
     emit("}")
 
+    def getParseName(d : Data): String = {
+      d match {
+        case b: MultiData => {
+          val parent_name = if (d.parent != null) d.parent.name else s"${d.name}"
+          f"${getName()}_parse_${parent_name}"
+        }
+        case _ => {
+          f"${getName()}_parse_${d.getName()}"
+        }
+      }
+    }
+
     val handledTypes = new mutable.HashSet[String]()
     def emitTypeFunctions(d : Data): Unit = {
       val typeName = getTypeName(d)
@@ -741,7 +773,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
       emit(
         s"""   case ${idx}: {
            |      ctx->last_timestamp = ${getName}_full_time(tx, ctx->last_timestamp, ${flow.getName()}_TIME_BIT_WIDTH);
-           |      ${getName()}_handle_${getTypeName(datas(idx))}(ctx, ctx->last_timestamp, id, ${getName()}_parse_${flow.getName()}(tx));
+           |      ${getName()}_handle_${getTypeName(datas(idx))}(ctx, ctx->last_timestamp, id, ${getParseName(datas(idx)._1)}(tx));
            |      break;
            |    }""".stripMargin)
     }
@@ -756,8 +788,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
 
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int,
                          outputStream : Option[Stream[Bits]] = None): Unit = {
-    val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
-    //val loggerFifo = new MemoryBackedFifo(cloneOf(io.log.payload), depth)
+    //val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
+    val loggerFifo = new MemoryBackedFifo(cloneOf(io.log.payload), depth)
     loggerFifo.setName(s"loggerFifo_${depth}")
     loggerFifo.io.push <> io.log
 
@@ -820,6 +852,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
     )
 
   }
+
+
 }
 
 object FlowLogger {

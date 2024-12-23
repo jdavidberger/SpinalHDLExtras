@@ -1,11 +1,13 @@
 package spinalextras.lib.misc
 
 import spinal.core.ClockDomain.ClockFrequency
-import spinal.core.{ClockDomain, HertzNumber}
+import spinal.core.{ClockDomain, FixedFrequency, HertzNumber}
 
 case class ClockSpecification(freq: HertzNumber,
                               phaseOffset: Double = 0, tolerance: Double = 0.01) {
-
+  def toClockFrequency() = {
+    FixedFrequency(freq)
+  }
 }
 
 object ClockSpecification {

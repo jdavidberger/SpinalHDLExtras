@@ -9,12 +9,22 @@ import spinal.lib.bus.simple.PipelinedMemoryBus
 import spinal.lib.sim.{ScoreboardInOrder, StreamDriver, StreamMonitor}
 import spinalextras.lib.Config
 import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
-import spinalextras.lib.misc.ComponentWithKnownLatency
+import spinalextras.lib.misc.{AsyncStream, ComponentWithKnownLatency}
 
 import scala.collection.mutable
 
 object test_funcs {
+  def assertAsyncStreamContract[T <: Data](stream: AsyncStream[T]): Unit = {
+    if (globalData.config.flags.contains(GenerationFlags.simulation)) {
+      val wasValid = RegNext(stream.async_valid) init (False)
+      val wasReady = RegNext(stream.async_ready) init (False)
+      val wasFired = RegNext(stream.async_fire) init (False)
 
+      val invalidValidChange = wasValid && !stream.async_valid && !wasFired
+      invalidValidChange.setWeakName(stream.name + "_invalidValidChange")
+      assert(!invalidValidChange, s"${stream} deasserted async_valid before a async_ready")
+    }
+  }
   def assertStreamContract[T <: Data](stream: Stream[T]): Unit = {
     if (globalData.config.flags.contains(GenerationFlags.simulation)) {
       val wasValid = RegNext(stream.valid) init (False)
@@ -149,10 +159,8 @@ object test_funcs {
       val pmb_rsp_bounded = outstanding_cnt.value.asBits.andR =/= True
       assert(pmb_rsp_bounded, s"${pmb} PMB has miscounted responses")
 
-      GlobalLogger(
-        Set("asserts"),
-        SignalLogger.concat(s"${pmb.name}_asserts", pmb_rsp_bounded.setName(s"${pmb.name}_rsp_bounded"))
-      )
+      SignalLogger.log_assert(pmb_rsp_bounded.setName(s"${pmb.name}_rsp_bounded"),
+        s"${pmb} PMB has miscounted responses")
 
     }.setName("assertPMBContract")
   }

@@ -5,6 +5,7 @@ import spinal.core.native.RefOwnerType
 import spinal.core.{BlackBox, Bundle, ClockDomain, Component, Data, GlobalData, HardType, HertzNumber, Nameable, SpinalEnum, SpinalEnumCraft, out}
 import spinal.lib.fsm.StateMachineTask
 
+import java.io.PrintWriter
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
@@ -12,14 +13,18 @@ object Obfuscater {
   def apply(c : Component): Component = {
     val obf = new Obfuscater()
     obf.processComponent(c, is_top_level = true)
+    obf.executeRename()
     c
   }
 }
 
 class Obfuscater() {
   val handled = new mutable.HashSet[Any]()
+  val renameEntries = new ArrayBuffer[(Nameable, String)]()
   var _id = 0
   var gprefix = ""
+
+  var map_file : PrintWriter = null
 
   def id: Int = {
     _id = _id + 1
@@ -37,6 +42,24 @@ class Obfuscater() {
       case _ => shouldExclude(n.refOwner.asInstanceOf[Nameable])
     }
   }
+
+  def executeRename(): Unit = {
+    for ((c, newName) <- renameEntries) {
+      c.setName(newName)
+    }
+  }
+
+  def setName(n : Nameable, newName : String) = {
+    val path = n match {
+      case c : Component => c.getRtlPath()
+      case d : Data => d.getRtlPath()
+      case _ => n.getDisplayName()
+    }
+    map_file.println(f"$newName%-64s ${n.getName()}%-64s ${path}%-64s")
+    renameEntries += ((n, newName))
+    map_file.flush()
+  }
+
   def apply(component: Any): Unit = {
     if (handled.contains(component)) {
       return
@@ -47,7 +70,7 @@ class Obfuscater() {
       case e: SpinalEnumCraft[_] => {
         processNameable(e)
         e.spinalEnum.elements.foreach(el => {
-          el.setName(nextName())
+          setName(el, nextName())
         })
       }
       case e: SpinalEnum => {
@@ -102,7 +125,7 @@ class Obfuscater() {
   def processNameable(nameable: Nameable): Unit = {
     nameable.foreachReflectableNameables(that => apply (that))
     if (nameable.name != null && nameable.name != "") {
-      nameable.setName(nextName())
+      setName(nameable, nextName())
     }
   }
 
@@ -126,10 +149,14 @@ class Obfuscater() {
   }
 
   def processComponent(component: Component, is_top_level: Boolean): Component = {
+    if(map_file == null) {
+      map_file = new PrintWriter(s"${component.definitionName}.map")
+    }
+
     if (!is_top_level) {
       component.getAllIo.foreach(x => apply(x))
       component.setDefinitionName(nextName())
-      component.setName(nextName())
+      setName(component, nextName())
     } else {
       gprefix = component.name.hashCode.abs.toString
       component.getGroupedIO(true).foreach(exclude)
