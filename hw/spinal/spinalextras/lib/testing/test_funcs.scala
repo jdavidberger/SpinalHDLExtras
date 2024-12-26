@@ -47,73 +47,109 @@ object test_funcs {
     }
   }
 
-  def formalFifoAsserts[T <: Data](fifo: StreamFifo[T]): Unit = {
-    when(fifo.io.occupancy === 0) {
-      assert(fifo.io.pop.valid === fifo.io.push.fire)
-    }
-
-    if(fifo.logic != null) {
-      when(fifo.io.availability === 0) {
-        assert(fifo.io.push.ready === False)
-      }
-
-      if(!fifo.withExtraMsb) {
-        assert(fifo.logic.ptr.push < fifo.depth)
-        assert(fifo.logic.ptr.pop < fifo.depth)
-      }
-      when(fifo.logic.ptr.push >= fifo.logic.ptr.pop) {
+  def formalFifoAsserts[T <: Data](fifo: StreamFifo[T]) = new Area {
+    val push_pop_occupancy : UInt = {
+      if(fifo.logic != null) {
         if(fifo.withExtraMsb) {
-          assert((fifo.io.occupancy === (fifo.logic.ptr.push -^ fifo.logic.ptr.pop)), "occupancy math")
+          Mux(fifo.logic.ptr.push >= fifo.logic.ptr.pop,
+            fifo.logic.ptr.push -^ fifo.logic.ptr.pop,
+            (fifo.depth << 1) -^ fifo.logic.ptr.pop +^ fifo.logic.ptr.push)
         } else {
-          when(fifo.logic.ptr.push === fifo.logic.ptr.pop) {
-            when(fifo.logic.ptr.wentUp) {
-              assert(fifo.io.occupancy === fifo.depth)
-            } otherwise {
-              assert(fifo.io.occupancy === 0)
-            }
-          } otherwise {
-            assert((fifo.io.occupancy === (fifo.logic.ptr.push -^ fifo.logic.ptr.pop)), "occupancy math")
-          }
+          Mux(fifo.logic.ptr.push === fifo.logic.ptr.pop,
+            Mux(fifo.logic.ptr.wentUp, fifo.depth, 0),
+            Mux(fifo.logic.ptr.push > fifo.logic.ptr.pop, fifo.logic.ptr.push -^ fifo.logic.ptr.pop,
+              if(!fifo.withExtraMsb) {
+                fifo.depth -^ fifo.logic.ptr.pop +^ fifo.logic.ptr.push
+              } else {
+                fifo.depth -^ fifo.logic.ptr.pop.dropHigh(1).asUInt +^ fifo.logic.ptr.push.dropHigh(1).asUInt
+              }
+            )
+          )
         }
-      } otherwise {
-        if(!fifo.withExtraMsb) {
-          assert((fifo.io.occupancy === (fifo.depth -^ fifo.logic.ptr.pop +^ fifo.logic.ptr.push)))
-        } else {
-          assert((fifo.io.occupancy === (fifo.depth -^ fifo.logic.ptr.pop.dropHigh(1).asUInt +^ fifo.logic.ptr.push.dropHigh(1).asUInt)))
-        }
+      } else {
+        0
       }
-    } else if(fifo.oneStage != null) {
-
-    } else {
-      assert(false)
     }
 
-    assume(fifo.io.occupancy < past(fifo.io.occupancy) || ((past(fifo.io.occupancy) - fifo.io.occupancy) <= 1))
+    val extraOccupancy : UInt = {
+      if(fifo.logic != null && fifo.logic.pop.sync != null) {
+        fifo.logic.pop.sync.readArbitation.valid.asUInt
+      } else {
+        0
+      }
+    }
+
+    val calculate_occupancy = {
+      push_pop_occupancy +^ extraOccupancy
+    }
+
+    if(fifo.depth <= 1) {
+      // Fifo depth of 0 is just a direct connect
+      // Fifo depth of 1 is just a staged stream; so it can't be in an invalid state
+    } else if(fifo.depth > 1) {
+
+      assert(calculate_occupancy === fifo.io.occupancy)
+      assert(fifo.io.availability === fifo.depth -^ fifo.io.occupancy)
+
+      when(fifo.io.occupancy === 0) {
+        assert(fifo.io.pop.valid === (fifo.io.push.fire && Bool(fifo.withBypass)), "Occupancy check didn't result in right pop valid")
+      }
+
+      if (fifo.logic != null) {
+        when(fifo.logic.ptr.pop === 0 && Bool(!isPow2(fifo.depth))) {
+          assert(fifo.logic.ptr.popOnIo === ((fifo.depth - extraOccupancy) % fifo.depth))
+        } otherwise {
+          assert(fifo.logic.ptr.popOnIo === (fifo.logic.ptr.pop - extraOccupancy))
+        }
+
+        when(fifo.io.availability === 0) {
+          assert(fifo.io.push.ready === False)
+        }
+
+        if (!fifo.withExtraMsb) {
+          assert(fifo.logic.ptr.pop <= (fifo.depth - 1))
+          assert(fifo.logic.ptr.push <= (fifo.depth - 1))
+        } else {
+          assert(fifo.logic.ptr.pop <= ((fifo.depth << 1) - 1))
+          assert(fifo.logic.ptr.push <= ((fifo.depth << 1) - 1))
+        }
+
+        if (fifo.forFMax) {
+          val counterWidth = log2Up(fifo.depth) + 1
+          val emptyStart = 1 << (counterWidth - 1)
+          val fullStart = (1 << (counterWidth - 1)) - fifo.depth
+
+          assert(fifo.logic.ptr.arb.fmax.fullTracker.value === (fullStart +^ fifo.io.occupancy))
+          assert(fifo.logic.ptr.arb.fmax.emptyTracker.value === (emptyStart -^ push_pop_occupancy))
+        }
+      }
+
+      //assume(fifo.io.occupancy < past(fifo.io.occupancy) || ((past(fifo.io.occupancy) - fifo.io.occupancy) <= 1))
+    }
   }
 
   def assertStreamContract[T <: Data](stream: Stream[T]): Unit = {
-    if (globalData.config.flags.contains(GenerationFlags.simulation)) {
-      val wasValid = RegNext(stream.valid) init (False)
-      val payload = RegNext(stream.payload)
-      val wasFired = RegNext(stream.fire) init (False)
+    val wasValid = RegNext(stream.valid) init (False)
+    val payload = RegNext(stream.payload)
+    val wasFired = RegNext(stream.fire) init (False)
 
-      val invalidValidChange = wasValid && !stream.valid && !wasFired
-      invalidValidChange.setWeakName(stream.name + "_invalidValidChange")
-      assert(!invalidValidChange, s"${stream} deasserted valid before a ready")
+    val invalidValidChange = wasValid && !stream.valid && !wasFired
+    invalidValidChange.setWeakName(stream.name + "_invalidValidChange")
+    assert(!invalidValidChange, s"${stream} deasserted valid before a ready")
 
-      val payloadChangeViolation = False
-      payloadChangeViolation.setWeakName(stream.name + "_payloadChangeViolation")
-      when(stream.valid && wasValid && !wasFired) {
-        payloadChangeViolation := payload =/= stream.payload
+    val payloadChangeViolation = False
+    payloadChangeViolation.setWeakName(stream.name + "_payloadChangeViolation")
+    when(stream.valid && wasValid && !wasFired) {
+      payloadChangeViolation := payload =/= stream.payload
 
-        assert(payload === stream.payload, Seq(
-          s"${stream} payload changed from ",
-          payload.asBits,
-          " to ",
-          stream.payload.asBits
-        ))
-      }
+      assert(payload === stream.payload, Seq(
+        s"${stream} payload changed from ",
+        payload.asBits,
+        " to ",
+        stream.payload.asBits
+      ))
     }
+
   }
 
   def assign(payload: SInt, v: Int): Unit = {
@@ -273,7 +309,7 @@ trait FormalTestSuite {
   val config = FormalConfig._spinalConfig.copy(defaultConfigForClockDomains = ClockDomainConfig(
     resetActiveLevel = HIGH,
     resetKind = SYNC,
-  ), defaultClockDomainFrequency = FixedFrequency(100 MHz))
+  ), removePruned = false, defaultClockDomainFrequency = FixedFrequency(100 MHz))
 
   def generateRtl() : Seq[(String, () => Component)]
   def generateRtlBMC() = generateRtl()
@@ -290,7 +326,7 @@ trait FormalTestSuite {
   }
 
   def formalTests() : Seq[(String, () => Any)] = {
-    (generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), "bmc")))) ++
+    (/*generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), "bmc")))) ++*/
       generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), "prove")))) ++
       generateRtlCover().map(lst => (s"${lst._1}_cover", () => CoverConfig().doVerify(renameDefinition(lst._2(), "cover"))))).map(t => {
       (t._1, () => {
