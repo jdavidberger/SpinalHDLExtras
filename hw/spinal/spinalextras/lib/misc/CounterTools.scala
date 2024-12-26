@@ -7,17 +7,22 @@ import spinal.lib._
 import spinal.lib.bus.regif.SymbolName
 import spinalextras.lib.Config
 
-class CounterUpDownUneven(range : Int, incBy : Int = 1, decBy : Int = 1) extends ImplicitArea[UInt] {
+class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ImplicitArea[UInt] {
   val valueNext = UInt(log2Up(range + 1) bits)
   val value = RegNext(valueNext) init(0)
-
+  assert((value % incBy) === 0)
+  assert((value % decBy) === 0)
   val incrementIt = False
   val decrementIt = False
+  val clearIt = False
 
   def increment(): Unit = incrementIt := True
   def decrement(): Unit = decrementIt := True
+  def clear(): Unit = clearIt := True
 
-  when(incrementIt && decrementIt) {
+  when(clearIt) {
+    valueNext := 0
+  } elsewhen(incrementIt && decrementIt) {
     valueNext := value + incBy - decBy
   } elsewhen(incrementIt) {
     valueNext := value + incBy
@@ -32,14 +37,16 @@ class CounterUpDownUneven(range : Int, incBy : Int = 1, decBy : Int = 1) extends
   val isMax = CounterTools.isSingleTargetState(
     moveTowardState = incrementIt, moveAwayFromState = decrementIt, is_in_state = value === range,
     is_almost_state = value === (range - incBy),
-    is_state_on_clear = false
+    is_state_on_clear = false, clear = clearIt
   )
 
   override def implicitValue: UInt = value
 }
 
 object CounterTools {
-  def multiply_by(counter: Counter, m : Int)= new ImplicitArea[UInt] {
+  def multiply_by(counter: Counter, m : Int)= new Area {
+    assert(counter.value <= counter.end)
+
     val end = m * counter.end
     val start = m * counter.start
 
@@ -60,11 +67,8 @@ object CounterTools {
       }
     }
 
-
     assert(counter.value * m === value, "Mismatch multiply counter")
     assert(counter.valueNext * m === valueNext, "Mismatch multiply counter valuenext")
-
-    override def implicitValue: UInt = value
   }
 
   def isTargetState(moveTowardState : Bool,
@@ -164,79 +168,3 @@ object CounterTools {
 
 }
 
-class CounterToolsTest extends AnyFunSuite {
-  test("CounterUpDown") {
-    Config.sim.doSim(
-      new Component {
-        val io = new Bundle {
-          val up = in(Bool())
-          val down = in(Bool())
-
-          val isZero, isMax = out(Bool())
-        }
-        val counter = CounterUpDown(8)
-        when(!counter.willOverflowIfInc && io.up) {
-          counter.increment()
-        }
-        when(counter =/= 0 && io.down) {
-          counter.decrement()
-        }
-        io.isZero := CounterTools.isZero(counter)
-        io.isMax := CounterTools.isMax(counter)
-
-      }
-    ) { dut =>
-      SimTimeout(5000 us)
-      dut.clockDomain.forkStimulus(100 MHz)
-      dut.io.up #= false
-      dut.io.down #= false
-
-      dut.clockDomain.waitSampling(10)
-
-      for(i <- 0 until 10000) {
-        dut.io.up #= simRandom.nextBoolean()
-        dut.io.down #= simRandom.nextBoolean()
-        dut.clockDomain.waitSampling()
-      }
-
-    }
-
-  }
-
-  test("Counter") {
-    Config.sim.doSim(
-      new Component {
-        val io = new Bundle {
-          val up, clear = in(Bool())
-
-          val isZero, isMax, isLT4 = out(Bool())
-        }
-        val counter = Counter(8)
-        when(!counter.willOverflowIfInc && io.up) {
-          counter.increment()
-        }
-        when(io.clear) {
-          counter.clear()
-        }
-
-        io.isZero := CounterTools.isZero(counter)
-        io.isMax := CounterTools.isMax(counter)
-        io.isLT4 := CounterTools.isLessThan(counter, 4)
-      }
-    ) { dut =>
-      SimTimeout(5000 us)
-      dut.clockDomain.forkStimulus(100 MHz)
-      dut.io.up #= false
-      dut.io.clear #= false
-      dut.clockDomain.waitSampling(10)
-
-      for(i <- 0 until 10000) {
-        dut.io.up #= simRandom.nextBoolean()
-        dut.io.clear #= simRandom.nextInt(10) >= 9
-        dut.clockDomain.waitSampling()
-      }
-
-    }
-
-  }
-}

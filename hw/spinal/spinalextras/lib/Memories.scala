@@ -1,7 +1,8 @@
 package spinalextras.lib
 
 import spinal.core._
-import spinal.core.fiber.Handle.initImplicit
+import spinal.core.fiber.Handle.{handleDataPimped, initImplicit}
+import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig, PipelinedMemoryBusRsp}
@@ -9,6 +10,7 @@ import spinalextras.lib.HardwareMemory._
 import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, PDPSC16K_Mem, PDPSC512K_Mem}
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.misc.ComponentWithKnownLatency
+import spinalextras.lib.testing.test_funcs
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -112,6 +114,33 @@ abstract class HardwareMemory[T <: Data]() extends Component {
     val readWritePorts = Array.fill(requirements.numReadWritePorts)(slave((HardwareMemoryReadWritePort(config))))
     val readPorts = Array.fill(requirements.numReadPorts)(slave((HardwareMemoryReadPort(config))))
     val writePorts = Array.fill(requirements.numWritePorts)(slave((HardwareMemoryWritePort(config))))
+
+    val readWritePortsOutstanding = readWritePorts.map(p => {
+      val counter = new CounterUpDown(latency+1, handleOverflow = false)
+      assert(!test_funcs.willUnderflow(counter) && !counter.willOverflow)
+      when(p.cmd.fire && !p.cmd.write) {
+        counter.increment()
+      }
+      when(p.rsp.fire) {
+        counter.decrement()
+      }
+      val v = out(cloneOf(counter.value))
+      v := counter.value
+      v
+    })
+    val readPortsOutstanding = readPorts.map(p => {
+      val counter = new CounterUpDown(latency+1, handleOverflow = false)
+      assert(!test_funcs.willUnderflow(counter) && !counter.willOverflow)
+      when(p.cmd.fire) {
+        counter.increment()
+      }
+      when(p.rsp.fire) {
+        counter.decrement()
+      }
+      val v = out(cloneOf(counter.value))
+      v := counter.value
+      v
+    })
   }
 
   def rsps = {
@@ -343,7 +372,21 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
     mem.init((0 until num_elements.toInt).map(idx => B(0).as(dataType) ))
   }
 
-  io.readWritePorts.foreach(port => {
+  def mapReadLatency(immediateRspFlow : Flow[PipelinedMemoryBusRsp], outstanding : UInt): Flow[PipelinedMemoryBusRsp] = {
+    var rspFlow = immediateRspFlow
+    var inPipeline = UInt(0 bits)
+    for(i <- 0 until extra_latency) {
+      inPipeline = inPipeline +^ rspFlow.valid.asUInt
+      rspFlow = rspFlow.stage().setName(s"rspFlowStage_${i}")
+    }
+    inPipeline = inPipeline +^ rspFlow.valid.asUInt
+    assert(inPipeline === outstanding)
+    inPipeline.setName(s"${outstanding.name}_inPipeline")
+    rspFlow
+  }
+
+  val readWritePortArea = io.readWritePorts.zipWithIndex.map(port_idx => new Area {
+    val (port, idx) = port_idx
     val mask_width = if(port.cmd.mask != null) port.cmd.mask.getWidth else -1
     val mem_port = mem.readWriteSyncPort(maskWidth = mask_width)
     if(port.cmd.mask != null)
@@ -359,28 +402,24 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
     mem_port.write := port.cmd.write
     mem_port.wdata.assignFromBits(port.cmd.data)
 
-    var rspFlow = cloneOf(port.rsp)
-    rspFlow.valid := RegNext(port.cmd.valid && !port.cmd.write)
+    var rspFlow = cloneOf(port.rsp).setName("rspFlowInit")
+    rspFlow.valid := RegNext(port.cmd.valid && !port.cmd.write) init(False)
     rspFlow.data := mem_port.rdata.asBits
-    for(i <- 0 until extra_latency)
-      rspFlow = rspFlow.stage()
 
-    port.rsp <> rspFlow
+    port.rsp <> mapReadLatency(rspFlow, io.readWritePortsOutstanding(idx))
   })
 
-  io.readPorts.foreach(port => {
+  val readPortArea = io.readPorts.zipWithIndex.map(port_idx => new Area {
+    val (port, idx) = port_idx
     var rspFlow = cloneOf(port.rsp)
     //assert(port.cmd.payload < num_elements)
     rspFlow.data := mem.readSync(
       address = port.cmd.payload,
       enable = port.cmd.valid,
     ).asBits
-    rspFlow.valid := RegNext(port.cmd.valid)
+    rspFlow.valid := RegNext(port.cmd.valid) init(False)
 
-    for(i <- 0 until extra_latency)
-      rspFlow = rspFlow.stage()
-
-    port.rsp <> rspFlow
+    port.rsp <> mapReadLatency(rspFlow, io.readPortsOutstanding(idx))
   })
 
   io.writePorts.foreach(port => {
@@ -473,3 +512,4 @@ case class PipelinedMemoryBusMemory[T <: Data](reqs : MemoryRequirement[T], tech
 
   def latency = mem.latency
 }
+

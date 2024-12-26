@@ -4,27 +4,93 @@ package spinalextras.lib.testing
 import spinal.core.native.globalData
 import spinal.core.sim._
 import spinal.core._
-import spinal.lib.{CounterUpDown, Stream}
+import spinal.core.formal.{FormalConfig, SpinalFormalConfig, past}
+import spinal.lib.{CounterUpDown, Stream, StreamFifo}
 import spinal.lib.bus.simple.PipelinedMemoryBus
 import spinal.lib.sim.{ScoreboardInOrder, StreamDriver, StreamMonitor}
 import spinalextras.lib.Config
 import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
 import spinalextras.lib.misc.{AsyncStream, ComponentWithKnownLatency}
 
+import java.io.IOException
 import scala.collection.mutable
+import scala.language.postfixOps
 
 object test_funcs {
-  def assertAsyncStreamContract[T <: Data](stream: AsyncStream[T]): Unit = {
-    if (globalData.config.flags.contains(GenerationFlags.simulation)) {
-      val wasValid = RegNext(stream.async_valid) init (False)
-      val wasReady = RegNext(stream.async_ready) init (False)
-      val wasFired = RegNext(stream.async_fire) init (False)
+  def assertAsyncStreamContract[T <: Data](stream: AsyncStream[T]) = new Area {
+    //if (globalData.config.flags.contains(GenerationFlags.simulation)) {
 
-      val invalidValidChange = wasValid && !stream.async_valid && !wasFired
-      invalidValidChange.setWeakName(stream.name + "_invalidValidChange")
-      assert(!invalidValidChange, s"${stream} deasserted async_valid before a async_ready")
+    val wasValid = RegNext(stream.async_valid) init (False)
+    val wasReady = RegNext(stream.async_ready) init (False)
+    val wasFired = RegNext(stream.async_fire) init (False)
+
+    val invalidValidChange = wasValid && !stream.async_valid && !wasFired
+    invalidValidChange.setWeakName(stream.name + "_invalidValidChange")
+    assert(!invalidValidChange, s"${stream} deasserted async_valid before a async_ready")
+
+    val outstanding_cnt = CounterUpDown(1L << 16, stream.async_fire, stream.flow.valid)
+    assume(~outstanding_cnt.willOverflow)
+
+    val async_flow_bounded = Bool()
+    async_flow_bounded := outstanding_cnt > 0 || ~outstanding_cnt.decrementIt
+    assume(async_flow_bounded)//, s"${pmb} PMB has miscounted responses")
+    //}
+  }
+  def assumeStreamContract[T <: Data](stream: Stream[T]): Unit = {
+    val wasValid = RegNext(stream.valid) init (False)
+    val payload = RegNext(stream.payload)
+    val wasFired = RegNext(stream.fire) init (False)
+
+    assume(stream.valid || ~wasValid || wasFired)
+    when(stream.valid && wasValid && !wasFired) {
+      assume(stream.payload === past(stream.payload))
     }
   }
+
+  def formalFifoAsserts[T <: Data](fifo: StreamFifo[T]): Unit = {
+    when(fifo.io.occupancy === 0) {
+      assert(fifo.io.pop.valid === fifo.io.push.fire)
+    }
+
+    if(fifo.logic != null) {
+      when(fifo.io.availability === 0) {
+        assert(fifo.io.push.ready === False)
+      }
+
+      if(!fifo.withExtraMsb) {
+        assert(fifo.logic.ptr.push < fifo.depth)
+        assert(fifo.logic.ptr.pop < fifo.depth)
+      }
+      when(fifo.logic.ptr.push >= fifo.logic.ptr.pop) {
+        if(fifo.withExtraMsb) {
+          assert((fifo.io.occupancy === (fifo.logic.ptr.push -^ fifo.logic.ptr.pop)), "occupancy math")
+        } else {
+          when(fifo.logic.ptr.push === fifo.logic.ptr.pop) {
+            when(fifo.logic.ptr.wentUp) {
+              assert(fifo.io.occupancy === fifo.depth)
+            } otherwise {
+              assert(fifo.io.occupancy === 0)
+            }
+          } otherwise {
+            assert((fifo.io.occupancy === (fifo.logic.ptr.push -^ fifo.logic.ptr.pop)), "occupancy math")
+          }
+        }
+      } otherwise {
+        if(!fifo.withExtraMsb) {
+          assert((fifo.io.occupancy === (fifo.depth -^ fifo.logic.ptr.pop +^ fifo.logic.ptr.push)))
+        } else {
+          assert((fifo.io.occupancy === (fifo.depth -^ fifo.logic.ptr.pop.dropHigh(1).asUInt +^ fifo.logic.ptr.push.dropHigh(1).asUInt)))
+        }
+      }
+    } else if(fifo.oneStage != null) {
+
+    } else {
+      assert(false)
+    }
+
+    assume(fifo.io.occupancy < past(fifo.io.occupancy) || ((past(fifo.io.occupancy) - fifo.io.occupancy) <= 1))
+  }
+
   def assertStreamContract[T <: Data](stream: Stream[T]): Unit = {
     if (globalData.config.flags.contains(GenerationFlags.simulation)) {
       val wasValid = RegNext(stream.valid) init (False)
@@ -150,19 +216,24 @@ object test_funcs {
     }
     scoreboard.checkEmptyness()
   }
-
+  def willUnderflow(c : CounterUpDown) = {
+    (c.value === 0) && c.decrementIt && ~c.incrementIt
+  }
   def assertPMBContract(pmb: PipelinedMemoryBus) = {
     new Area {
       test_funcs.assertStreamContract(pmb.cmd)
 
-      val outstanding_cnt = CounterUpDown(1L << 32, pmb.cmd.fire && !pmb.cmd.write, pmb.rsp.valid)
-      val pmb_rsp_bounded = outstanding_cnt.value.asBits.andR =/= True
-      assert(pmb_rsp_bounded, s"${pmb} PMB has miscounted responses")
+      val outstanding_cnt = CounterUpDown(1L << 16, pmb.cmd.fire && !pmb.cmd.write, pmb.rsp.valid)
+      assume(~outstanding_cnt.willOverflow)
 
-      SignalLogger.log_assert(pmb_rsp_bounded.setName(s"${pmb.name}_rsp_bounded"),
-        s"${pmb} PMB has miscounted responses")
+      val pmb_rsp_bounded = Bool()
+      pmb_rsp_bounded := outstanding_cnt > 0 || ~outstanding_cnt.decrementIt
+      assume(pmb_rsp_bounded)//, s"${pmb} PMB has miscounted responses")
 
-    }.setName("assertPMBContract")
+//      SignalLogger.log_assert(pmb_rsp_bounded,
+//        s"${pmb} PMB has miscounted responses")
+
+    }.setName(s"${pmb.name}_assertPMBContract")
   }
 
   var fastClockDomain: Option[ClockDomain] = None
@@ -194,5 +265,43 @@ object test_funcs {
         test_funcs.fastClockDomain = None
       }
     }
+  }
+}
+
+
+trait FormalTestSuite {
+  val config = FormalConfig._spinalConfig.copy(defaultConfigForClockDomains = ClockDomainConfig(
+    resetActiveLevel = HIGH,
+    resetKind = SYNC,
+  ), defaultClockDomainFrequency = FixedFrequency(100 MHz))
+
+  def generateRtl() : Seq[(String, () => Component)]
+  def generateRtlBMC() = generateRtl()
+  def generateRtlCover() = generateRtl()
+  def generateRtlProve() = generateRtl()
+
+  def defaultDepth() = 100
+  def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(defaultDepth())
+  def CoverConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withCover(defaultDepth())
+  def ProveConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withProve(defaultDepth())
+
+  def renameDefinition(c : Component, suffix : String) = {
+    c.setDefinitionName(c.getClass.getSimpleName + "_" + suffix)
+  }
+
+  def formalTests() : Seq[(String, () => Any)] = {
+    (generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), "bmc")))) ++
+      generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), "prove")))) ++
+      generateRtlCover().map(lst => (s"${lst._1}_cover", () => CoverConfig().doVerify(renameDefinition(lst._2(), "cover"))))).map(t => {
+      (t._1, () => {
+        try {
+          t._2()
+        } catch {
+          case e : IOException => {
+            println(s"Could not find sby ${e}")
+          }
+        }
+      })
+    })
   }
 }

@@ -2,14 +2,14 @@ package spinalextras.lib.tests
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
-import spinal.core.{BitVector, Bits, HardType, IntToBuilder}
+import spinal.core.{BitVector, Bits, HardType, IntToBuilder, cover}
 import spinal.lib.sim._
 import spinalextras.lib.Config
 import spinalextras.lib.memory.MemoryBackedFifo
 
 class MemoryBackedFifoTest extends AnyFunSuite {
   def doTest[T <: BitVector](dataType: HardType[T], depth: Int, throughputTest : Boolean = false): Unit = {
-    Config.sim.doSim(
+    Config.sim.withFstWave.doSim(
       new MemoryBackedFifo(dataType, depth)
     ) { dut =>
       SimTimeout(5000 us)
@@ -28,6 +28,7 @@ class MemoryBackedFifoTest extends AnyFunSuite {
           dut.io.pop.ready #= throughputTest
         }
       }
+
       dut.io.pop.ready #= throughputTest
 
       for (i <- 0 until depth * 3) {

@@ -28,9 +28,6 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
                                                     busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
                                                     rsp_latency : Int = 0
                                                   ) extends Component {
-  //val lcmWidth = StreamTools.lcm(dataType.getBitsWidth, busConfig.dataWidth)
-  //val midDatatype = Vec(dataType, lcmWidth / dataType.getBitsWidth) //Bits(StreamTools.lcm(dataType.getBitsWidth, busConfig.dataWidth) bits)
-
   var outSize = (busConfig.dataWidth / dataType.getBitsWidth.floatValue()).ceil.toInt
   while(depth % outSize != 0) {
     outSize += 1
@@ -48,13 +45,16 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   require(depth % outCnt == 0)
 
   def div_assert_even(num : Int, den : Int): Int = {
+    if(num % den != 0) {
+      println(s"Non even requirement ${num} ${den}")
+    }
     require((num % den) == 0)
     num / den
   }
 
   val outWordsPerFrame = div_assert_even(depth, outDatatype.size * outCnt)
   test_funcs.assertPMBContract(io.bus)
-  test_funcs.assertAsyncStreamContract(io.pop)
+  val asyncStreamContract = test_funcs.assertAsyncStreamContract(io.pop)
 
   val bufferSize = rsp_latency + 1
   val minBufferSizeInBits = bufferSize * busConfig.dataWidth
@@ -115,14 +115,17 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   }
 
   val chunk_cmd = new Area {
-    val read_address_words = Reg(UInt(read_port.config.addressWidth bits))
+    val read_address_words = Reg(UInt(read_port.config.addressWidth bits)) init(0)
 
     read_port.cmd.address := read_address_words
     val cnt = Counter(bufferSizeInBusWords)
     val chunk_idx = Counter(chunks_per_frame)
 
-    val roundrobin_idx_offset = CounterTools.multiply_by(roundrobin_idx_cmd, busWordsPerOutputChannel).valueNext
-    val chunkidx_offset = CounterTools.multiply_by(chunk_idx, bufferSizeInBusWords).valueNext
+    val roundrobin_idx_offset_area = CounterTools.multiply_by(roundrobin_idx_cmd, busWordsPerOutputChannel)
+    val roundrobin_idx_offset = roundrobin_idx_offset_area.valueNext
+
+    val chunkidx_offset_area = CounterTools.multiply_by(chunk_idx, bufferSizeInBusWords)
+    val chunkidx_offset = chunkidx_offset_area.valueNext
 
     val read_address_words_logical =
       baseAddress +^ ((roundrobin_idx_cmd.value * busWordsPerOutputChannel +^ chunk_idx.value * bufferSizeInBusWords +^ cnt.value))
@@ -234,7 +237,7 @@ case class StridedAccessFIFOReader[T <: Data](
   val bufferSizeInBits = bufferSizeInMidWords * midDatatype.getBitsWidth
 
   var fifos = (0 until outCnt).map(i => StreamFifo(midDatatype, bufferSizeInMidWords))
-  fifos.foreach(_.logic.ram.addAttribute("syn_ramstyle", "distributed"))
+  fifos.filter(_.logic != null).foreach(_.logic.ram.addAttribute("syn_ramstyle", "distributed"))
 
   for(idx <- 0 until outCnt) {
     //fifos(idx).io.push <> asyncReader.io.pop(idx).toStream.map(_.asBits)
@@ -255,63 +258,3 @@ case class StridedAccessFIFOReader[T <: Data](
 
 }
 
-class StridedAccessFIFOReaderTest extends AnyFunSuite {
-  def doTest() {
-    Config.sim.doSim(
-      new Component {
-        val reader = StridedAccessFIFOReader(Bits(32 bits), 2304, 0x00000000L, 9, rsp_latency = 32)
-        val io = new Bundle {
-          val pop = master(cloneOf(reader.io.pop))
-        }
-        val memory = SimpleMemoryProvider(
-          init = (0 until 9).flatMap(idx => Array.fill(2304 / 9)(idx)).map(BigInt(_))
-        )
-        memory.io.bus <> reader.io.bus
-        val start = RegInit(True) clearWhen (io.pop.valid) setWhen(io.pop.lastFire)
-
-        reader.io.pop <> io.pop
-      }.setDefinitionName("StridedAccessFIFOReaderTest")
-    ) { dut =>
-      SimTimeout(5000 us)
-      dut.clockDomain.forkStimulus(100 MHz)
-      dut.io.pop.ready #= true
-      dut.clockDomain.waitSampling(10)
-      val q = new mutable.ArrayBuffer[Seq[BigInt]]()
-
-      StreamMonitor(dut.io.pop, dut.clockDomain) {
-        data => {
-          q.append(data.fragment.map(_.toBigInt))
-        }
-      }
-
-      // Test random stall
-      while (!(dut.io.pop.valid.toBoolean && dut.io.pop.ready.toBoolean && dut.io.pop.last.toBoolean)) {
-        dut.io.pop.ready #= simRandom.nextBoolean()
-        dut.clockDomain.waitSampling(1)
-      }
-
-      // Test no stall
-      dut.clockDomain.waitSampling(1)
-      while (!(dut.io.pop.valid.toBoolean && dut.io.pop.ready.toBoolean && dut.io.pop.last.toBoolean)) {
-        dut.io.pop.ready #= true
-        dut.clockDomain.waitSampling(1)
-      }
-
-      // Test heavy stall
-      dut.clockDomain.waitSampling(1)
-      while (!(dut.io.pop.valid.toBoolean && dut.io.pop.ready.toBoolean && dut.io.pop.last.toBoolean)) {
-        dut.io.pop.ready #= false
-        dut.clockDomain.waitSampling(64)
-
-        dut.io.pop.ready #= true
-        dut.clockDomain.waitSampling(1)
-      }
-
-      assert(q.size == 256 * 3)
-    }
-  }
-
-  test("Basic") {
-    doTest();
-  }
-}

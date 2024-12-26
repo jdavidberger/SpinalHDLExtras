@@ -8,6 +8,7 @@ import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.HardwareMemory.{HardwareMemoryReadWriteCmd, HardwareMemoryWriteCmd}
 import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.memory.MemoryPoolFIFOs.splitReadWrite
+import spinalextras.lib.testing.test_funcs
 import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 
 object MemoryPoolFIFOs {
@@ -53,6 +54,8 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
     base = base + sm_fifo._1.toInt
     fifo.io.push <> sm_fifo._2.push
     fifo.io.pop <> sm_fifo._2.pop
+    fifo.io.flush := sm_fifo._2.flush
+
     sm_fifo._2.occupancy := fifo.io.occupancy
 
     sm_fifo._2.availability := fifo.io.availability
@@ -77,6 +80,8 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
         rtn.mask := x.mask
       rtn
     }).toFlow <> rw.cmd
+
+    assert(test_funcs.assertPMBContract(memBus).outstanding_cnt.value === mem.io.readWritePortsOutstanding(idx))
 
     rw.rsp >> memBus.rsp
   }})

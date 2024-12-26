@@ -65,7 +65,7 @@ object PLLOutputClockConfig {
             ENABLE : Boolean,
             TRIM_BYPASSED: Boolean,
             ACTUAL_FREQ : HertzNumber,
-            ACTUAL_PHASE : Double) : PLLOutputClockConfig = PLLOutputClockConfig(TRIM, DEL, DIV, PHI, ENABLE, TRIM_BYPASSED, ACTUAL_FREQ, ACTUAL_PHASE)
+            ACTUAL_PHASE : Double) : PLLOutputClockConfig = new PLLOutputClockConfig(TRIM, DEL, DIV, PHI, ENABLE, TRIM_BYPASSED, ACTUAL_FREQ.toDouble, ACTUAL_PHASE)
 }
 case class PLLOutputClockConfig(
                                  TRIM: Int = 0,

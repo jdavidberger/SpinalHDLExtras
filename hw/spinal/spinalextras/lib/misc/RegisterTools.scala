@@ -5,6 +5,8 @@ import spinal.lib.StreamCCByToggle
 import spinal.lib.bus.regif.AccessType.{RO, RW}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 
+import scala.language.postfixOps
+
 object RegisterTools {
   def inc_addr(b : BusIf): BusIf = {
     val r = (b.getRegPtr() & 0xFFFFFF00L) + 0x100L

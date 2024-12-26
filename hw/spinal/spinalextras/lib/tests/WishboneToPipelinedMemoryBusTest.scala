@@ -3,6 +3,7 @@ package spinalextras.lib.tests
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
 import spinal.core._
+import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinal.lib.bus.wishbone.{AddressGranularity, WishboneConfig}
 import spinal.lib.sim.ScoreboardInOrder
@@ -12,6 +13,8 @@ import spinalextras.lib.bus.WishboneToPipelinedMemoryBus
 
 import scala.collection.mutable
 import scala.util.Random
+
+
 
 class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
   def runTest(config: WishboneConfig, rspQueue: Int): Unit = {
