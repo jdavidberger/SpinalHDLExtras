@@ -47,6 +47,54 @@ object test_funcs {
     }
   }
 
+  def formalCheckRam[T <: Data](fifo: StreamFifo[T], cond: T => Bool): Vec[Bool] = {
+    val depth = fifo.depth
+    val useVec = fifo.useVec
+    val logic = fifo.logic
+
+    if(fifo.depth == 0) {
+      Vec(Bool())
+    } else if(fifo.depth == 1) {
+      Vec(fifo.oneStage.buffer.valid && cond(fifo.oneStage.buffer.payload))
+    } else {
+      val condition = (0 until depth).map(x => cond(if (useVec) logic.vec(x) else logic.ram(x)))
+      // create mask for all valid payloads in FIFO RAM
+      // inclusive [popd_idx, push_idx) exclusive
+      // assume FIFO RAM is full with valid payloads
+      //           [ ...  push_idx ... ]
+      //           [ ...  pop_idx  ... ]
+      // mask      [ 1 1 1 1 1 1 1 1 1 ]
+      val mask = Vec(True, depth)
+      val push_idx = logic.ptr.push.resize(log2Up(depth))
+      val pop_idx = logic.ptr.pop.resize(log2Up(depth))
+      // pushMask(i)==0 indicates location i was popped
+      val popMask = (~((U(1) << pop_idx) - 1)).asBits
+      // pushMask(i)==1 indicates location i was pushed
+      val pushMask = ((U(1) << push_idx) - 1).asBits
+      // no wrap   [ ... popd_idx ... push_idx ... ]
+      // popMask   [ 0 0 1 1 1 1  1 1 1 1 1 1 1 1 1]
+      // pushpMask [ 1 1 1 1 1 1  1 1 0 0 0 0 0 0 0] &
+      // mask      [ 0 0 1 1 1 1  1 1 0 0 0 0 0 0 0]
+      when(pop_idx < push_idx) {
+        mask.assignFromBits(pushMask & popMask)
+        // wrapped   [ ... push_idx ... popd_idx ... ]
+        // popMask   [ 0 0 0 0 0 0  0 0 1 1 1 1 1 1 1]
+        // pushpMask [ 1 1 0 0 0 0  0 0 0 0 0 0 0 0 0] |
+        // mask      [ 1 1 0 0 0 0  0 0 1 1 1 1 1 1 1]
+      }.elsewhen(pop_idx > push_idx) {
+        mask.assignFromBits(pushMask | popMask)
+        // empty?
+        //           [ ...  push_idx ... ]
+        //           [ ...  pop_idx  ... ]
+        // mask      [ 0 0 0 0 0 0 0 0 0 ]
+      }.elsewhen(logic.ptr.empty) {
+        mask := mask.getZero
+      }
+      val check = mask.zipWithIndex.map { case (x, id) => x & condition(id) }
+      Vec(check)
+    }
+  }
+
   def formalFifoAsserts[T <: Data](fifo: StreamFifo[T]) = new Area {
     val push_pop_occupancy : UInt = {
       if(fifo.logic != null) {
@@ -314,8 +362,8 @@ trait FormalTestSuite {
     defaultClockDomainFrequency = FixedFrequency(100 MHz))
 
   def generateRtl() : Seq[(String, () => Component)]
-  def generateRtlBMC() = generateRtl()
-  def generateRtlCover() = generateRtl()
+  def generateRtlBMC() : Seq[(String, () => Component)] = Seq()
+  def generateRtlCover(): Seq[(String, () => Component)] = Seq()
   def generateRtlProve() = generateRtl()
 
   def defaultDepth() = 100
@@ -328,9 +376,10 @@ trait FormalTestSuite {
   }
 
   def formalTests() : Seq[(String, () => Any)] = {
-    (/*generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), "bmc")))) ++*/
+    (generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), "bmc")))) ++
       generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), "prove")))) ++
-      generateRtlCover().map(lst => (s"${lst._1}_cover", () => CoverConfig().doVerify(renameDefinition(lst._2(), "cover"))))).map(t => {
+      generateRtlCover().map(lst => (s"${lst._1}_cover", () => CoverConfig().doVerify(renameDefinition(lst._2(), "cover")))))
+      .map(t => {
       (t._1, () => {
         try {
           t._2()
