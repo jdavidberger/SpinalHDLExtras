@@ -309,7 +309,9 @@ trait FormalTestSuite {
   val config = FormalConfig._spinalConfig.copy(defaultConfigForClockDomains = ClockDomainConfig(
     resetActiveLevel = HIGH,
     resetKind = SYNC,
-  ), removePruned = false, defaultClockDomainFrequency = FixedFrequency(100 MHz))
+  ),
+    mergeAsyncProcess = true,
+    defaultClockDomainFrequency = FixedFrequency(100 MHz))
 
   def generateRtl() : Seq[(String, () => Component)]
   def generateRtlBMC() = generateRtl()

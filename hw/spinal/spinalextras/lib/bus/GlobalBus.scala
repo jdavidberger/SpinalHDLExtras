@@ -306,8 +306,14 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
     interconn.perfConfig()
     interconn.arbitrationPendingRspMaxDefault = 16
 
+    val spec = interconnect_spec()
+    val valid_slave_busses = spec.flatMap(_._2).toSet
     for((topBus, mapping, tags) <- slaves) {
-      interconn.addSlave(topBus, mapping)
+      if(valid_slave_busses.contains(topBus)) {
+        interconn.addSlave(topBus, mapping)
+      } else {
+        topBus.cmd.setIdle()
+      }
       //interconn.noTransactionLockOn(topBus)
     }
 
