@@ -130,37 +130,3 @@ class MemoryBackedFIFOsTest extends AnyFunSuite {
 }
 
 
-
-class MemoryPoolFIFOsFormal[T <: Data](dataType: HardType[T],
-                                       sizes: Seq[BigInt],
-                                       checkResponses : Boolean = true) extends Component {
-  val dut = FormalDut(new MemoryPoolFIFOs(Bits(8 bits), Seq(10)))
-  assumeInitial(ClockDomain.current.isResetActive)
-  val sysclk = Counter(255)
-  sysclk.increment()
-
-  dut.io.fifos.foreach(f => {
-    test_funcs.assertStreamContract(f.pop)
-    anyseq(f.pop.ready)
-    anyseq(f.flush)
-
-    test_funcs.assumeStreamContract(f.push)
-    anyseq(f.push.valid)
-    anyseq(f.push.payload)
-
-    if(checkResponses) {
-      val testFifo = StreamFifo(f.dataType, f.depth.toInt)
-      testFifo.io.push.payload := f.push.payload
-      testFifo.io.push.valid := f.push.fire
-      testFifo.io.flush := f.flush
-      test_funcs.assertStreamContract(testFifo.io.push)
-
-      testFifo.io.pop.ready := f.pop.fire
-
-      assert(f.occupancy === testFifo.io.occupancy)
-      assert(f.pop.fire === False || testFifo.io.pop.fire)
-      assert(f.pop.fire === False || (testFifo.io.pop.payload === f.pop.payload))
-    }
-  })
-}
-

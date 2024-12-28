@@ -89,8 +89,9 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   read_port.cmd.payload.assignDontCare()
   read_port.cmd.mask.assignDontCare()
 
-  val async_readys = io.pop.async_ready
-  val async_valids = io.pop.async_valid
+  val pop = io.pop.steady_ready()
+  val async_readys = pop.async_ready
+  val async_valids = pop.async_valid
   async_valids := False
 
   val signal_valid = new mutable.ArrayBuffer[Boolean]()
@@ -135,6 +136,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     assert(read_address_words_logical === read_address_words, "Read address is wrong")
 
     val stall = ~async_readys
+    cover(stall)
     when(!stall && armRead) {
       read_port.cmd.valid := True
       read_port.cmd.write := False
@@ -165,9 +167,9 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   val popCounter = Counter(outWordsPerFrame * outCnt)
 
   val chunk_rsp = new Area {
-    io.pop.flow.payload._1.assignFromBits(read_port_unpack.payload)
-    io.pop.flow.payload._2 := roundrobin_idx_rsp
-    io.pop.flow.valid := read_port_unpack.fire
+    pop.flow.payload._1.assignFromBits(read_port_unpack.payload)
+    pop.flow.payload._2 := roundrobin_idx_rsp
+    pop.flow.valid := read_port_unpack.fire
 
     when(read_port_unpack.fire) {
       popCounter.increment()

@@ -49,7 +49,8 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
     val pmb = master(PipelinedMemoryBus(pipelinedMemoryBusConfig))
   }
 
-  test_funcs.assertPMBContract(io.pmb)
+  val wbAssert = test_funcs.assertWishboneBusContract(io.wb)
+  val pmbContract = test_funcs.assertPMBContract(io.pmb)
   test_funcs.assertStreamContract(io.pmb.cmd)
 
   val (readyForNewReq, hasOutstandingReq, reqWasWE) =
@@ -72,6 +73,11 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
 
   if(io.wb.STALL != null) {
     io.wb.STALL := !readyForNewReq || !io.pmb.cmd.ready
+  } else {
+    assert(pmbContract.outstanding_cnt <= 1)
+    when(pmbContract.outstanding_cnt === 1) {
+      assert(io.wb.masterHasRequest && !io.wb.WE && !readyForNewReq)
+    }
   }
   io.wb.DAT_MISO := io.pmb.rsp.data.resized
 

@@ -7,6 +7,19 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
   val async_valid, async_ready   = Bool()
   val flow = Flow(payloadType())
 
+  def steady_ready() : AsyncStream[T] = {
+    val s2mPipe = AsyncStream(payloadType)
+
+    val oneAhead = RegInit(False) setWhen(async_fire) clearWhen(s2mPipe.async_fire && !async_fire)
+
+    async_valid := !oneAhead
+
+    flow << s2mPipe.flow
+
+    s2mPipe.async_ready := async_ready || oneAhead
+    s2mPipe
+  }
+
   override def asMaster(): Unit = {
     out(async_valid)
     in(async_ready)

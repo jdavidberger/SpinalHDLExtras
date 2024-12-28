@@ -34,7 +34,6 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
     val memoryRead = out Bool()
   }
   val readBus = io.bus
-  //test_funcs.assertPMBContract(io.bus)
 
   val readBusCmd = cloneOf(readBus.cmd)
   val readBusCmdQueue = StreamFifo(readBusCmd.payloadType, cmd_latency)

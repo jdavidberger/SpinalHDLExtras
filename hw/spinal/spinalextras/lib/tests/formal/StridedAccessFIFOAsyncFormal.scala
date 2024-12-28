@@ -23,6 +23,9 @@ case class StridedAccessFIFOAsyncFormal[T <: Data](
   val dut = FormalDut(StridedAccessFIFOAsync(pushDataType, popDataType, depth, baseAddress, outCnt, bufferSize, busConfig, rsp_latency, cmd_latency))
   assumeInitial(ClockDomain.current.isResetActive)
 
+  dut.io.bus.cmd.formalAssumesSlave()
+  dut.io.push.formalAssumesSlave()
+
   anyseq(dut.io.push.valid)
   anyseq(dut.io.push.payload)
 

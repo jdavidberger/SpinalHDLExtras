@@ -30,7 +30,8 @@ case class StreamToBuffer[T <: Data](
   test_funcs.assertPMBContract(io.bus)
 
   val pushMem = Stream(Fragment(Bits(busConfig.dataWidth bits)))
-  val writeAddress = RegNext((counter.valueNext) + U(baseAddress, busConfig.addressWidth bits))
+  val baseAddressUInt = U(baseAddress, busConfig.addressWidth bits)
+  val writeAddress = RegNext(counter.valueNext + baseAddressUInt, init = baseAddressUInt)
 
   StreamTools.AdaptFragmentWidth(io.push.map(x => {
     val f = Fragment(Bits(x.fragment.getBitsWidth bits))

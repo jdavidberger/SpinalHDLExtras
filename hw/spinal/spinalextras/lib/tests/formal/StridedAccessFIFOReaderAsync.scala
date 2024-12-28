@@ -27,12 +27,13 @@ case class StridedAccessFIFOReaderAsyncFormal[T <: Data](
   anyseq(dut.io.bus.rsp)
 }
 
-
 class StridedAccessFIFOReaderAsyncFormalTest extends AnyFunSuite with FormalTestSuite {
 
   override def defaultDepth() = 200
 
   formalTests().foreach(t => test(t._1) { t._2() })
+
+  override def generateRtlCover() = generateRtl()
 
   override def generateRtl() = Seq((suiteName, () => new StridedAccessFIFOReaderAsyncFormal(UInt(8 bits), 900, 0, 9)))
 }

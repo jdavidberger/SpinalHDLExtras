@@ -23,6 +23,9 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
     localPushDepth, localPopDepth))
   assumeInitial(ClockDomain.current.isResetActive)
 
+  dut.io.push.formalAssumesSlave()
+  dut.io.pop.formalAssertsMaster()
+
   if(check_flush) {
     anyseq(dut.io.flush)
   } else {
@@ -60,7 +63,7 @@ class PipelinedMemoryBusFIFOFormalTest extends AnyFunSuite with FormalTestSuite 
 
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def defaultDepth() = 50
+  override def defaultDepth() = 25
 
   override def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(15)
 

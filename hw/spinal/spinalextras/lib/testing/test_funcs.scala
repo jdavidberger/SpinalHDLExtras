@@ -4,9 +4,10 @@ package spinalextras.lib.testing
 import spinal.core.native.globalData
 import spinal.core.sim._
 import spinal.core._
-import spinal.core.formal.{FormalConfig, SpinalFormalConfig, past}
+import spinal.core.formal.{FormalConfig, SpinalFormalConfig, past, stable}
 import spinal.lib.{CounterUpDown, Stream, StreamFifo}
-import spinal.lib.bus.simple.PipelinedMemoryBus
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd}
+import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.sim.{ScoreboardInOrder, StreamDriver, StreamMonitor}
 import spinalextras.lib.Config
 import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
@@ -17,6 +18,36 @@ import scala.collection.mutable
 import scala.language.postfixOps
 
 object test_funcs {
+  def assertWishboneBusContract(bus : Wishbone, doAssume : Boolean = false) = new Area {
+    def check(b : Bool, a : Any*): Unit = {
+      if(doAssume) {
+        assume(b)
+      } else {
+        assert(b, Seq(a:_*))
+      }
+    }
+
+    if(bus.config.useSTALL) {
+
+    } else {
+      when(bus.ACK) {
+        check(bus.masterHasRequest, "Response received without request")
+      }
+    }
+
+    val wasStalledRequest = past(bus.isRequestStalled) init(False)
+    val invalidRequestDrop = wasStalledRequest && !bus.masterHasRequest
+    check(!invalidRequestDrop, "Invalid WB request drop")
+
+    when(wasStalledRequest) {
+      Seq(bus.DAT_MOSI, bus.ADR, bus.WE, bus.SEL)
+        .filter(_ != null)
+        .foreach(x => check(stable(x), "WB property changed without an ACK"))
+    }
+  }
+
+  def assumeWishboneBusContract(bus : Wishbone) = assertWishboneBusContract(bus, doAssume = true)
+
   def assertAsyncStreamContract[T <: Data](stream: AsyncStream[T]) = new Area {
     //if (globalData.config.flags.contains(GenerationFlags.simulation)) {
 
@@ -176,21 +207,19 @@ object test_funcs {
     }
   }
 
-  def assertStreamContract[T <: Data](stream: Stream[T]): Unit = {
+  def assertStreamContract[T <: Data](stream: Stream[T], map: (T => T) = ((x:T) => x) )= new Area {
     val wasValid = RegNext(stream.valid) init (False)
     val payload = RegNext(stream.payload)
     val wasFired = RegNext(stream.fire) init (False)
 
-    val invalidValidChange = wasValid && !stream.valid && !wasFired
-    invalidValidChange.setWeakName(stream.name + "_invalidValidChange")
+    val invalidValidChange = wasValid && !stream.valid && !wasFired && !ClockDomain.current.isResetActive
     assert(!invalidValidChange, s"${stream} deasserted valid before a ready")
 
     val payloadChangeViolation = False
-    payloadChangeViolation.setWeakName(stream.name + "_payloadChangeViolation")
-    when(stream.valid && wasValid && !wasFired) {
-      payloadChangeViolation := payload =/= stream.payload
+    when(stream.valid && wasValid && !wasFired && !ClockDomain.current.isResetActive) {
+      payloadChangeViolation := map(payload) =/= map(stream.payload)
 
-      assert(payload === stream.payload, Seq(
+      assert(!payloadChangeViolation, Seq(
         s"${stream} payload changed from ",
         payload.asBits,
         " to ",
@@ -305,7 +334,14 @@ object test_funcs {
   }
   def assertPMBContract(pmb: PipelinedMemoryBus) = {
     new Area {
-      test_funcs.assertStreamContract(pmb.cmd)
+      val streamContract = test_funcs.assertStreamContract(pmb.cmd, (x : PipelinedMemoryBusCmd) => {
+        val cmd : PipelinedMemoryBusCmd = cloneOf(x)
+        cmd.data := Mux(x.write, x.data, B(0))
+        cmd.address := x.address
+        cmd.mask := Mux(x.write, x.mask, B(0))
+        cmd.write := x.write
+        cmd
+      })
 
       val outstanding_cnt = CounterUpDown(1L << 16, pmb.cmd.fire && !pmb.cmd.write, pmb.rsp.valid)
       assume(~outstanding_cnt.willOverflow)
@@ -376,9 +412,9 @@ trait FormalTestSuite {
   }
 
   def formalTests() : Seq[(String, () => Any)] = {
-    (generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), "bmc")))) ++
-      generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), "prove")))) ++
-      generateRtlCover().map(lst => (s"${lst._1}_cover", () => CoverConfig().doVerify(renameDefinition(lst._2(), "cover")))))
+    (generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), s"${lst._1}_bmc")))) ++
+      generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), f"${lst._1}prove")))) ++
+      generateRtlCover().map(lst => (s"${lst._1}_cover", () => CoverConfig().doVerify(renameDefinition(lst._2(), s"${lst._1}_cover")))))
       .map(t => {
       (t._1, () => {
         try {
