@@ -22,6 +22,21 @@ trait DelayController {
   def create_delay_block() : DelayBlock
 }
 
+class IDDRMeta(latency : Int) extends Component {
+  val io = new Bundle {
+    val IN_valid = in((Bool()))
+    val ECLK = in(Bool())
+    val OUT_valid = out(Bool())
+  }
+
+  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
+    val valid = Reg(Bits(latency bits)) init (0) addTag(crossClockDomain)
+    valid := ((valid << 1) | io.IN_valid.asBits.resized).resized
+    io.OUT_valid := valid.msb
+  }
+
+}
+
 abstract class IDDR(reqs : DDRRequirements) extends Component with ComponentWithKnownLatency {
   def output_per_input : Int = reqs.signal_multiple
   val io = new Bundle {
@@ -40,6 +55,31 @@ abstract class IDDR(reqs : DDRRequirements) extends Component with ComponentWith
 
   def create_delay_controller(): DelayController = null
   def attach_delay_controller(controller : DelayController): Unit = { }
+}
+
+class ODDRMeta(latency : Int) extends Component {
+  val io = new Bundle {
+    val ECLK = in(Bool())
+
+    val IN_valid = in(Bool())
+    val OUT_valid = out(Bool())
+
+    val BUSY = out(Bool())
+    val LAST_SEND = out(Bool())
+  }
+
+  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
+    val valid = DelayedSignal(latency, crossClockDomain = true)
+    valid.io.input := io.IN_valid
+    io.OUT_valid := valid.io.output
+
+    io.BUSY := valid.io.pipe =/= 0
+    if(valid.io.pipe.high == 0) {
+      io.LAST_SEND := ~io.IN_valid
+    } else {
+      io.LAST_SEND := valid.io.output && ~valid.io.pipe(valid.io.pipe.high - 1)
+    }
+  }
 }
 
 abstract class ODDR(reqs : DDRRequirements) extends Component with ComponentWithKnownLatency {
@@ -64,24 +104,18 @@ abstract class ODDR(reqs : DDRRequirements) extends Component with ComponentWith
   def create_delay_controller(): DelayController = null
   def attach_delay_controller(controller : DelayController): Unit = {}
 
-  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
-    val valid = DelayedSignal(latency(), crossClockDomain = true)
-    valid.io.input := io.IN.valid
-    io.OUT.valid := valid.io.output
-
-    io.BUSY := valid.io.pipe =/= 0
-    if(valid.io.pipe.high == 0) {
-      io.LAST_SEND := ~io.IN.valid
-    } else {
-      io.LAST_SEND := valid.io.output && ~valid.io.pipe(valid.io.pipe.high - 1)
-    }
-  }
-
+  val meta = new ODDRMeta(latency())
+  meta.io.ECLK <> io.ECLK
+  meta.io.IN_valid <> io.IN.valid
+  meta.io.OUT_valid <> io.OUT.valid
+  meta.io.BUSY <> io.BUSY
+  meta.io.LAST_SEND <> io.LAST_SEND
 }
 
 case class DDRRequirements(signal_multiple : Int = 2,
                            delayable : Boolean = false,
-                           static_delay : TimeNumber = 0 fs
+                           static_delay : TimeNumber = 0 fs,
+                           mock : Boolean = false
                           ) {
   override def toString = {
 
@@ -148,6 +182,7 @@ class SynthIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithKno
 object ODDR {
   def factory = new ImplementationSpecificFactory[ODDR, DDRRequirements] {
     simulationHandler = {case _ => (reqs => new GenericODDR(reqs))}
+    formalHandler = {case _ => (reqs => new MockODDR(reqs))}
     AddHandler { case Device("lattice", "lifcl", name, resetKind) => { reqs => LatticeODDR(reqs)}}
     AddHandler { case _ => reqs => {
       println(s"Warning: Using simulation driver for ODDR since no device matches found.")
@@ -163,6 +198,7 @@ object ODDR {
 object IDDR {
   def factory = new ImplementationSpecificFactory[IDDR, DDRRequirements] {
     simulationHandler = {case _ => (reqs => new GenericIDDR(reqs))}
+    formalHandler = {case _ => (reqs => new MockIDDR(reqs))}
     AddHandler { case Device("lattice", "lifcl", name, resetKind) => { reqs => LatticeIDDR(reqs)}}
     AddHandler { case _ => reqs => {
       println(s"Warning: Using simulation driver for IDDR since no device matches found.")
@@ -257,9 +293,65 @@ case class IDDRS[T <: BitVector](payloadType : HardType[T], reqs : DDRRequiremen
   override def latency(): Int = iddrs.head.latency()
 }
 
+case class IODDRS_IO[T <: BitVector](payloadType : HardType[T],
+                                     gear : Int,
+                                     mock : Boolean = false) extends Bundle with IMasterSlave {
+  val bitsWidth = payloadType.getBitsWidth
+
+  val OUTPUT_SUPPRESS = (Bits(bitsWidth bits)) default(0)
+
+  val IN_CAPTURE = (Bool())
+
+  // data_out.io.IN
+  val OUT = (Flow(Vec(payloadType, gear)))
+
+  // data_out.io.OUT.valid
+  //val OUT_VALID = (Bool())
+
+  // data_in.io.OUT
+  val IN_payload = (Vec(payloadType, gear))
+
+  def IN = ({
+    val rtn = Flow(Vec(payloadType, gear))
+    rtn.payload := IN_payload
+
+    val metaIn = new IDDRMeta(4)
+    metaIn.io.ECLK <> ClockDomain.readClockWire
+    metaIn.io.IN_valid := IN_CAPTURE
+    rtn.valid := metaIn.io.OUT_valid
+
+    rtn
+  })
+  // data_out.io.BUSY
+  //val BUSY = (Bool())
+
+  // data_out.io.LAST_SEND
+  //val LAST_SEND = (Bool())
+
+  override def asMaster(): Unit = {
+    out(OUTPUT_SUPPRESS, IN_CAPTURE)
+    //in(OUT_VALID, BUSY, LAST_SEND)
+    in(IN_payload)
+    master(OUT)
+  }
+
+  def meta_signals(latency : Int) = new Area {
+    val meta = new ODDRMeta(4)
+    meta.io.ECLK := ClockDomain.readClockWire
+    meta.io.IN_valid := OUT.valid
+    val OUT_VALID = meta.io.OUT_valid
+
+    val BUSY = meta.io.BUSY
+    val LAST_SEND = meta.io.LAST_SEND
+    //
+  }
+}
+
 case class IODDRS[T <: BitVector](payloadType : HardType[T],
                                   in_reqs: DDRRequirements,
                                   out_reqs: DDRRequirements) extends ComponentWithKnownLatency {
+  require(in_reqs.mock == out_reqs.mock)
+
   val bitsWidth = payloadType.getBitsWidth
   val gear = in_reqs.signal_multiple
   require(gear == out_reqs.signal_multiple)
@@ -271,41 +363,35 @@ case class IODDRS[T <: BitVector](payloadType : HardType[T],
   val tristates = TristateBuffers(payloadType)
 
   val io = new Bundle {
+    val ioddr = slave(new IODDRS_IO(payloadType, gear,
+      mock = in_reqs.mock
+    ))
     val ECLK = in(Bool())
-    val OUT = slave(Flow(Vec(payloadType, gear)))
-    val OUTPUT_SUPPRESS = in(Bits(bitsWidth bits)) default(0)
-
-    val OUT_VALID = out(Bool())
-
-    val IN_CAPTURE = in(Bool())
     val PHY = inout(Analog(Bits(bitsWidth bits)))
-    val IN = master(Flow(Vec(payloadType, gear)))
-
-    val BUSY = out(Bool())
-    val LAST_SEND = out(Bool())
 
     val DELAY_IN = data_in.io.DELAY.map(x => slave(x.clone()))
     val DELAY_OUT = data_out.io.DELAY.map(x => slave(x.clone()))
   }
+
   data_in.io.DELAY.foreach(_ <> io.DELAY_IN.get)
   data_out.io.DELAY.foreach(_ <> io.DELAY_OUT.get)
 
-  io.LAST_SEND := data_out.io.LAST_SEND
-  io.BUSY := data_out.io.BUSY
-  io.OUT_VALID := data_out.io.OUT.valid
-  data_in.io.IN.valid := ~data_out.io.OUT.valid && io.IN_CAPTURE
+//  io.ioddr.LAST_SEND := data_out.io.LAST_SEND
+//  io.ioddr.BUSY := data_out.io.BUSY
+//  io.ioddr.OUT_VALID := data_out.io.OUT.valid
+  data_in.io.IN.valid := ~data_out.io.OUT.valid && io.ioddr.IN_CAPTURE
 
   data_in.io.ECLK := io.ECLK
   data_out.io.ECLK := io.ECLK
 
-  data_in.io.OUT <> io.IN
-  data_out.io.IN <> io.OUT
+  io.ioddr.IN_payload := data_in.io.OUT.payload
+  data_out.io.IN <> io.ioddr.OUT
 
   tristates.io.phy <> io.PHY
   tristates.io.input <> data_out.io.OUT.payload
   tristates.io.output <> data_in.io.IN.payload
   tristates.io.output_enable <> data_out.io.OUT.valid
-  tristates.io.output_enable_suppress <> io.OUTPUT_SUPPRESS
+  tristates.io.output_enable_suppress <> io.ioddr.OUTPUT_SUPPRESS
 
   override val latency: Int = data_out.oddrs.head.latency()
 }

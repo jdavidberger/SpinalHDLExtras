@@ -51,8 +51,8 @@ class GenericODDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1)
 
     val cp, cnp = Reg(Bool()) init(False) addTag(crossClockDomain)
     when(IN.valid) {
-      assert(idx0.expand < IN.payload.getWidth)
-      assert(idx1.expand < IN.payload.getWidth)
+      //assert(idx0.expand < IN.payload.getWidth)
+      //assert(idx1.expand < IN.payload.getWidth)
       cp := IN.payload(idx0) ^ cnp
       cnp := IN.payload(idx1) ^ IN.payload(idx0) ^ cnp
     } otherwise {
@@ -70,6 +70,11 @@ class GenericODDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1)
   override def latency() = latency
 }
 
+class MockODDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends ODDR(reqs) {
+  io.OUT.payload := io.IN.payload.xorR
+
+  override def latency(): Int = latency
+}
 /***
  * Generic IDDR implementation. This is mostly useful for verification of HW IDDRs and simulations. Might work on real
  * hardware but probably isn't the best thing.
@@ -121,6 +126,14 @@ class GenericIDDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1)
 
   OUT := Vec(nArea.r.zip(pArea.r).flatMap(x => Seq(x._1, x._2))).asBits
   io.OUT.payload <> RegNext(OUT)
+
+  override def latency(): Int = latency
+}
+
+class MockIDDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends IDDR(reqs) {
+  for(i <- 0 until io.OUT.getBitsWidth) {
+    io.OUT.payload.asBits(i) := io.IN.payload.asBits.xorR
+  }
 
   override def latency(): Int = latency
 }

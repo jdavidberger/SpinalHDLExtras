@@ -9,6 +9,7 @@ class ImplementationSpecificFactory[T >: Null, Args] {
 
   private var handlers = mutable.ArrayBuffer[HandlerFunction]()
   var simulationHandler : HandlerFunction = Map.empty
+  var formalHandler : HandlerFunction = Map.empty
 
   def AddHandler(f: HandlerFunction): this.type = {
     handlers.append(f)
@@ -19,6 +20,8 @@ class ImplementationSpecificFactory[T >: Null, Args] {
     val checkHandlers : Seq[HandlerFunction] =
       if (spinal.core.GlobalData.get.config.flags.contains(GenerationFlags.simulation))
         Array(simulationHandler) ++ handlers
+      else if (spinal.core.GlobalData.get.config.flags.contains(GenerationFlags.formal))
+        Array(formalHandler) ++ handlers
       else
         handlers
 

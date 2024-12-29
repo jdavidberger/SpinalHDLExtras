@@ -2,6 +2,7 @@ package spinalextras.lib.io
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.io.TriState
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.io.lattice.LatticeTristateBuffer
 

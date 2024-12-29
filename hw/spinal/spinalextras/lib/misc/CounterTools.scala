@@ -133,6 +133,8 @@ object CounterTools {
   }
 
   def isZero(counter: CounterUpDown): Bool = {
+    assert(counter.value <= counter.maxValue)
+    assert(counter.value > 0 || counter.incrementIt || !counter.decrementIt, "Underflow not permitted")
     isZero(counter.value, counter.incrementIt, counter.decrementIt, is_state_on_clear = true, False)
   }
 
