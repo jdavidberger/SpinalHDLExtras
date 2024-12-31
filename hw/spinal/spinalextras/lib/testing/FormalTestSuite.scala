@@ -21,7 +21,7 @@ trait FormalTestSuite {
 
   def generateRtlBMC(): Seq[(String, () => Component)] = Seq()
 
-  def generateRtlCover(): Seq[(String, () => Component)] = Seq()
+  def generateRtlCover(): Seq[(String, () => Component)] = generateRtl()
 
   def generateRtlProve() = generateRtl()
 
@@ -38,8 +38,8 @@ trait FormalTestSuite {
   }
 
   def formalTests(): Seq[(String, () => Any)] = {
-    (generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), s"${lst._1}_bmc")))) ++
-      generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), f"${lst._1}prove")))) ++
+    (generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), f"${lst._1}prove")))) ++
+      generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), s"${lst._1}_bmc")))) ++
       generateRtlCover().map(lst => (s"${lst._1}_cover", () => CoverConfig().doVerify(renameDefinition(lst._2(), s"${lst._1}_cover")))))
       .map(t => {
         (t._1, () => {

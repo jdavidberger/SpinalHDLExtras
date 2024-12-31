@@ -86,20 +86,34 @@ class AdaptWidthByState[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardT
 class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends Component {
   val io = new Bundle {
     val in = slave(Stream(dataTypeIn))
-    val out = master(Stream(dataTypeOut))
+    val output = master(Stream(dataTypeOut))
+
+    val occupancy = out(UInt(1 bit))
   }
 
-  val in = io.in
-  val out = io.out
+  def logic =
+    if(dataTypeIn.getBitsWidth == dataTypeOut.getBitsWidth) new Area {
+      io.in >> io.output
+      io.occupancy := 0
+      val latency = 1
+    } else new Area {
+      val in = io.in
+      val output = io.output
 
-  val streamMid = Stream(Bits(StreamTools.lcm(in.payload.getBitsWidth, out.payload.getBitsWidth) bits))
-  def latency = streamMid.getBitsWidth / dataTypeIn.getBitsWidth
+      val streamMid = Stream(Bits(StreamTools.lcm(in.payload.getBitsWidth, output.payload.getBitsWidth) bits))
 
-  test_funcs.assertStreamContract(in)
-  test_funcs.assertStreamContract(out)
+      StreamWidthAdapter(in, streamMid, endianness = LITTLE)
+      val streamMid_stage = streamMid.stage()
+      StreamWidthAdapter(streamMid_stage, output, endianness = LITTLE)
+      io.occupancy := streamMid_stage.valid.asUInt
 
-  StreamWidthAdapter(in, streamMid, endianness = LITTLE)
-  StreamWidthAdapter(streamMid.stage(), out, endianness = LITTLE)
+      val latency = streamMid.getBitsWidth / dataTypeIn.getBitsWidth
+    }
+
+  val latency = logic.latency
+
+  test_funcs.assertStreamContract(io.in)
+  test_funcs.assertStreamContract(io.output)
 }
 
 class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends Component {
@@ -148,19 +162,14 @@ object StreamTools {
     }
   }
 
-  def AdaptWidth[T <: Data](in: Stream[T], out: Stream[T]): Int = {
-    if(in.getBitsWidth == out.getBitsWidth) {
-      in >> out
-      1
-    } else {
-      val adapter = new AdaptWidth(in.payloadType, out.payloadType)
-      adapter.io.in << in
-      adapter.io.out >> out
-      adapter.latency
-    }
+  def AdaptWidth[T <: Data](in: Stream[T], out: Stream[T]) : AdaptWidth[T] = {
+    val adapter = new AdaptWidth(in.payloadType, out.payloadType)
+    adapter.io.in << in
+    adapter.io.output >> out
+    adapter
   }
 
-  def AdaptWidth[T <: Data](in: Flow[T], out: Flow[T]): Int = {
+  def AdaptWidth[T <: Data](in: Flow[T], out: Flow[T]) : AdaptWidth[Bits] = {
     val streamOut = Stream(Bits(out.payload.getBitsWidth bits))
 
     val overflow = Bool()

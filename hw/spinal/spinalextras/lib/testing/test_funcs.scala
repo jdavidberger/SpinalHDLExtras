@@ -5,9 +5,10 @@ import spinal.core.native.globalData
 import spinal.core.sim._
 import spinal.core._
 import spinal.core.formal.{FormalConfig, SpinalFormalConfig, past, stable}
-import spinal.lib.{CounterUpDown, Stream, StreamFifo}
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd}
+import spinal.lib.{Counter, CounterUpDown, Stream, StreamFifo}
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd, PipelinedMemoryBusDecoder}
 import spinal.lib.bus.wishbone.Wishbone
+import spinal.lib.fsm.{StateFsm, StateMachine}
 import spinal.lib.sim.{ScoreboardInOrder, StreamDriver, StreamMonitor}
 import spinalextras.lib.Config
 import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
@@ -18,16 +19,16 @@ import scala.collection.mutable
 import scala.language.postfixOps
 
 object test_funcs {
-  def assertWishboneBusContract(bus : Wishbone, doAssume : Boolean = false) = new Area {
-    def check(b : Bool, a : Any*): Unit = {
-      if(doAssume) {
+  def assertWishboneBusContract(bus: Wishbone, doAssume: Boolean = false) = new Area {
+    def check(b: Bool, a: Any*): Unit = {
+      if (doAssume) {
         assume(b)
       } else {
-        assert(b, Seq(a:_*))
+        assert(b, Seq(a: _*))
       }
     }
 
-    if(bus.config.useSTALL) {
+    if (bus.config.useSTALL) {
 
     } else {
       when(bus.ACK) {
@@ -35,7 +36,7 @@ object test_funcs {
       }
     }
 
-    val wasStalledRequest = past(bus.isRequestStalled) init(False)
+    val wasStalledRequest = past(bus.isRequestStalled) init (False)
     val invalidRequestDrop = wasStalledRequest && !bus.masterHasRequest
     check(!invalidRequestDrop, "Invalid WB request drop")
 
@@ -46,7 +47,7 @@ object test_funcs {
     }
   }
 
-  def assumeWishboneBusContract(bus : Wishbone) = assertWishboneBusContract(bus, doAssume = true)
+  def assumeWishboneBusContract(bus: Wishbone) = assertWishboneBusContract(bus, doAssume = true)
 
   def assertAsyncStreamContract[T <: Data](stream: AsyncStream[T]) = new Area {
     //if (globalData.config.flags.contains(GenerationFlags.simulation)) {
@@ -64,9 +65,10 @@ object test_funcs {
 
     val async_flow_bounded = Bool()
     async_flow_bounded := outstanding_cnt > 0 || ~outstanding_cnt.decrementIt
-    assume(async_flow_bounded)//, s"${pmb} PMB has miscounted responses")
+    assume(async_flow_bounded) //, s"${pmb} PMB has miscounted responses")
     //}
   }
+
   def assumeStreamContract[T <: Data](stream: Stream[T]): Unit = {
     val wasValid = RegNext(stream.valid) init (False)
     val payload = RegNext(stream.payload)
@@ -83,9 +85,9 @@ object test_funcs {
     val useVec = fifo.useVec
     val logic = fifo.logic
 
-    if(fifo.depth == 0) {
+    if (fifo.depth == 0) {
       Vec(Bool())
-    } else if(fifo.depth == 1) {
+    } else if (fifo.depth == 1) {
       Vec(fifo.oneStage.buffer.valid && cond(fifo.oneStage.buffer.payload))
     } else {
       val condition = (0 until depth).map(x => cond(if (useVec) logic.vec(x) else logic.ram(x)))
@@ -126,10 +128,34 @@ object test_funcs {
     }
   }
 
+  def assertPMBDecoder(decoder : PipelinedMemoryBusDecoder) = new Area {
+    val output_contracts = decoder.io.outputs.map(bus => test_funcs.assertPMBContract(bus))
+    val input_contract = test_funcs.assertPMBContract(decoder.io.input)
+    val output_outstanding = output_contracts.map(_.outstanding_cnt.value).fold(U(0))({ case (a: UInt, b: UInt) => {
+      a +^ b
+    }
+    })
+
+    assert(output_outstanding === input_contract.outstanding_cnt.value)
+  }
+
+  def assumePMBArbiter(arbiter : PipelinedMemoryBusArbiter) = new Area {
+    val input_contracts = arbiter.io.inputs.map(bus => test_funcs.assertPMBContract(bus))
+    val output_contract = test_funcs.assertPMBContract(arbiter.io.output)
+    val inputs_outstanding = input_contracts.map(_.outstanding_cnt.value).fold(U(0))({ case (a: UInt, b: UInt) => {
+      a +^ b
+    }
+    })
+
+    arbiter.io.inputs.foreach(test_funcs.assertPMBContract(_, assume_slave = true))
+    arbiter.io.output.cmd.formalAssumesSlave()
+    assume(inputs_outstanding === output_contract.outstanding_cnt.value)
+  }
+
   def formalFifoAsserts[T <: Data](fifo: StreamFifo[T]) = new Area {
-    val push_pop_occupancy : UInt = {
-      if(fifo.logic != null) {
-        if(fifo.withExtraMsb) {
+    val push_pop_occupancy: UInt = {
+      if (fifo.logic != null) {
+        if (fifo.withExtraMsb) {
           Mux(fifo.logic.ptr.push >= fifo.logic.ptr.pop,
             fifo.logic.ptr.push -^ fifo.logic.ptr.pop,
             (fifo.depth << 1) -^ fifo.logic.ptr.pop +^ fifo.logic.ptr.push)
@@ -137,7 +163,7 @@ object test_funcs {
           Mux(fifo.logic.ptr.push === fifo.logic.ptr.pop,
             Mux(fifo.logic.ptr.wentUp, fifo.depth, 0),
             Mux(fifo.logic.ptr.push > fifo.logic.ptr.pop, fifo.logic.ptr.push -^ fifo.logic.ptr.pop,
-              if(!fifo.withExtraMsb) {
+              if (!fifo.withExtraMsb) {
                 fifo.depth -^ fifo.logic.ptr.pop +^ fifo.logic.ptr.push
               } else {
                 fifo.depth -^ fifo.logic.ptr.pop.dropHigh(1).asUInt +^ fifo.logic.ptr.push.dropHigh(1).asUInt
@@ -150,8 +176,8 @@ object test_funcs {
       }
     }
 
-    val extraOccupancy : UInt = {
-      if(fifo.logic != null && fifo.logic.pop.sync != null) {
+    val extraOccupancy: UInt = {
+      if (fifo.logic != null && fifo.logic.pop.sync != null) {
         fifo.logic.pop.sync.readArbitation.valid.asUInt
       } else {
         0
@@ -162,10 +188,10 @@ object test_funcs {
       push_pop_occupancy +^ extraOccupancy
     }
 
-    if(fifo.depth <= 1) {
+    if (fifo.depth <= 1) {
       // Fifo depth of 0 is just a direct connect
       // Fifo depth of 1 is just a staged stream; so it can't be in an invalid state
-    } else if(fifo.depth > 1) {
+    } else if (fifo.depth > 1) {
 
       assert(calculate_occupancy === fifo.io.occupancy)
       assert(fifo.io.availability === fifo.depth -^ fifo.io.occupancy)
@@ -207,7 +233,7 @@ object test_funcs {
     }
   }
 
-  def assertStreamContract[T <: Data](stream: Stream[T], map: (T => T) = ((x:T) => x) )= new Area {
+  def assertStreamContract[T <: Data](stream: Stream[T], map: (T => T) = ((x: T) => x)) = new Area {
     val wasValid = RegNext(stream.valid) init (False)
     val payload = RegNext(stream.payload)
     val wasFired = RegNext(stream.fire) init (False)
@@ -329,10 +355,56 @@ object test_funcs {
     }
     scoreboard.checkEmptyness()
   }
-  def willUnderflow(c : CounterUpDown) = {
+
+  def willUnderflow(c: CounterUpDown) = {
     (c.value === 0) && c.decrementIt && ~c.incrementIt
   }
-  def assertPMBContract(pmb: PipelinedMemoryBus) = {
+
+  def assertCounter(counter: CounterUpDown, allowOverflow : Boolean = false, allowUnderflow : Boolean = false) = new Area {
+    assert(counter.value <= counter.stateCount - 1)
+    if(!allowOverflow) {
+      assert(!counter.willOverflow)
+    }
+    if(!allowUnderflow) {
+      assert(!willUnderflow(counter))
+    }
+  }
+
+  def assertSaneFSM(fsm: StateMachine): Unit = {
+    val validState = Vec(fsm.states.map(fsm.isActive)).asBits.orR
+    assert(validState, "FSM in invalid state")
+
+    for (state <- fsm.states) {
+
+      state match {
+        case sfm: StateFsm[_] => {
+          sfm.fsm match {
+            case inner_fsm : StateMachine => {
+              when(!fsm.isActive(sfm)) {
+                assert(!inner_fsm.isRunning)
+              }
+              sfm.whenIsActive {
+                assert(inner_fsm.isRunning)
+              }
+              assertSaneFSM(inner_fsm)
+            }
+            case _ => {}
+          }
+        }
+        case _ => {}
+      }
+    }
+  }
+
+  def assumePMBSlave(): Unit = {
+    //assume(willUnderflow(outstanding_cnt) === False)
+  }
+
+  val pmbContracts = new mutable.WeakHashMap[PipelinedMemoryBus, CounterUpDown]()
+
+  def assertPMBContract(pmb: PipelinedMemoryBus, max_outstanding : Int = 0xFFFF,
+                        assume_master : Boolean = false,
+                        assume_slave : Boolean = false) = {
     new Area {
       val streamContract = test_funcs.assertStreamContract(pmb.cmd, (x : PipelinedMemoryBusCmd) => {
         val cmd : PipelinedMemoryBusCmd = cloneOf(x)
@@ -343,17 +415,32 @@ object test_funcs {
         cmd
       })
 
-      val outstanding_cnt = CounterUpDown(1L << 16, pmb.cmd.fire && !pmb.cmd.write, pmb.rsp.valid)
-      assume(~outstanding_cnt.willOverflow)
+      val outstanding_cnt = pmbContracts.getOrElseUpdate(pmb, {
+        val outstanding_cnt = new CounterUpDown(max_outstanding, handleOverflow = false)
+        assume(!outstanding_cnt.willOverflow)
 
-      val pmb_rsp_bounded = Bool()
-      pmb_rsp_bounded := outstanding_cnt > 0 || ~outstanding_cnt.decrementIt
-      assume(pmb_rsp_bounded)//, s"${pmb} PMB has miscounted responses")
+        when(pmb.cmd.fire && !pmb.cmd.write) {
+          outstanding_cnt.increment()
+        }
+        when(pmb.rsp.valid) {
+          outstanding_cnt.decrement()
+        }
+        assertCounter(outstanding_cnt)
 
-//      SignalLogger.log_assert(pmb_rsp_bounded,
-//        s"${pmb} PMB has miscounted responses")
+        outstanding_cnt
+      })
 
-    }.setName(s"${pmb.name}_assertPMBContract")
+      if(assume_master) {
+        pmb.cmd.formalAssumesSlave()
+        assume(outstanding_cnt.willOverflow === False)
+      }
+
+      if(assume_slave) {
+        when(outstanding_cnt.value === 0) {
+          assume(pmb.rsp.valid === False)
+        }
+      }
+    }
   }
 
   var fastClockDomain: Option[ClockDomain] = None
@@ -386,6 +473,37 @@ object test_funcs {
       }
     }
   }
+
+  def formalAssumeLibraryComponents(): Unit = {
+    def apply_formal_asserts(c: Component, walkSet : mutable.HashSet[Component] = new mutable.HashSet[Component]()): Unit = {
+      if (!walkSet.contains(c)) {
+        walkSet += c
+
+        c match {
+          case c: StreamFifo[_] => {
+            test_funcs.formalFifoAsserts(c)
+            println(s"Adding fifo constraints for ${c.getDisplayName()}")
+          }
+          case d: PipelinedMemoryBusDecoder => {
+            test_funcs.assertPMBDecoder(d).setName(s"${d.getDisplayName().replace("[", "").replace("]", "")}_contract")
+            println(s"Adding decoder constraints for ${d.getDisplayName()}")
+          }
+          case d: PipelinedMemoryBusArbiter => {
+            test_funcs.assumePMBArbiter(d).setName(s"${d.getDisplayName().replace("[", "").replace("]", "")}_contract")
+            println(s"Adding arbiter constraints for ${d.getDisplayName()}")
+          }
+          case _ => {
+
+          }
+        }
+
+        c.walkComponents(c => apply_formal_asserts(c, walkSet))
+      }
+    }
+
+    Component.current.addPrePopTask(() => apply_formal_asserts(Component.current))
+  }
+
 }
 
 

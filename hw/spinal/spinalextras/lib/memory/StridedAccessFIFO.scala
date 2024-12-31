@@ -1,20 +1,13 @@
 package spinalextras.lib.memory
 
-import org.scalatest.funsuite.AnyFunSuite
-import spinal.core.sim.{SimBaseTypePimper, SimBitVectorPimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout, simRandom}
-import spinal.core.{Bits, Bundle, Component, Data, False, HardType, IntToBuilder, RegInit, RegNext, RegNextWhen, True, Vec, cloneOf, when}
+import spinal.core._
 import spinal.lib.bus.regif.BusIf
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.fsm._
-import spinal.lib.sim.StreamMonitor
-import spinal.lib.{Fragment, master, slave}
-import spinalextras.lib.Config
-import spinalextras.lib.bus.simple.SimpleMemoryProvider
+import spinal.lib._
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, PipelinedMemoryBusLogger, SignalLogger}
 import spinalextras.lib.misc.RegisterTools
-import spinalextras.lib.misc._
-
-import scala.collection.mutable
+import spinalextras.lib.testing.test_funcs
 
 
 case class StridedAccessFIFOAsync[T <: Data](
@@ -39,6 +32,7 @@ case class StridedAccessFIFOAsync[T <: Data](
     val bus = master(PipelinedMemoryBus(busConfig))
   }
 
+  val asyncFifoBusContract = test_funcs.assertPMBContract(io.bus)
   val writer = StreamToBuffer(pushDataType, depth, baseAddress, busConfig)
 
   reader.io.pop <> io.pop
@@ -54,6 +48,8 @@ case class StridedAccessFIFOAsync[T <: Data](
 
   cmd.setIdle()
   writer.io.bus.cmd.setBlocked()
+  withAutoPull()
+  assert(asyncFifoBusContract.outstanding_cnt.value === reader.busContract.outstanding_cnt.value)
 
   val fsm = new StateMachine {
     val read, wait_push_fall = new State

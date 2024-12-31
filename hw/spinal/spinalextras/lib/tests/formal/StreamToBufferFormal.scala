@@ -6,7 +6,7 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinalextras.lib.memory.{StreamToBuffer, StridedAccessFIFOReaderAsync}
-import spinalextras.lib.testing.FormalTestSuite
+import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
 import scala.language.postfixOps
 
@@ -25,6 +25,7 @@ case class StreamToBufferFormal[T <: Data](
   anyseq(dut.io.push.valid)
   anyseq(dut.io.push.payload)
 
+  test_funcs.assertPMBContract(dut.io.bus, assume_slave = true)
   anyseq(dut.io.bus.cmd.ready)
   anyseq(dut.io.bus.rsp)
 }

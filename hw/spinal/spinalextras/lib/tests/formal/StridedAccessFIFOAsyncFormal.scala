@@ -6,7 +6,7 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinalextras.lib.memory.{StridedAccessFIFOAsync, StridedAccessFIFOReaderAsync}
-import spinalextras.lib.testing.FormalTestSuite
+import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
 import scala.language.postfixOps
 
@@ -22,6 +22,7 @@ case class StridedAccessFIFOAsyncFormal[T <: Data](
                                             ) extends Component {
   val dut = FormalDut(StridedAccessFIFOAsync(pushDataType, popDataType, depth, baseAddress, outCnt, bufferSize, busConfig, rsp_latency, cmd_latency))
   assumeInitial(ClockDomain.current.isResetActive)
+  val bus_contract = test_funcs.assertPMBContract(dut.io.bus, assume_slave = true)
 
   dut.io.bus.cmd.formalAssumesSlave()
   dut.io.push.formalAssumesSlave()

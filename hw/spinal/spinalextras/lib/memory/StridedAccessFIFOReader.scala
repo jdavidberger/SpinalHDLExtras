@@ -53,7 +53,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   }
 
   val outWordsPerFrame = div_assert_even(depth, outDatatype.size * outCnt)
-  test_funcs.assertPMBContract(io.bus)
+  val busContract = test_funcs.assertPMBContract(io.bus)
   val asyncStreamContract = test_funcs.assertAsyncStreamContract(io.pop)
 
   val bufferSize = rsp_latency + 1
@@ -116,7 +116,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   }
 
   val chunk_cmd = new Area {
-    val read_address_words = Reg(UInt(read_port.config.addressWidth bits)) init(0)
+    val read_address_words = Reg(UInt(read_port.config.addressWidth bits)) init(baseAddress)
 
     read_port.cmd.address := read_address_words
     val cnt = Counter(bufferSizeInBusWords)

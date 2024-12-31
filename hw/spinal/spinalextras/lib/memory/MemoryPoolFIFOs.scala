@@ -2,7 +2,7 @@ package spinalextras.lib.memory
 
 import spinal.core._
 import spinal.lib.bus.misc.{DefaultMapping, MaskMapping, SizeMapping}
-import spinal.lib.bus.simple.{PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.HardwareMemory.{HardwareMemoryReadWriteCmd, HardwareMemoryWriteCmd}
@@ -65,9 +65,21 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
 
   val groupedMasters = sysBus.masters.map(_._1).grouped(2).toSeq
 
+  withAutoPull()
+  def create_arbiters(inputs : Seq[PipelinedMemoryBus], pendingRspMax : Int, rspRouteQueue : Boolean, transactionLock : Boolean): PipelinedMemoryBus = {
+    val c = PipelinedMemoryBusArbiter(inputs.head.config, inputs.size, pendingRspMax, rspRouteQueue, transactionLock)
+    (inputs, c.io.inputs).zipped.foreach {case (in, in_port) => {
+      assert(test_funcs.assertPMBContract(in).outstanding_cnt.value === test_funcs.assertPMBContract(in_port).outstanding_cnt.value)
+      (in <> in_port)
+    }}
+    c.io.output
+  }
+
   val arbitratedBusses =
-    Seq(PipelinedMemoryBusArbiter(groupedMasters.map(_(0)), 8, rspRouteQueue = true, transactionLock = false),
-      PipelinedMemoryBusArbiter(groupedMasters.map(_(1)), 8, rspRouteQueue = true, transactionLock = false))
+    Seq(create_arbiters(groupedMasters.map(_(0)), 8, rspRouteQueue = true, transactionLock = false),
+      create_arbiters(groupedMasters.map(_(1)), 1, rspRouteQueue = false, transactionLock = false))
+
+
 
   mem.io.readWritePorts.zipWithIndex.foreach({case (rw, idx) => {
     val memBus = arbitratedBusses(idx)
@@ -81,7 +93,8 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
       rtn
     }).toFlow <> rw.cmd
 
-    assert(test_funcs.assertPMBContract(memBus).outstanding_cnt.value === mem.io.readWritePortsOutstanding(idx))
+    val memBusContract = test_funcs.assertPMBContract(memBus)
+    assert(memBusContract.outstanding_cnt.value === mem.io.readWritePortsOutstanding(idx))
 
     rw.rsp >> memBus.rsp
   }})

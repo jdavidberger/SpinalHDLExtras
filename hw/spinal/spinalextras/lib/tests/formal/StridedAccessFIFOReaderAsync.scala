@@ -6,7 +6,7 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinalextras.lib.memory.StridedAccessFIFOReaderAsync
-import spinalextras.lib.testing.FormalTestSuite
+import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
 import scala.language.postfixOps
 
@@ -21,10 +21,12 @@ case class StridedAccessFIFOReaderAsyncFormal[T <: Data](
                                                   ) extends Component {
   val dut = FormalDut(StridedAccessFIFOReaderAsync(dataType = dataType, depth = depth, baseAddress = baseAddress, outCnt = outCnt, busConfig = busConfig, rsp_latency = rsp_latency))
   assumeInitial(ClockDomain.current.isResetActive)
+  val bus_contract = test_funcs.assertPMBContract(dut.io.bus, assume_slave = true)
 
   anyseq(dut.io.pop.async_ready)
   anyseq(dut.io.bus.cmd.ready)
   anyseq(dut.io.bus.rsp)
+
 }
 
 class StridedAccessFIFOReaderAsyncFormalTest extends AnyFunSuite with FormalTestSuite {

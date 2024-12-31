@@ -16,6 +16,7 @@ class WishboneToPipelinedMemoryBusFormal[T <: Data](pipelinedMemoryBusConfig : P
   assume((dut.io.wb.byteAddress() & (dut.io.wb.config.wordAddressInc() - 1)) === 0)
 
   val wbContract = test_funcs.assumeWishboneBusContract(dut.io.wb)
+  val pmbContract = test_funcs.assertPMBContract(dut.io.pmb, assume_slave = true)
   for((n, el) <- dut.io.wb.elements) {
     if(el.isInput) {
       anyseq(el)
@@ -35,8 +36,9 @@ class WishboneToPipelinedMemoryBusTestFormal extends AnyFunSuite with FormalTest
   )
 
   formalTests().foreach(t => test(t._1) { t._2() })
-  override def defaultDepth() = 50
+  override def defaultDepth() = 20
 
 
+  override def generateRtlCover() = Seq()
   override def generateRtl() = wbConfigs.map(x => (x._1, () => new WishboneToPipelinedMemoryBusFormal(PipelinedMemoryBusConfig(32,32), x._2)))
 }

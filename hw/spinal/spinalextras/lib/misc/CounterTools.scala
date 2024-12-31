@@ -156,6 +156,8 @@ object CounterTools {
   }
 
   def isLessThan(counter: Counter, v: Int): Bool = {
+    assert(counter.value <= counter.end)
+
     //report(Seq(v.toString, " ", counter.value, " ", (v > counter.value)))
     isTargetState(
       moveTowardState = False,

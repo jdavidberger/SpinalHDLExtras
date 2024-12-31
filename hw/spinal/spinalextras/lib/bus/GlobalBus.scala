@@ -8,6 +8,7 @@ import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
 import spinalextras.lib.bus.simple.PipelinedMemoryBusInterface
 import spinalextras.lib.logging.{GlobalLogger, PipelinedMemoryBusLogger, SignalLogger, WishboneBusLogger}
+import spinalextras.lib.testing.test_funcs
 
 import scala.collection.mutable
 
@@ -299,6 +300,7 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
   def addr_width() = config.addressWidth
   override def build(): Unit = {
     println("System Bus Masters")
+    built = true
     super.build()
 
     val ctx = Component.push(Component.toplevel)
@@ -319,6 +321,22 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
 
     interconn.addMasters(interconnect_spec():_*)
 
+    def directWithFormal(m : PipelinedMemoryBus, s : PipelinedMemoryBus) : Unit = {
+      val mContract = test_funcs.assertPMBContract(m)
+      val sContract = test_funcs.assertPMBContract(s)
+      assert(mContract.outstanding_cnt === sContract.outstanding_cnt)
+      m >> s
+    }
+
+    for(m <- interconn.masters) {
+      m._2.connector = directWithFormal
+    }
+    for(s <- interconn.slaves) {
+      s._2.connector = directWithFormal
+    }
+    for(c <- interconn.connections) {
+      c.connector = directWithFormal
+    }
     ctx.restore()
   }
 

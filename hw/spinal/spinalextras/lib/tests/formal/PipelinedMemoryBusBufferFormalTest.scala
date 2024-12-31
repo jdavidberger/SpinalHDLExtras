@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.formal._
 import spinal.lib.bus.simple._
 import spinalextras.lib.memory.PipelinedMemoryBusBuffer
-import spinalextras.lib.testing.FormalTestSuite
+import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
 
 case class PipelinedMemoryBusBufferFormal[T <: Data](dataType : HardType[T], depth : Int, baseAddress : Int = 0,
@@ -15,7 +15,8 @@ case class PipelinedMemoryBusBufferFormal[T <: Data](dataType : HardType[T], dep
   val dut = FormalDut(new PipelinedMemoryBusBuffer(dataType, depth, baseAddress, config, rsp_latency, cmd_latency, read_trigger))
   assumeInitial(ClockDomain.current.isResetActive)
 
-  dut.io.bus.cmd.formalAssumesSlave()
+  dut.io.memoryAvailable.formalAssumesSlave()
+  val bus_contract = test_funcs.assertPMBContract(dut.io.bus, assume_slave = true)
 
   if(check_flush) {
     anyseq(dut.io.flush)
@@ -24,7 +25,8 @@ case class PipelinedMemoryBusBufferFormal[T <: Data](dataType : HardType[T], dep
   }
   anyseq(dut.io.bus.rsp)
   anyseq(dut.io.bus.cmd.ready)
-  anyseq(dut.io.memoryValid)
+  anyseq(dut.io.memoryAvailable.payload)
+  anyseq(dut.io.memoryAvailable.valid)
   anyseq(dut.io.pop.ready)
   assume(~dut.overflow)
 }

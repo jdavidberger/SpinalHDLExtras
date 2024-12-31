@@ -117,7 +117,7 @@ abstract class HardwareMemory[T <: Data]() extends Component {
 
     val readWritePortsOutstanding = readWritePorts.map(p => {
       val counter = new CounterUpDown(latency+1, handleOverflow = false)
-      assert(!test_funcs.willUnderflow(counter) && !counter.willOverflow)
+      test_funcs.assertCounter(counter)
       when(p.cmd.fire && !p.cmd.write) {
         counter.increment()
       }
@@ -130,7 +130,7 @@ abstract class HardwareMemory[T <: Data]() extends Component {
     })
     val readPortsOutstanding = readPorts.map(p => {
       val counter = new CounterUpDown(latency+1, handleOverflow = false)
-      assert(!test_funcs.willUnderflow(counter) && !counter.willOverflow)
+      test_funcs.assertCounter(counter)
       when(p.cmd.fire) {
         counter.increment()
       }

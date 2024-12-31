@@ -19,7 +19,7 @@ case class PipelinedMemoryBusToWishboneFormal(wbConfig: WishboneConfig, pipeline
   dut.io.pmb.cmd.formalAssumesSlave()
   anyseq(dut.io.pmb.cmd.valid)
   anyseq(dut.io.pmb.cmd.payload)
-
+  
   assume((dut.io.wb.byteAddress() & (dut.io.wb.config.wordAddressInc() - 1)) === 0)
 
   val wbContract = test_funcs.assumeWishboneBusContract(dut.io.wb)
