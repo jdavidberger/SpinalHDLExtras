@@ -2,7 +2,7 @@ package spinalextras.lib.bus.simple
 
 import spinal.core.UInt
 import spinal.lib.bus.misc.{BusSlaveFactoryDelayed, BusSlaveFactoryElement}
-import spinal.lib.bus.simple.PipelinedMemoryBus
+
 //
 //class PipelineMemoryBusSlaveFactory(bus: PipelinedMemoryBus, reg_fedback: Boolean = true) extends BusSlaveFactoryDelayed{
 //  bus.rsp.setIdle()

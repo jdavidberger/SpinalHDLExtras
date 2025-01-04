@@ -2,7 +2,7 @@ package spinalextras.lib.tests
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.{DoubleToBuilder, HertzNumber, IntToBuilder}
-import spinalextras.lib.blackbox.lattice.lifcl.{PLLClockConfig, PLLConfig, PLLOutputClockConfig}
+import spinalextras.lib.blackbox.lattice.lifcl._
 import spinalextras.lib.misc
 import spinalextras.lib.misc.ClockSpecification
 

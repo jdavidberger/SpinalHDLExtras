@@ -465,7 +465,7 @@ case class PLLConfig(
       v match {
         case (b : java.lang.Boolean) => rtn(f.getName) = if (b) "ENABLED" else "DISABLED"
         case (i: java.lang.Integer) => rtn(f.getName) = s"${i}"
-        case _ : Seq[PLLOutputClockConfig] =>
+        case _ : Seq[_] =>
         case _ => rtn(f.getName) = v.toString
       }
     }

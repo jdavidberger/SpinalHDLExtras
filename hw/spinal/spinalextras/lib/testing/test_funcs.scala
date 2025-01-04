@@ -4,13 +4,14 @@ package spinalextras.lib.testing
 import spinal.core.native.globalData
 import spinal.core.sim._
 import spinal.core._
-import spinal.core.formal.{FormalConfig, SpinalFormalConfig, past, stable}
+import spinal.core.formal.{FormalConfig, SpinalFormalConfig, WithFormalAsserts, past, stable}
 import spinal.lib.{Counter, CounterUpDown, Stream, StreamFifo}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd, PipelinedMemoryBusDecoder}
 import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.fsm.{StateFsm, StateMachine}
 import spinal.lib.sim.{ScoreboardInOrder, StreamDriver, StreamMonitor}
 import spinalextras.lib.Config
+import spinalextras.lib.bus.WishboneExt
 import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
 import spinalextras.lib.misc.{AsyncStream, ComponentWithKnownLatency}
 
@@ -44,6 +45,10 @@ object test_funcs {
       Seq(bus.DAT_MOSI, bus.ADR, bus.WE, bus.SEL)
         .filter(_ != null)
         .foreach(x => check(stable(x), "WB property changed without an ACK"))
+    }
+
+    when(bus.ACK) {
+      check(bus.CYC && bus.STB)
     }
   }
 
@@ -140,16 +145,22 @@ object test_funcs {
   }
 
   def assumePMBArbiter(arbiter : PipelinedMemoryBusArbiter) = new Area {
-    val input_contracts = arbiter.io.inputs.map(bus => test_funcs.assertPMBContract(bus))
+    val input_contracts = arbiter.io.inputs.map(bus => test_funcs.assertPMBContract(bus, assume_slave = true))
     val output_contract = test_funcs.assertPMBContract(arbiter.io.output)
     val inputs_outstanding = input_contracts.map(_.outstanding_cnt.value).fold(U(0))({ case (a: UInt, b: UInt) => {
       a +^ b
     }
     })
 
-    arbiter.io.inputs.foreach(test_funcs.assertPMBContract(_, assume_slave = true))
+    //arbiter.io.inputs.foreach(test_funcs.assertPMBContract(_, assume_slave = true))
     arbiter.io.output.cmd.formalAssumesSlave()
     assume(inputs_outstanding === output_contract.outstanding_cnt.value)
+  }
+  def assertPMBEquivalence(busses: PipelinedMemoryBus*) = new Area {
+    val contracts = busses.map(test_funcs.assertPMBContract(_))
+    contracts.drop(1).foreach(c => {
+      assert(c.outstanding_cnt.value === contracts.head.outstanding_cnt.value)
+    })
   }
 
   def formalFifoAsserts[T <: Data](fifo: StreamFifo[T]) = new Area {
@@ -402,7 +413,22 @@ object test_funcs {
 
   val pmbContracts = new mutable.WeakHashMap[PipelinedMemoryBus, CounterUpDown]()
 
-  def assertPMBContract(pmb: PipelinedMemoryBus, max_outstanding : Int = 0xFFFF,
+  def assertPMBContract(pmb: PipelinedMemoryBus, max_outstanding : Long = 0xFFFFFFFFL,
+                        assume_master : Boolean = false,
+                        assume_slave : Boolean = false) = new Area {
+    val contract = pmb.formalContract
+    val outstanding_cnt = contract.outstandingReads
+
+    if(assume_master) {
+      pmb.formalAssumesSlave()
+    }
+
+    if(assume_slave) {
+      pmb.formalAssumesMaster()
+    }
+  }
+
+  def assertPMBContract1(pmb: PipelinedMemoryBus, max_outstanding : Int = 0xFFFF,
                         assume_master : Boolean = false,
                         assume_slave : Boolean = false) = {
     new Area {
@@ -436,7 +462,7 @@ object test_funcs {
       }
 
       if(assume_slave) {
-        when(outstanding_cnt.value === 0) {
+        when(outstanding_cnt.value === 0 && !outstanding_cnt.incrementIt) {
           assume(pmb.rsp.valid === False)
         }
       }
@@ -474,34 +500,26 @@ object test_funcs {
     }
   }
 
-  def formalAssumeLibraryComponents(): Unit = {
-    def apply_formal_asserts(c: Component, walkSet : mutable.HashSet[Component] = new mutable.HashSet[Component]()): Unit = {
+  def formalAssumeLibraryComponents(c : Component = Component.current): Unit = {
+    def apply(c : Component, walkSet : mutable.HashSet[Component]) : Unit = {
       if (!walkSet.contains(c)) {
+
         walkSet += c
-
         c match {
-          case c: StreamFifo[_] => {
-            test_funcs.formalFifoAsserts(c)
-            println(s"Adding fifo constraints for ${c.getDisplayName()}")
+          case c: WithFormalAsserts => {
+            println(s"Activating asserts for ${c}")
+            c.formalAsserts()
           }
-          case d: PipelinedMemoryBusDecoder => {
-            test_funcs.assertPMBDecoder(d).setName(s"${d.getDisplayName().replace("[", "").replace("]", "")}_contract")
-            println(s"Adding decoder constraints for ${d.getDisplayName()}")
-          }
-          case d: PipelinedMemoryBusArbiter => {
-            test_funcs.assumePMBArbiter(d).setName(s"${d.getDisplayName().replace("[", "").replace("]", "")}_contract")
-            println(s"Adding arbiter constraints for ${d.getDisplayName()}")
-          }
-          case _ => {
-
-          }
+          case _ => c.walkComponents(apply(_, walkSet))
         }
-
-        c.walkComponents(c => apply_formal_asserts(c, walkSet))
       }
     }
 
-    Component.current.addPrePopTask(() => apply_formal_asserts(Component.current))
+    c.addPrePopTask(() => {
+      val walkSet = new mutable.HashSet[Component]()
+      walkSet += c
+      c.walkComponents(apply(_, walkSet))
+    })
   }
 
 }

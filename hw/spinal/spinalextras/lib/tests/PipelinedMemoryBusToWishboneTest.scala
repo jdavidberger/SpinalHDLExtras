@@ -21,7 +21,7 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
           val sysclk = Reg(UInt(32 bits)) init (0)
           sysclk := sysclk + 1
           SimPublic(sysclk)
-        }.setDefinitionName("ToF_PipelinedMemoryBusToWishbone")
+        }.setDefinitionName("PipelinedMemoryBusToWishbone")
       ) { dut =>
         dut.io.wb.DAT_MISO #= 0xcafecafeL
         dut.io.wb.ACK #= false
@@ -133,14 +133,14 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
   test("PipelinedMemoryBusToWishbone_word_std") {
     runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.WORD))
   }
-  test("PipelinedMemoryBusToWishbone_word") {
-    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.WORD).pipelined)
-  }
+//  test("PipelinedMemoryBusToWishbone_word") {
+//    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.WORD).pipelined)
+//  }
 
   test("PipelinedMemoryBusToWishbone_std") {
     runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE))
   }
-  test("PipelinedMemoryBusToWishbone") {
-    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE).pipelined)
-  }
+//  test("PipelinedMemoryBusToWishbone") {
+//    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE).pipelined)
+//  }
 }

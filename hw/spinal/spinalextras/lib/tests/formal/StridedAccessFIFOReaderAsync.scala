@@ -27,6 +27,7 @@ case class StridedAccessFIFOReaderAsyncFormal[T <: Data](
   anyseq(dut.io.bus.cmd.ready)
   anyseq(dut.io.bus.rsp)
 
+  test_funcs.formalAssumeLibraryComponents()
 }
 
 class StridedAccessFIFOReaderAsyncFormalTest extends AnyFunSuite with FormalTestSuite {

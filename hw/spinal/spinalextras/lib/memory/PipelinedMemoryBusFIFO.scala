@@ -1,7 +1,7 @@
 package spinalextras.lib.memory
 
 import spinal.core._
-import spinal.core.formal.past
+import spinal.core.formal.{WithFormalAsserts, past}
 import spinal.lib._
 import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
 import spinal.lib.bus.regif.AccessType.{RO, RW}
@@ -11,11 +11,12 @@ import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.misc.{CounterUpDownUneven, RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
 
+import scala.collection.mutable
 import scala.language.postfixOps
 
 case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : Int, baseAddress : Int = 0,
                                                var config : PipelinedMemoryBusConfig = null,
-                                               rsp_latency : Int = 0, cmd_latency : Int = 0, read_trigger : Int = -1) extends Component {
+                                               rsp_latency : Int = 0, cmd_latency : Int = 0, read_trigger : Int = -1) extends Component with WithFormalAsserts {
   if(config == null) {
     config = PipelinedMemoryBusConfig(addressWidth = log2Up(depth), dataWidth = dataType.getBitsWidth)
   }
@@ -54,7 +55,7 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
 
   var fifo = StreamFifo(midDatatype, bufferSizeInMidWords, latency = 0)
   withAutoPull()
-  val fifoContract = test_funcs.formalFifoAsserts(fifo)
+  //val fifoContract = test_funcs.formalFifoAsserts(fifo)
 
   val adaptPop = StreamTools.AdaptWidth(fifo.io.pop.haltWhen(io.flush), Bits(dataType.getBitsWidth bits)).map(_.as(dataType))
 
@@ -102,7 +103,7 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
   val adapt_out_width = StreamTools.AdaptWidth(io.bus.rsp.map(_.data.asBits), read_port_unpack)
   read_port_unpack.toStream(overflow) <> fifo.io.push
 
-  io.occupancy := busContract.outstanding_cnt.value + adapt_out_width.io.occupancy + fifo.io.occupancy
+  io.occupancy := (busContract.outstanding_cnt.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
   assert(~overflow, "PMBBuffer overflowed")
 
   assert((burnRtn +^ usage.value).msb === False )
@@ -112,11 +113,16 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
     haltCmdQueue := True
     burnRtn := burnRtn + usage.value
   }
+
+  override def formalAsserts(implicit useAssumes: Boolean) = {
+    test_funcs.formalAssumeLibraryComponents(this)
+    new Area {}
+  }
 }
 
 case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
                                              sm : SizeMapping,
-                                             sysBus : Option[PipelineMemoryGlobalBus] = None, localPushDepth : Int = 0, localPopDepth : Int = 0) extends Component {
+                                             sysBus : Option[PipelineMemoryGlobalBus] = None, localPushDepth : Int = 0, localPopDepth : Int = 0) extends Component with WithFormalAsserts {
   val depthInWords = sm.size.toInt
   val baseAddress = sm.base.toInt
 
@@ -243,5 +249,29 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
       highwater := io.occupancy
     }
 
+  }
+
+  override def formalAsserts(implicit useAssumes: Boolean) : Area = {
+    def apply(c : Component, walkSet : mutable.HashSet[Component]) : Unit = {
+      if (!walkSet.contains(c)) {
+
+        walkSet += c
+        c match {
+          case c: WithFormalAsserts => {
+            println(s"Activating asserts for ${c}")
+            c.formalAsserts(useAssumes)
+          }
+          case _ => c.walkComponents(apply(_, walkSet))
+        }
+      }
+    }
+
+    addPrePopTask(() => {
+      val walkSet = new mutable.HashSet[Component]()
+      walkSet += this
+      walkComponents(apply(_, walkSet))
+    })
+
+    new Area {}
   }
 }

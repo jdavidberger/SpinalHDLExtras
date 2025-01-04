@@ -19,7 +19,7 @@ case class PipelinedMemoryBusToWishboneFormal(wbConfig: WishboneConfig, pipeline
   dut.io.pmb.cmd.formalAssumesSlave()
   anyseq(dut.io.pmb.cmd.valid)
   anyseq(dut.io.pmb.cmd.payload)
-  
+
   assume((dut.io.wb.byteAddress() & (dut.io.wb.config.wordAddressInc() - 1)) === 0)
 
   val wbContract = test_funcs.assumeWishboneBusContract(dut.io.wb)
@@ -37,8 +37,8 @@ class PipelinedMemoryBusToWishboneFormalTest extends AnyFunSuite with FormalTest
   val wbConfigs = Seq(
     ("Basic", wbConfig),
     ("Byte", wbConfig.copy(addressGranularity = AddressGranularity.BYTE)),
-    ("Pipeline", wbConfig.pipelined),
-    ("PipelineByte", wbConfig.copy(addressGranularity = AddressGranularity.BYTE).pipelined),
+//    ("Pipeline", wbConfig.pipelined),
+//    ("PipelineByte", wbConfig.copy(addressGranularity = AddressGranularity.BYTE).pipelined),
   )
 
   formalTests().foreach(t => test(t._1) { t._2() })

@@ -9,6 +9,7 @@ import spinal.lib.bus.misc.{AddressMapping, AllMapping}
 import spinal.lib.bus.wishbone._
 import spinal.lib.sim.StreamMonitor
 import spinalextras.lib.Config
+import spinalextras.lib.bus.WishboneExt
 import spinalextras.lib.misc.RateLimitFlow
 
 import scala.language.postfixOps

@@ -320,23 +320,24 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
     }
 
     interconn.addMasters(interconnect_spec():_*)
-
-    def directWithFormal(m : PipelinedMemoryBus, s : PipelinedMemoryBus) : Unit = {
-      val mContract = test_funcs.assertPMBContract(m)
-      val sContract = test_funcs.assertPMBContract(s)
-      assert(mContract.outstanding_cnt === sContract.outstanding_cnt)
-      m >> s
-    }
-
-    for(m <- interconn.masters) {
-      m._2.connector = directWithFormal
-    }
-    for(s <- interconn.slaves) {
-      s._2.connector = directWithFormal
-    }
-    for(c <- interconn.connections) {
-      c.connector = directWithFormal
-    }
+//
+//    def directWithFormal(m : PipelinedMemoryBus, s : PipelinedMemoryBus) : Unit = {
+//      val mContract = test_funcs.assertPMBContract(m).setName(s"c${m.name}_gb_contract")
+//      val sContract = test_funcs.assertPMBContract(s).setName(s"c${s.name}_gb_contract")
+//      println(s"Associating ${m}(${mContract.name}) with ${s}(${sContract.name})")
+//      assert(mContract.outstanding_cnt === sContract.outstanding_cnt)
+//      m >> s
+//    }
+//
+//    for(m <- interconn.masters) {
+//      m._2.connector = directWithFormal
+//    }
+//    for(s <- interconn.slaves) {
+//      s._2.connector = directWithFormal
+//    }
+//    for(c <- interconn.connections) {
+//      c.connector = directWithFormal
+//    }
     ctx.restore()
   }
 

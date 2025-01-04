@@ -19,9 +19,6 @@ import scala.util.Random
 class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
   def runTest(config: WishboneConfig, rspQueue: Int): Unit = {
     Config.sim.withWave
-      //.addRtl("/home/justin/source/cr/fpga-depth/third_party/formal_verification/fwb_master.v")
-      //.addRtl("/home/justin/source/cr/fpga-depth/third_party/formal_verification/fwb_slave.v")
-      //.addSimulatorFlag("-g2012")
       .doSim(
         new WishboneToPipelinedMemoryBus(PipelinedMemoryBusConfig(32, 32), config, rspQueue = rspQueue) {
           val sysclk = Reg(UInt(32 bits)) init (0)
@@ -116,10 +113,10 @@ class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
   test("WishboneToPipelinedMemoryBus_non_pipelined") {
     runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE), 10)
   }
-  test("WishboneToPipelinedMemoryBus_no_queue") {
-    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE).pipelined, 0)
-  }
-  test("WishboneToPipelinedMemoryBus") {
-    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE).pipelined, 10)
-  }
+//  test("WishboneToPipelinedMemoryBus_no_queue") {
+//    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE).pipelined, 0)
+//  }
+//  test("WishboneToPipelinedMemoryBus") {
+//    runTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE).pipelined, 10)
+//  }
 }

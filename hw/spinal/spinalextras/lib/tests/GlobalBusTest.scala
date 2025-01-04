@@ -2,12 +2,11 @@ package spinalextras.lib.tests
 
 import spinal.core._
 import spinal.lib.Counter
-import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
+import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.regif.AccessType.RW
-import spinal.lib.bus.simple._
-import spinal.lib.bus.wishbone.{Wishbone, WishboneConfig}
+import spinal.lib.bus.wishbone.WishboneConfig
 import spinalextras.lib.Config
-import spinalextras.lib.bus.{GlobalBusFactory, WishboneGlobalBus}
+import spinalextras.lib.bus._
 import spinalextras.lib.misc._
 
 import scala.language.postfixOps

@@ -197,9 +197,9 @@ class FlowLoggerDataCapture(logger : FlowLogger, dataType : HardType[Bits], datu
 //  if (minimum_time_bits > time_bits) {
 //    minimum_time_bits = time_bits
 //  }
-  when(output_stream.fire) {
-    report(Seq("Log fire", datum._1.name, output_stream.payload))
-  }
+//  when(output_stream.fire) {
+//    report(Seq("Log fire", datum._1.name, output_stream.payload))
+//  }
 
   io.needs_syscnt := False
   when(output_stream.fire && (io.time_since_syscnt >> time_bits) =/= 0) {
@@ -208,9 +208,9 @@ class FlowLoggerDataCapture(logger : FlowLogger, dataType : HardType[Bits], datu
 
   val stamped_stream = output_stream.map(p => io.syscnt.resize(time_bits bits) ## p ## B(idx, index_size bits))
 
-  when(stamped_stream.fire) {
-    report(Seq(io.flow.name, io.flow.payload))
-  }
+//  when(stamped_stream.fire) {
+//    report(Seq(io.flow.name, io.flow.payload))
+//  }
 
   stamped_stream.stage().s2mPipe() <> io.stamped_stream
 }
@@ -511,7 +511,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
         case b : Bool => "bool"
         case b : Bits => s"uint${pow2}_t"
         case e : SpinalEnum => s"uint${pow2}_t"
-        case e : SpinalEnumCraft[SpinalEnum] => s"uint${pow2}_t"
+        case e : SpinalEnumCraft[_] => s"uint${pow2}_t"
         case _ => assert(false); ""
       }
     }

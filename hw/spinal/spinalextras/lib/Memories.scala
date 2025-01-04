@@ -395,8 +395,8 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
 
     val invalid_address = port.cmd.address.resize(log2Up(num_elements + 1) bits) < num_elements
     when(~invalid_address) {
-      report(Seq(s"Invalid access in range 0x${num_elements.toString(16)} ", port.cmd.address.resize(log2Up(num_elements + 1) bits)))
       assert(~invalid_address, "address overrun")
+      report(Seq(s"Invalid access in range 0x${num_elements.toString(16)} ", port.cmd.address.resize(log2Up(num_elements + 1) bits)))
     }
     mem_port.enable := port.cmd.valid
     mem_port.write := port.cmd.write
