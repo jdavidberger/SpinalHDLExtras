@@ -4,7 +4,7 @@ package spinalextras.lib.testing
 import spinal.core.native.globalData
 import spinal.core.sim._
 import spinal.core._
-import spinal.core.formal.{FormalConfig, SpinalFormalConfig, WithFormalAsserts, past, stable}
+import spinal.core.formal.{FormalConfig, HasFormalAsserts, SpinalFormalConfig, anyseq, past, stable}
 import spinal.lib.{Counter, CounterUpDown, Stream, StreamFifo}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd, PipelinedMemoryBusDecoder}
 import spinal.lib.bus.wishbone.Wishbone
@@ -48,7 +48,7 @@ object test_funcs {
     }
 
     when(bus.ACK) {
-      check(bus.CYC && bus.STB)
+      check(RegNext(bus.CYC && bus.STB) init(False))
     }
   }
 
@@ -500,15 +500,26 @@ object test_funcs {
     }
   }
 
+  def anyseq_inputs(b : MultiData): Unit = {
+    b.elements.foreach {
+      case (name, element) => {
+        element match {
+          case md : MultiData => anyseq_inputs(md)
+          case _ => if(element.isInput) anyseq(element)
+        }
+      }
+    }
+  }
+
   def formalAssumeLibraryComponents(c : Component = Component.current): Unit = {
     def apply(c : Component, walkSet : mutable.HashSet[Component]) : Unit = {
       if (!walkSet.contains(c)) {
 
         walkSet += c
         c match {
-          case c: WithFormalAsserts => {
+          case c: HasFormalAsserts => {
             println(s"Activating asserts for ${c}")
-            c.formalAsserts()
+            c.formalAssumes()
           }
           case _ => c.walkComponents(apply(_, walkSet))
         }

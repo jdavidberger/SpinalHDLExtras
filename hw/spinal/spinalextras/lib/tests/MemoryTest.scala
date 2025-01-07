@@ -60,6 +60,8 @@ object AddressHash {
   }
 }
 
+
+
 class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = false, latency : Int = -1,
                            address_mask : BigInt = 0xffffffffL,
                            writesPerIteration : BigInt,

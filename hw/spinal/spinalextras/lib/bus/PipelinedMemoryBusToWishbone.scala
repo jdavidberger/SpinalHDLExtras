@@ -138,8 +138,10 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
   io.pmb.cmd.ready := io.wb.isRequestAck
 
   //assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
-  io.pmb.rsp.valid := !reqWasWE & io.wb.ACK
-  io.pmb.rsp.payload.data := io.wb.DAT_MISO.resized
+  val rsp = cloneOf(io.pmb.rsp)
+  rsp.valid := !reqWasWE & io.wb.ACK
+  rsp.payload.data := io.wb.DAT_MISO.resized
+  io.pmb.rsp <> rsp.stage()
 }
 
 object PipelinedMemoryBusToWishbone {

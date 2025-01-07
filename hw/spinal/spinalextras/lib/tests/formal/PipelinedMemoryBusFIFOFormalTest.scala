@@ -26,19 +26,20 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
   assumeInitial(ClockDomain.current.isResetActive)
 
   val busSlaveContract = test_funcs.assertPMBContract(busSlave, assume_slave = true)
-  dut.covers()
 
-  dut.io.pop.formalAssertsMaster()
+  dut.formalAssumeInputs()
+  dut.formalAsserts()
+
+  dut.covers()
 
   if(check_flush) {
     anyseq(dut.io.flush)
   } else {
     dut.io.flush := False
   }
-  anyseq(dut.io.push.valid)
-  anyseq(dut.io.push.payload)
-  anyseq(dut.io.pop.ready)
-  dut.io.push.formalAssumesSlave()
+
+  test_funcs.anyseq_inputs(dut.io.push)
+  test_funcs.anyseq_inputs(dut.io.pop)
 
   if(check_response) {
     val mem = new SimpleMemoryProvider(mapping = sm, config = globalBus.config)
@@ -57,7 +58,6 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
     assert(f.pop.fire === False || testFifo.io.pop.fire)
     assert(f.pop.fire === False || (testFifo.io.pop.payload === f.pop.payload))
   } else {
-
     anyseq(busSlave.cmd.ready)
     anyseq(busSlave.rsp)
   }

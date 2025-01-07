@@ -104,13 +104,13 @@ class Obfuscater() {
       case _: Boolean => {}
       case _: ClockDomain => {}
       case _: HertzNumber => {}
-      case _: HardType[Data] => {}
+      case _: HardType[_] => {}
       case s: spinal.core.internals.ScopeStatement => {
         s.walkStatements(apply)
       }
       case _: GlobalData => {}
       case _: ExpressionContainer => {}
-      case t: Traversable[Any] =>
+      case t: Traversable[_] =>
         t.foreach(x => this(x))
       case s : spinal.core.ScopeProperty.Capture => {
         s.context.mutableMap.foreach(x => apply(x._2))

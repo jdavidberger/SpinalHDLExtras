@@ -1,7 +1,7 @@
 package spinalextras.lib
 
 import spinal.core._
-import spinal.lib.bus.wishbone.Wishbone
+import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone}
 
 package object bus {
   implicit class WishboneExt(bus: Wishbone) {
@@ -39,7 +39,21 @@ package object bus {
     def doRead  : Bool    = doSend && !WE
 
     def wordAddress() : UInt = bus.ADR
-    def assignWordAddress(addr : UInt) = bus.ADR := addr
+    def assignWordAddress(wordAddress : UInt, addressGranularityIfUnspecified : AddressGranularity.AddressGranularity = AddressGranularity.UNSPECIFIED, allowAddressResize : Boolean = false): Unit = {
+      config.wordAddressInc(addressGranularityIfUnspecified) match {
+        case 1 => {
+          assert(allowAddressResize || bus.ADR.getBitsWidth == wordAddress.getWidth,
+            s"allowAddressResize must be true to assign from an unlike address space for ${this} and ${wordAddress}")
+          bus.ADR := wordAddress
+        }
+        case x : Int => {
+          val byteAddress =  wordAddress << log2Up(x)
+          assert(allowAddressResize || bus.ADR.getBitsWidth == byteAddress.getWidth || bus.ADR.getBitsWidth == wordAddress.getWidth,
+            s"allowAddressResize must be true to assign from an unlike address space for ${this} and ${wordAddress}")
+          bus.ADR := byteAddress.resized
+        }
+      }
+    }
 
   }
 }

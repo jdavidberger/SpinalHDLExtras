@@ -1,7 +1,7 @@
 package spinalextras.lib.memory
 
 import spinal.core._
-import spinal.core.formal.{WithFormalAsserts, past}
+import spinal.core.formal.{HasFormalAsserts, past}
 import spinal.lib._
 import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
 import spinal.lib.bus.regif.AccessType.{RO, RW}
@@ -16,7 +16,7 @@ import scala.language.postfixOps
 
 case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : Int, baseAddress : Int = 0,
                                                var config : PipelinedMemoryBusConfig = null,
-                                               rsp_latency : Int = 0, cmd_latency : Int = 0, read_trigger : Int = -1) extends Component with WithFormalAsserts {
+                                               rsp_latency : Int = 0, cmd_latency : Int = 0, read_trigger : Int = -1) extends Component with HasFormalAsserts {
   if(config == null) {
     config = PipelinedMemoryBusConfig(addressWidth = log2Up(depth), dataWidth = dataType.getBitsWidth)
   }
@@ -32,10 +32,7 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
     val flush = in Bool() default(False)
 
     val memoryAvailable = slave(Stream(Bool()))
-
-    val occupancy = out(UInt(log2Up(depth) bits))
   }
-  val memAvailContract = test_funcs.assertStreamContract(io.memoryAvailable)
 
   val readBus = io.bus
 
@@ -55,20 +52,15 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
 
   var fifo = StreamFifo(midDatatype, bufferSizeInMidWords, latency = 0)
   withAutoPull()
-  //val fifoContract = test_funcs.formalFifoAsserts(fifo)
 
   val adaptPop = StreamTools.AdaptWidth(fifo.io.pop.haltWhen(io.flush), Bits(dataType.getBitsWidth bits)).map(_.as(dataType))
-
-  val busContract = test_funcs.assertPMBContract(readBus, max_outstanding = depth)
 
   val usage = new CounterUpDownUneven(bufferSizeInBits, config.dataWidth, midDatatype.getBitsWidth)
   val burnRtn = Reg(usage.value.clone()) init(0)
   haltCmdQueue := burnRtn =/= 0
 
   val fifoOccInBits = fifo.io.occupancy * fifo.dataType.getBitsWidth
-  val busInFlightOccInBits = busContract.outstanding_cnt.value * config.dataWidth
-  val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits
-  assert((usage.value +^ burnRtn) === (usageCheckInBits))
+
   when(burnRtn > 0) {
     io.pop.setIdle()
     adaptPop.freeRun()
@@ -103,10 +95,6 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
   val adapt_out_width = StreamTools.AdaptWidth(io.bus.rsp.map(_.data.asBits), read_port_unpack)
   read_port_unpack.toStream(overflow) <> fifo.io.push
 
-  io.occupancy := (busContract.outstanding_cnt.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
-  assert(~overflow, "PMBBuffer overflowed")
-
-  assert((burnRtn +^ usage.value).msb === False )
   when(io.flush) {
     read_counter.clearAll()
     usage.clear()
@@ -114,15 +102,34 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
     burnRtn := burnRtn + usage.value
   }
 
-  override def formalAsserts(implicit useAssumes: Boolean) = {
-    test_funcs.formalAssumeLibraryComponents(this)
-    new Area {}
+  override lazy val formalValidInputs = io.bus.formalIsConsumerValid() && io.memoryAvailable.formalIsValid()
+
+  override def formalAsserts()(implicit useAssumes: Boolean) = formalAssertsComposite()
+  def formalAssertsComposite()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
+    //test_funcs.formalAssumeLibraryComponents(self)
+
+
+    val busContract = test_funcs.assertPMBContract(readBus, max_outstanding = depth)
+    val busInFlightOccInBits = busContract.outstanding_cnt.value * config.dataWidth
+    val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits
+
+    assertOrAssume((usage.value +^ burnRtn) === (usageCheckInBits))
+
+    fifo.formalAssertInputs()
+    fifo.formalAssumes()
+
+    assertOrAssume(~overflow, "PMBBuffer overflowed")
+    assertOrAssume((burnRtn +^ usage.value).msb === False )
+
+    val occupancy = (busContract.outstanding_cnt.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
+    // Outputs
+    io.pop.formalAsserts()
   }
 }
 
 case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
                                              sm : SizeMapping,
-                                             sysBus : Option[PipelineMemoryGlobalBus] = None, localPushDepth : Int = 0, localPopDepth : Int = 0) extends Component with WithFormalAsserts {
+                                             sysBus : Option[PipelineMemoryGlobalBus] = None, localPushDepth : Int = 0, localPopDepth : Int = 0) extends Component with HasFormalAsserts {
   val depthInWords = sm.size.toInt
   val baseAddress = sm.base.toInt
 
@@ -157,7 +164,6 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
   assert(!writeBus.cmd.valid || writeBus.cmd.write)
 
   val ramBackedBuffer = PipelinedMemoryBusBuffer(dataType, depthInWords, baseAddress, sharedBus.config, rsp_latency = localPopDepth)
-  assert(readBusContract.outstanding_cnt === ramBackedBuffer.busContract.outstanding_cnt)
 
   ramBackedBuffer.io.bus <> readBus
   ramBackedBuffer.io.memoryAvailable.payload := False
@@ -167,7 +173,6 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     assert(inFlight.value === 0)
   }
   withAutoPull()
-  assert(inFlight.value === ramBackedBuffer.io.occupancy)
 
   val occupancy, ramOccupancy = new CounterUpDown(depthInWords, handleOverflow = false)
   when(writeBus.cmd.fire) {
@@ -251,27 +256,14 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
 
   }
 
-  override def formalAsserts(implicit useAssumes: Boolean) : Area = {
-    def apply(c : Component, walkSet : mutable.HashSet[Component]) : Unit = {
-      if (!walkSet.contains(c)) {
+  override lazy val formalValidInputs = io.push.formalIsValid() && writeBus.formalIsConsumerValid() && readBus.formalIsConsumerValid()
 
-        walkSet += c
-        c match {
-          case c: WithFormalAsserts => {
-            println(s"Activating asserts for ${c}")
-            c.formalAsserts(useAssumes)
-          }
-          case _ => c.walkComponents(apply(_, walkSet))
-        }
-      }
-    }
+  override def formalAsserts()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
+    val ramBackedBufferAsserts = ramBackedBuffer.formalAsserts()
 
-    addPrePopTask(() => {
-      val walkSet = new mutable.HashSet[Component]()
-      walkSet += this
-      walkComponents(apply(_, walkSet))
-    })
 
-    new Area {}
+    assertOrAssume(readBusContract.outstanding_cnt === ramBackedBufferAsserts.busContract.outstanding_cnt)
+    assertOrAssume(inFlight.value === ramBackedBufferAsserts.occupancy)
+
   }
 }
