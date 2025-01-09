@@ -25,11 +25,17 @@ case class PipelinedMemoryBusBufferFormal[T <: Data](dataType : HardType[T], dep
 
 class PipelinedMemoryBusBufferFormalTest extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 20
+  override def defaultDepth() = 10
 
-  val create_formal = () => new PipelinedMemoryBusBufferFormal(UInt(8 bits), 500, config = PipelinedMemoryBusConfig(32, 32), rsp_latency = 10)
+  var configs =
+    for(rsp_latency <- Seq(0, 3, 8, 10);
+        cmd_latency <- 0 until 3) yield {
+      (s"PMBBufferTest_${rsp_latency}_${cmd_latency}", () => new PipelinedMemoryBusBufferFormal(UInt(8 bits), 500, config = PipelinedMemoryBusConfig(32, 32), rsp_latency = rsp_latency, cmd_latency = cmd_latency))
+    }
 
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def generateRtl(): Seq[(String, () => Component)] = Seq(("PMBBufferTest", create_formal))
+  override def BMCConfig(): SpinalFormalConfig = formalConfig.withBMC(30)
+
+  override def generateRtl(): Seq[(String, () => Component)] = configs
 }

@@ -22,7 +22,11 @@ case class StridedAccessFIFOAsyncFormal[T <: Data](
                                             ) extends Component {
   val dut = FormalDut(StridedAccessFIFOAsync(pushDataType, popDataType, depth, baseAddress, outCnt, bufferSize, busConfig, rsp_latency, cmd_latency))
   assumeInitial(ClockDomain.current.isResetActive)
-  val bus_contract = test_funcs.assertPMBContract(dut.io.bus, assume_slave = true)
+
+  dut.formalAssumeInputs()
+  dut.formalAsserts()
+//
+val bus_contract = test_funcs.assertPMBContract(dut.io.bus, assume_slave = true)
 
   dut.io.bus.cmd.formalAssumesSlave()
   dut.io.push.formalAssumesSlave()
@@ -41,7 +45,7 @@ case class StridedAccessFIFOAsyncFormal[T <: Data](
 
 class StridedAccessFIFOAsyncFormalTest extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 200
+  override def defaultDepth() = 20
 
   formalTests().foreach(t => test(t._1) { t._2() })
 

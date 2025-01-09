@@ -1,6 +1,7 @@
 package spinalextras.lib.misc
 
 import spinal.core._
+import spinal.core.formal.HasFormalAsserts.assertOrAssume
 import spinal.core.formal.past
 import spinal.lib._
 
@@ -43,7 +44,11 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
 
   def ~[T2 <: Data](that: T2) = translateWith(that)
   def ~~[T2 <: Data](translate: (T) => T2) = map(translate)
-  def map[T2 <: Data](translate: (T) => T2) = (this ~ translate(this.flow.payload))
+  def map[T2 <: Data](translate: (T) => T2) = {
+    val mappedStream = (this ~ translate(this.flow.payload))
+    assert(mappedStream.formalContract.outstandingFlows === formalContract.outstandingFlows)
+    mappedStream
+  }
 
   def async_fire = async_valid && async_ready
 
@@ -102,6 +107,24 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
     val async_flow_bounded = Bool()
     async_flow_bounded := outstandingFlows > 0 || ~outstandingFlows.decrementIt
     assert(async_flow_bounded) //, s"${pmb} PMB has miscounted responses")
+  }
+
+  def formalIsProducerValid(payloadInvariance : Boolean = true) : Bool = signalCache(s"${this}formalIsProducerValid")(new Composite(this, "formalIsProducerValid"){
+    val wasValid = RegNext(async_valid) init (False)
+    val wasFired = RegNext(async_fire) init (False)
+
+    val v = (!wasValid || async_valid || wasFired)
+  }.v)
+
+  def formalIsConsumerValid() : Bool = formalContract.async_flow_bounded
+
+  def formalIsValid() = {
+    !formalContract.invalidValidChange && formalContract.async_flow_bounded
+  }
+
+  def formalAsserts()(implicit useAssumes : Boolean = false): Unit = {
+    assertOrAssume(formalIsProducerValid())
+    assertOrAssume(formalIsConsumerValid())
   }
 
   def formalDriverAssumptions(): Unit = {

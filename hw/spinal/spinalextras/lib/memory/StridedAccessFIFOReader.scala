@@ -3,6 +3,7 @@ package spinalextras.lib.memory
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim.{SimBaseTypePimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout, simRandom}
 import spinal.core._
+import spinal.core.formal.HasFormalAsserts
 import spinal.lib.bus.regif.BusIf
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.sim.StreamMonitor
@@ -27,7 +28,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
                                                     outCnt: Int,
                                                     busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
                                                     rsp_latency : Int = 0
-                                                  ) extends Component {
+                                                  ) extends Component with HasFormalAsserts {
   var outSize = (busConfig.dataWidth / dataType.getBitsWidth.floatValue()).ceil.toInt
   while(depth % outSize != 0) {
     outSize += 1
@@ -204,6 +205,13 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     RegisterTools.ReadOnly(busSlaveFactory, "fifo_reader_status", armRead ## chunk_cmd.stall)
   }
 
+  override lazy val formalValidInputs = io.bus.formalIsConsumerValid() && io.pop.formalIsConsumerValid()
+  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
+    HasFormalAsserts.formalAssertsChildren(self, assumesInputValid = useAssumes, useAssumes = true)
+
+    io.pop.formalAsserts()
+    io.bus.formalAsserts()
+  }
 }
 case class StridedAccessFIFOReader[T <: Data](
     dataType: HardType[T],

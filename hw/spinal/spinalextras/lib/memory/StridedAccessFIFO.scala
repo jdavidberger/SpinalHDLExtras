@@ -1,6 +1,7 @@
 package spinalextras.lib.memory
 
 import spinal.core._
+import spinal.core.formal.HasFormalAsserts
 import spinal.lib.bus.regif.BusIf
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.fsm._
@@ -19,7 +20,7 @@ case class StridedAccessFIFOAsync[T <: Data](
                                          bufferSize: Int = 32,
                                          busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
                                          rsp_latency : Int = 0, cmd_latency : Int = 0
-                                       ) extends Component {
+                                       ) extends Component with HasFormalAsserts {
   val depthInBits = depth * pushDataType.getBitsWidth
   val depthInOutput = depthInBits / popDataType.getBitsWidth
   val reader = StridedAccessFIFOReaderAsync(popDataType, depthInOutput, baseAddress, outCnt,
@@ -95,6 +96,13 @@ case class StridedAccessFIFOAsync[T <: Data](
     writer.attach_bus(busSlaveFactory)
     reader.attach_bus(busSlaveFactory)
     PipelinedMemoryBusLogger.attach_debug_registers(busSlaveFactory, io.bus.setName("strided_bus"))
+  }
+
+  override lazy val formalValidInputs = io.bus.formalIsConsumerValid() && io.push.formalIsValid() && io.pop.formalIsValid()
+  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts"){
+    HasFormalAsserts.formalAssertsChildren(self, assumesInputValid = useAssumes, useAssumes = true)
+    assertOrAssume(reader.io.pop.formalContract.outstandingFlows === io.pop.formalContract.outstandingFlows)
+    assertOrAssume(io.pop.formalIsValid())
   }
 }
 

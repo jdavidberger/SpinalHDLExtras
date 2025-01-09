@@ -104,15 +104,19 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
 
   override lazy val formalValidInputs = io.bus.formalIsConsumerValid() && io.memoryAvailable.formalIsValid()
 
-  override def formalAsserts()(implicit useAssumes: Boolean) = formalAssertsComposite()
+  override def formalChecks()(implicit useAssumes: Boolean) = formalAssertsComposite()
   def formalAssertsComposite()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
     //test_funcs.formalAssumeLibraryComponents(self)
+    val readCmdBusCheck = readBusCmdQueue.formalCheckRam(_.write)
+    val readCmdBusCheckOutput = readBusCmdQueue.formalCheckOutputStage(_.write)
+    assertOrAssume(readCmdBusCheck.orR === False && readCmdBusCheckOutput === False)
 
+    readBusCmdQueue.formalAssumeInputs()
+    readBusCmdQueue.formalAssumes()
 
     val busContract = test_funcs.assertPMBContract(readBus, max_outstanding = depth)
     val busInFlightOccInBits = busContract.outstanding_cnt.value * config.dataWidth
-    val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits
-
+    val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits +^ readBusCmdQueue.io.occupancy * config.dataWidth
     assertOrAssume((usage.value +^ burnRtn) === (usageCheckInBits))
 
     fifo.formalAssertInputs()
@@ -120,8 +124,10 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
 
     assertOrAssume(~overflow, "PMBBuffer overflowed")
     assertOrAssume((burnRtn +^ usage.value).msb === False )
+    assertOrAssume((burnRtn +^ usage.value) <= bufferSizeInBits)
 
     val occupancy = (busContract.outstanding_cnt.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
+
     // Outputs
     io.pop.formalAsserts()
   }
@@ -258,9 +264,8 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
 
   override lazy val formalValidInputs = io.push.formalIsValid() && writeBus.formalIsConsumerValid() && readBus.formalIsConsumerValid()
 
-  override def formalAsserts()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
-    val ramBackedBufferAsserts = ramBackedBuffer.formalAsserts()
-
+  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
+    val ramBackedBufferAsserts = ramBackedBuffer.formalChecks()
 
     assertOrAssume(readBusContract.outstanding_cnt === ramBackedBufferAsserts.busContract.outstanding_cnt)
     assertOrAssume(inFlight.value === ramBackedBufferAsserts.occupancy)
