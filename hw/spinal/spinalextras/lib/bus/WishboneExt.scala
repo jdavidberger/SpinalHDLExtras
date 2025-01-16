@@ -38,7 +38,12 @@ package object bus {
     def doWrite : Bool    = doSend &&  WE
     def doRead  : Bool    = doSend && !WE
 
-    def wordAddress() : UInt = bus.ADR
+    def wordAddress(addressGranularityIfUnspecified : AddressGranularity.AddressGranularity = AddressGranularity.UNSPECIFIED) : UInt = {
+      config.wordAddressInc(addressGranularityIfUnspecified) match {
+        case 1 => bus.ADR
+        case x : Int => (bus.ADR >> log2Up(x))
+      }
+    }
     def assignWordAddress(wordAddress : UInt, addressGranularityIfUnspecified : AddressGranularity.AddressGranularity = AddressGranularity.UNSPECIFIED, allowAddressResize : Boolean = false): Unit = {
       config.wordAddressInc(addressGranularityIfUnspecified) match {
         case 1 => {

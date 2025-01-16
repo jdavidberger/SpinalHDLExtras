@@ -19,9 +19,11 @@ class Constraints {
     val file = new PrintWriter(path)
 
     for ((data, freq) <- clocks) {
-      file.println(s"# ${data.name} ${freq.decompose}")
-      file.println(s"create_clock -name {${data.name}} -period ${freq.toTime.toDouble * 1e9} [get_ports ${data.getRtlPath()}]")
-      //file.println(s"set_false_path -from [get_clocks ${data.name}]")
+      if(data.getComponents().nonEmpty) {
+        file.println(s"# ${data.name} ${freq.decompose}")
+        file.println(s"create_clock -name {${data.name}} -period ${freq.toTime.toDouble * 1e9} [get_ports ${data.getRtlPath()}]")
+        //file.println(s"set_false_path -from [get_clocks ${data.name}]")
+      }
     }
 
     //    for ((clks, async) <- clock_groups) {

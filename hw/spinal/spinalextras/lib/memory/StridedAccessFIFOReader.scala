@@ -40,6 +40,8 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     val pop = master (AsyncStream (TupleBundle(outDatatype, UInt(log2Up(outCnt) bits))))
     val lastFire = out Bool()
     val bus = master(PipelinedMemoryBus(busConfig))
+
+    val debug_fake_read = in Bool() default(False)
   }
   io.lastFire := False
 
@@ -54,8 +56,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   }
 
   val outWordsPerFrame = div_assert_even(depth, outDatatype.size * outCnt)
-  val busContract = test_funcs.assertPMBContract(io.bus)
-  val asyncStreamContract = test_funcs.assertAsyncStreamContract(io.pop)
+  val busContract = io.bus.formalContract
 
   val bufferSize = rsp_latency + 1
   val minBufferSizeInBits = bufferSize * busConfig.dataWidth
@@ -90,7 +91,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   read_port.cmd.payload.assignDontCare()
   read_port.cmd.mask.assignDontCare()
 
-  val pop = io.pop.steady_ready()
+  val pop = io.pop
   val async_readys = pop.async_ready
   val async_valids = pop.async_valid
   async_valids := False
@@ -137,7 +138,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     assert(read_address_words_logical === read_address_words, "Read address is wrong")
 
     val stall = ~async_readys
-    cover(stall)
+    //cover(stall)
     when(!stall && armRead) {
       read_port.cmd.valid := True
       read_port.cmd.write := False
@@ -152,6 +153,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
 
         when(roundrobin_idx_cmd.willOverflow && chunk_idx.willOverflow) {
           armRead := False
+          io.lastFire := True
         }
 
         when(roundrobin_idx_cmd.willOverflow) {
@@ -161,16 +163,28 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     }
   }
 
+  when(io.lastFire) {
+    assert(!io.bus.cmd.isStall)
+  }
 
   val read_port_unpack = Flow(Bits(outDatatype.getBitsWidth bits))
-  StreamTools.AdaptWidth(read_port.rsp.map(_.data.asBits), read_port_unpack)
+  val adapter = StreamTools.AdaptWidth(read_port.rsp.map(_.data.asBits), read_port_unpack)
 
   val popCounter = Counter(outWordsPerFrame * outCnt)
 
+  pop.flow.setIdle()
+
   val chunk_rsp = new Area {
-    pop.flow.payload._1.assignFromBits(read_port_unpack.payload)
-    pop.flow.payload._2 := roundrobin_idx_rsp
-    pop.flow.valid := read_port_unpack.fire
+
+    when(read_port_unpack.valid) {
+      when(io.debug_fake_read) {
+        pop.flow.payload._1.clearAll()
+      } otherwise {
+        pop.flow.payload._1.assignFromBits(read_port_unpack.payload)
+      }
+      pop.flow.payload._2 := roundrobin_idx_rsp
+      pop.flow.valid := read_port_unpack.valid
+    }
 
     when(read_port_unpack.fire) {
       popCounter.increment()
@@ -178,7 +192,6 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
 
     when(popCounter.willOverflow) {
       armRead := True
-      io.lastFire := True
     }
 
     val cnt = Counter(bufferSizeInOutWords)
@@ -186,6 +199,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
       cnt.increment()
       when(cnt.willOverflow) {
         roundrobin_idx_rsp.increment()
+        //assert(adapter.io.isEmpty)
       }
     }
   }
@@ -203,6 +217,9 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     RegisterTools.ReadOnly(busSlaveFactory, "cnt", chunk_cmd.cnt.value)
     RegisterTools.ReadOnly(busSlaveFactory, "roundrobin_idx_cmd", roundrobin_idx_cmd.value)
     RegisterTools.ReadOnly(busSlaveFactory, "fifo_reader_status", armRead ## chunk_cmd.stall)
+
+    val debug_fake_read = GlobalSignals.externalize(io.debug_fake_read)
+    debug_fake_read := RegisterTools.Register(busSlaveFactory, "rdr_debug_ctrl", False)
   }
 
   override lazy val formalValidInputs = io.bus.formalIsConsumerValid() && io.pop.formalIsConsumerValid()

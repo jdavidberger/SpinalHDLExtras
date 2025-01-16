@@ -83,29 +83,37 @@ class AdaptWidthByState[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardT
 
 }
 
-class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends Component {
+class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T], endianness: Endianness = LITTLE) extends Component {
   val io = new Bundle {
     val in = slave(Stream(dataTypeIn))
     val output = master(Stream(dataTypeOut))
 
     val occupancy = out(UInt(1 bit))
+    val isEmpty = out(Bool())
   }
 
   def logic =
-    if(dataTypeIn.getBitsWidth == dataTypeOut.getBitsWidth) new Area {
+    if(dataTypeIn.getBitsWidth == dataTypeOut.getBitsWidth) new Composite(this, "logic_single") {
       io.in >> io.output
       io.occupancy := 0
+      io.isEmpty := True
+
       val latency = 1
-    } else new Area {
+    } else new Composite(this, "logic_multi") {
       val in = io.in
       val output = io.output
 
       val streamMid = Stream(Bits(StreamTools.lcm(in.payload.getBitsWidth, output.payload.getBitsWidth) bits))
 
-      StreamWidthAdapter(in, streamMid, endianness = LITTLE)
+      StreamWidthAdapter(in, streamMid, endianness = endianness)
       val streamMid_stage = streamMid.stage()
-      StreamWidthAdapter(streamMid_stage, output, endianness = LITTLE)
+      StreamWidthAdapter(streamMid_stage, output, endianness = endianness)
+
+      val counterIn = Counter(streamMid.payload.getBitsWidth / in.payload.getBitsWidth, inc = in.fire)
+      val counterOut = Counter(streamMid.payload.getBitsWidth / output.payload.getBitsWidth, inc = output.fire)
+
       io.occupancy := streamMid_stage.valid.asUInt
+      io.isEmpty := streamMid_stage.valid === False && counterIn.value === 0 && counterOut.value === 0
 
       val latency = streamMid.getBitsWidth / dataTypeIn.getBitsWidth
     }

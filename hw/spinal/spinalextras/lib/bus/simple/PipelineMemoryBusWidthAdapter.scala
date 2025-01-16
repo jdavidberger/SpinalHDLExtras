@@ -48,7 +48,9 @@ object PipelineMemoryBusClockAdapter {
 
 case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
                                          pmbOut : PipelinedMemoryBusConfig,
-                                         rspQueue : Int = 4) extends Component {
+                                         rspQueue : Int = 4,
+                                         endianness: Endianness = LITTLE
+                                        ) extends Component {
   val io = new Bundle {
     val input = slave(PipelinedMemoryBus(pmbIn))
     val output = master(PipelinedMemoryBus(pmbOut))
@@ -68,11 +70,12 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
       val cmd = cloneOf(io.output.cmd)
       StreamTransactionExtender(io.input.cmd, cmd, factor - 1, noDelay = true) {
         (id, payload, _) => {
+          val rid = if(endianness == BIG) (factor - id - 1) else id
           val cmd = PipelinedMemoryBusCmd(pmbOut)
           cmd.address := (payload.address << (shift_in - shift_out)) + id
-          cmd.data := (payload.data >> (cmd.data.getWidth * id)).resized
+          cmd.data := (payload.data >> (cmd.data.getWidth * rid)).resized
           cmd.write := payload.write
-          cmd.mask := (payload.mask >> (output_words * id)).resized
+          cmd.mask := (payload.mask >> (output_words * rid)).resized
           cmd
         }
       }
@@ -81,7 +84,7 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
       val rspStream = Stream(io.input.rsp.data.clone())
       val overflow = Bool()
 
-      StreamWidthAdapter(io.output.rsp.map(_.data).toStream(overflow = overflow), rspStream, endianness = LITTLE)
+      StreamWidthAdapter(io.output.rsp.map(_.data).toStream(overflow = overflow), rspStream, endianness = endianness)
       assert(!overflow, "Width adapter overflow")
 
       rspStream.ready := True
@@ -89,15 +92,17 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
       io.input.rsp.data := rspStream.payload
     } else new Area {
       val input_size_per_output_size = shift_out - shift_in
+      //require(endianness == LITTLE)
 
       val cmdStream = io.input.cmd.map(payload => {
         val cmd = PipelinedMemoryBusCmd(pmbOut)
         val index = payload.address.resize((input_size_per_output_size) bits)
+        val rindex = if(endianness == LITTLE) index else (input_size_per_output_size - index)
         cmd.address := (payload.address >> (shift_out - shift_in)).resized
-        cmd.data := (payload.data << (pmbIn.dataWidth * index)).resized
-        cmd.mask := (payload.mask << (input_words * index)).resized
+        cmd.data := (payload.data << (pmbIn.dataWidth * rindex)).resized
+        cmd.mask := (payload.mask << (input_words * rindex)).resized
         cmd.write := payload.write
-        TupleBundle(cmd, index)
+        TupleBundle(cmd, rindex)
       })
 
       val (toOut, toQueue) = StreamFork2(cmdStream)

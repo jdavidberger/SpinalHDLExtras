@@ -33,7 +33,7 @@ case class StridedAccessFIFOAsync[T <: Data](
     val bus = master(PipelinedMemoryBus(busConfig))
   }
 
-  val asyncFifoBusContract = test_funcs.assertPMBContract(io.bus)
+  val asyncFifoBusContract = io.bus.formalContract
   val writer = StreamToBuffer(pushDataType, depth, baseAddress, busConfig)
 
   reader.io.pop <> io.pop
@@ -43,14 +43,15 @@ case class StridedAccessFIFOAsync[T <: Data](
   io.push <> writer.io.push
 
   val cmd = cloneOf(io.bus.cmd)
-  cmd.queue(cmd_latency, latency = 0) <> io.bus.cmd
+  cmd <> io.bus.cmd
+  //cmd.queue(cmd_latency, latency = 0) <> io.bus.cmd
 
   val needsFlush = RegNextWhen(True, io.push.lastFire) init(False)
 
   cmd.setIdle()
   writer.io.bus.cmd.setBlocked()
   withAutoPull()
-  assert(asyncFifoBusContract.outstanding_cnt.value === reader.busContract.outstanding_cnt.value)
+  assert(asyncFifoBusContract.outstandingReads.value === reader.busContract.outstandingReads.value)
 
   val fsm = new StateMachine {
     val read, wait_push_fall = new State

@@ -151,6 +151,8 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     val flush = in Bool() default(False)
     val occupancy    = out UInt (log2Up(depthInWords + 1) bits)
     val availability = out UInt (log2Up(depthInWords + 1) bits)
+
+    val debug_fake_write = in (Bool()) default(False)
   }
 
   test_funcs.assertStreamContract(io.push)
@@ -217,7 +219,7 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
   push.map(wrd => {
     val cmd = PipelinedMemoryBusCmd(writeBus.config)
     cmd.mask.setAll()
-    cmd.write := True
+    cmd.write := ~io.debug_fake_write
     cmd.address := (write_counter.value).resize(cmd.address.getBitsWidth bits) + baseAddress
     cmd.data := wrd.asBits
     cmd

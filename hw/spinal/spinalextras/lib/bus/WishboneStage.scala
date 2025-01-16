@@ -170,6 +170,9 @@ object WishboneStage {
 
   def apply(bus: Wishbone, m2s_stage: Boolean, s2m_stage: Boolean = false): Wishbone = {
     {
+      if(!m2s_stage && !s2m_stage)
+        return bus
+
       val adapter_pmb = WishboneToPipelinedMemoryBus(bus, 1)
       val out_bus = PipelinedMemoryBusToWishbone(
         (m2s_stage, s2m_stage) match {

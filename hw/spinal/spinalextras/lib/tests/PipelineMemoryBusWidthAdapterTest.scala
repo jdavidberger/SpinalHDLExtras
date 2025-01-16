@@ -11,19 +11,19 @@ import spinalextras.lib.Config
 import spinalextras.lib.bus.simple.{PipelineMemoryBusWidthAdapter, SimpleMemoryProvider}
 
 class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
-  def runTest(configIn: PipelinedMemoryBusConfig, configOut: PipelinedMemoryBusConfig): Unit = {
+  def runTest(configIn: PipelinedMemoryBusConfig, configOut: PipelinedMemoryBusConfig, endianness : Endianness): Unit = {
     Config.sim.withWave
       .doSim(new Component {
         val io = new Bundle {
           val bus = slave(PipelinedMemoryBus(configIn))
         }
         val busOut = PipelinedMemoryBus(configOut)
-        val adapter = PipelineMemoryBusWidthAdapter(configIn, configOut)
+        val adapter = PipelineMemoryBusWidthAdapter(configIn, configOut, endianness = endianness)
         adapter.io.input <> io.bus
         adapter.io.output <> busOut
         val mem = SimpleMemoryProvider(mapping = SizeMapping(0, 0x10000), config = configOut)
         mem.io.bus <> busOut
-      }.setDefinitionName(s"PipelineMemoryBusWidthAdapterTest_${configIn.dataWidth}_${configOut.dataWidth}")) { dut =>
+      }.setDefinitionName(s"PipelineMemoryBusWidthAdapterTest_${configIn.dataWidth}_${configOut.dataWidth}_${endianness.getClass.getSimpleName}")) { dut =>
         dut.io.bus.cmd.valid #= false
         dut.io.bus.cmd.mask #= (1 << (configIn.dataWidth / 8)) - 1
         dut.clockDomain.forkStimulus(100 MHz)
@@ -39,7 +39,7 @@ class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
         dut.clockDomain.waitSamplingWhere(dut.io.bus.cmd.ready.toBoolean)
 
         for (i <- 0 until 1000) {
-          val data = (i + 101) % (1L << configIn.dataWidth - 1)
+          val data = (i + 0xabcd123456789L) % (1L << configIn.dataWidth - 1)
           dut.io.bus.cmd.valid #= true
           dut.io.bus.cmd.data #= data
           dut.io.bus.cmd.address #= i
@@ -66,8 +66,11 @@ class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
 
   for (inWidth <- Seq(8, 16, 32, 64, 128)) {
     for (outWidth <- Seq(8, 16, 32, 64, 128)) {
-      test(s"PipelinedMemoryBusToWishboneTest_${inWidth}_${outWidth}") {
-        runTest(PipelinedMemoryBusConfig(32 - log2Up(inWidth / 8), inWidth), PipelinedMemoryBusConfig(32 - log2Up(outWidth / 8), outWidth))
+      for(endianness <- Seq(LITTLE, BIG)) {
+        test(s"PipelinedMemoryBusAdapterTest_${inWidth}_${outWidth}_${endianness.getClass.getSimpleName}") {
+          runTest(PipelinedMemoryBusConfig(32 - log2Up(inWidth / 8), inWidth),
+            PipelinedMemoryBusConfig(32 - log2Up(outWidth / 8), outWidth), endianness)
+        }
       }
     }
   }

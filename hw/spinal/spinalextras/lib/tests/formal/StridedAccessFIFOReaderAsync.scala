@@ -42,5 +42,8 @@ class StridedAccessFIFOReaderAsyncFormalTest extends AnyFunSuite with FormalTest
 
   override def generateRtlCover() = generateRtl()
 
-  override def generateRtl() = Seq((suiteName, () => new StridedAccessFIFOReaderAsyncFormal(UInt(8 bits), 900, 0, 9)))
+  override def generateRtl() = Seq(
+    (suiteName, () => new StridedAccessFIFOReaderAsyncFormal(UInt(8 bits), 900, 0, 9)),
+    (s"StridedAccessFIFOReaderAsyncFormal_uc1", () => new StridedAccessFIFOReaderAsyncFormal(UInt(8 bits), depth = 1228800, baseAddress = 307200, outCnt = 8, rsp_latency = 0))
+  )
 }

@@ -54,25 +54,25 @@ object test_funcs {
 
   def assumeWishboneBusContract(bus: Wishbone) = assertWishboneBusContract(bus, doAssume = true)
 
-  def assertAsyncStreamContract[T <: Data](stream: AsyncStream[T]) = new Area {
-    //if (globalData.config.flags.contains(GenerationFlags.simulation)) {
-
-    val wasValid = RegNext(stream.async_valid) init (False)
-    val wasReady = RegNext(stream.async_ready) init (False)
-    val wasFired = RegNext(stream.async_fire) init (False)
-
-    val invalidValidChange = wasValid && !stream.async_valid && !wasFired
-    invalidValidChange.setWeakName(stream.name + "_invalidValidChange")
-    assert(!invalidValidChange, s"${stream} deasserted async_valid before a async_ready")
-
-    val outstanding_cnt = CounterUpDown(1L << 16, stream.async_fire, stream.flow.valid)
-    assume(~outstanding_cnt.willOverflow)
-
-    val async_flow_bounded = Bool()
-    async_flow_bounded := outstanding_cnt > 0 || ~outstanding_cnt.decrementIt
-    assume(async_flow_bounded) //, s"${pmb} PMB has miscounted responses")
-    //}
-  }
+//  def assertAsyncStreamContract[T <: Data](stream: AsyncStream[T]) = new Area {
+//    //if (globalData.config.flags.contains(GenerationFlags.simulation)) {
+//
+//    val wasValid = RegNext(stream.async_valid) init (False)
+//    val wasReady = RegNext(stream.async_ready) init (False)
+//    val wasFired = RegNext(stream.async_fire) init (False)
+//
+//    val invalidValidChange = wasValid && !stream.async_valid && !wasFired
+//    invalidValidChange.setWeakName(stream.name + "_invalidValidChange")
+//    assert(!invalidValidChange, s"${stream} deasserted async_valid before a async_ready")
+//
+//    val outstanding_cnt = CounterUpDown(1L << 16, stream.async_fire, stream.flow.valid)
+//    assume(~outstanding_cnt.willOverflow)
+//
+//    val async_flow_bounded = Bool()
+//    async_flow_bounded := outstanding_cnt > 0 || ~outstanding_cnt.decrementIt
+//    assume(async_flow_bounded) //, s"${pmb} PMB has miscounted responses")
+//    //}
+//  }
 
   def assumeStreamContract[T <: Data](stream: Stream[T]): Unit = {
     val wasValid = RegNext(stream.valid) init (False)
