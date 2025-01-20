@@ -11,7 +11,7 @@ val spinalIdslPlugin = compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-
 //
 //lazy val spinalCore = ProjectRef(uri("https://github.com/jdavidberger/SpinalHDL.git#feature/pmb_formal_testing"), "core")
 //lazy val spinalLib = ProjectRef(uri("https://github.com/jdavidberger/SpinalHDL.git#feature/pmb_formal_testing"), "lib")
-
+val vexRisc = ProjectRef(file("third_party/VexRiscv/"), "root")
 
 lazy val SpinalHDLExtras = (project in file("."))
   .settings(
@@ -28,6 +28,6 @@ lazy val SpinalHDLExtras = (project in file("."))
 
       "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % "2.17.2"
     )
-  )//.dependsOn(spinalCore, spinalLib)
+  ).dependsOn(vexRisc)//.dependsOn(spinalCore, spinalLib)
 
 fork := true

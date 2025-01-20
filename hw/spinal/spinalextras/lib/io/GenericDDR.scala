@@ -15,7 +15,7 @@ import spinalextras.lib.Config
  *                and verify that designs using ODDR aren't dependent on a given latency
  */
 class GenericODDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends ODDR(reqs) {
-  setDefinitionName(s"GenericODDR_x${input_per_output}_l${latency}")
+  //setDefinitionName(s"GenericODDR_x${input_per_output}_l${latency}")
   val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = RISING))
   val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = FALLING))
 

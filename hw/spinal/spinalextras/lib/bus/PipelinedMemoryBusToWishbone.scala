@@ -121,7 +121,7 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
     WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,
       if(wbConfig.isPipelined) rspQueue else 1)
 
-  io.wb.assignWordAddress(io.pmb.cmd.address)
+  io.wb.assignByteAddress(io.pmb.cmd.address, allowAddressResize = true)
   io.wb.WE := io.pmb.cmd.payload.write
   io.wb.CYC := io.pmb.cmd.valid || hasOutstandingReq
   io.wb.STB := io.pmb.cmd.valid && readyForNewReq

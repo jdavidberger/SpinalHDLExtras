@@ -44,6 +44,7 @@ package object bus {
         case x : Int => (bus.ADR >> log2Up(x))
       }
     }
+
     def assignWordAddress(wordAddress : UInt, addressGranularityIfUnspecified : AddressGranularity.AddressGranularity = AddressGranularity.UNSPECIFIED, allowAddressResize : Boolean = false): Unit = {
       config.wordAddressInc(addressGranularityIfUnspecified) match {
         case 1 => {
@@ -60,5 +61,20 @@ package object bus {
       }
     }
 
+    def assignByteAddress(byteAddress : UInt, addressGranularityIfUnspecified : AddressGranularity.AddressGranularity = AddressGranularity.UNSPECIFIED, allowAddressResize : Boolean = false): Unit = {
+      config.wordAddressInc(addressGranularityIfUnspecified) match {
+        case 1 => {
+          val wordAddress = byteAddress >> log2Up(config.dataWidth / 8)
+          assert(allowAddressResize || bus.ADR.getBitsWidth == wordAddress.getWidth || bus.ADR.getBitsWidth == byteAddress.getWidth,
+            s"allowAddressResize must be true to assign from an unlike address space for ${this} and ${wordAddress}")
+          bus.ADR := wordAddress.resized
+        }
+        case x : Int => {
+          assert(allowAddressResize || bus.ADR.getBitsWidth == byteAddress.getWidth,
+            s"allowAddressResize must be true to assign from an unlike address space for ${this} and ${byteAddress}")
+          bus.ADR := byteAddress.resized
+        }
+      }
+    }
   }
 }

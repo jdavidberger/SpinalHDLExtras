@@ -369,7 +369,7 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
 
   if (globalData.config.flags.contains(GenerationFlags.simulation)) {
     //mem.randBoot()
-    mem.init((0 until num_elements.toInt).map(idx => B(0).as(dataType) ))
+    //mem.init((0 until num_elements.toInt).map(idx => B(0).as(dataType) ))
   }
 
   def mapReadLatency(immediateRspFlow : Flow[PipelinedMemoryBusRsp], outstanding : UInt): Flow[PipelinedMemoryBusRsp] = {

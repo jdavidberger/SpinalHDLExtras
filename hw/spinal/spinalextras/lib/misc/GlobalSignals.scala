@@ -5,7 +5,7 @@ import spinal.lib._
 
 object GlobalSignals {
   def externalize[T <: Data](payload : T): T = {
-    externalize(payload, (t : T) => cloneOf(t))
+    externalize(payload, (t : T) => cloneOf(t), Component.current.parent)
   }
 
   def externalize[T <: Data](payload : T, topComponent : Component): T = {
@@ -18,6 +18,7 @@ object GlobalSignals {
     var intermediate : T = payload
     var new_signal : Option[T] = None
 
+    val name = payload.name
     var c = payload.component.parent
     while(c != topComponent) {
       val ctx = Component.push(c)
@@ -32,6 +33,7 @@ object GlobalSignals {
       }
 
       intermediate <> higher_payload
+      intermediate.setWeakName(name)
 
       intermediate = higher_payload
       ctx.restore()

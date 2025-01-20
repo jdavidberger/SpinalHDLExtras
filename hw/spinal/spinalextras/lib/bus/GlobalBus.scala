@@ -48,7 +48,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
   def stage_bus(bus : T) : T
 
   def add_interface(name : String, dir : T => T ): (T, T) = {
-    if(Component.current == Component.toplevel) {
+    if(Component.current == Component.toplevel || Component.current == topComponent) {
       var new_bus = create_bus().setName(name)
       return (new_bus,new_bus)
     }
@@ -234,7 +234,7 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
 
   override def build(): Unit = {
     {
-      val ctx = Component.push(Component.toplevel)
+      val ctx = Component.push(topComponent)
       GlobalLogger(
         tags = Set("memory"),
         WishboneBusLogger.flows(InvertMapping(SizeMapping(0xb9000000L, 1 KiB)), masters.map(_._1): _*),
@@ -256,7 +256,7 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
       m.DAT_MOSI := 0
     }
 
-    val ctx = Component.push(Component.toplevel)
+    val ctx = Component.push(topComponent)
     val wbInterconn = WishboneInterconFactory()
 
     val spec = interconnect_spec()
@@ -303,7 +303,7 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
     built = true
     super.build()
 
-    val ctx = Component.push(Component.toplevel)
+    val ctx = Component.push(topComponent)
     val interconn = PipelinedMemoryBusInterconnect()
     interconn.perfConfig()
     interconn.arbitrationPendingRspMaxDefault = 16
