@@ -1198,15 +1198,18 @@ object PLLConfig {
 
     for ((vco_freq, clki_div, clkfb_div, clkfb_frac_value) <- vcos) {
       val configs = actualOutputClocks.map(x => create_clock_config(vco_freq, inputClock.tolerance, x))
-      val error = configs.map(x => x._1).sum
+      val weights = actualOutputClocks.map(x => 1. / (.01 + x.tolerance))
+      val error = configs.zip(weights).map(x => x._1._1 * x._2).sum
 
       val all_valid = configs.map(_._3).fold(true)((a,b) => a & b)
 
-      if((all_valid || !bestIsValid) && bestError > error) {
-        val params = PLLClockConfig(VCO = vco_freq.toBigDecimal Hz, CLKI_DIV = clki_div, CLKFB_DIV = clkfb_div, CLKFB_DIV_FRAC = clkfb_frac_value, CLK_REF = -1, CLKFB_FRAC_MODE = true)
-        bestError = error
-        best = params.copy(OUTPUTS = configs.map(_._2))
-        bestIsValid = all_valid
+      if(all_valid || !bestIsValid) {
+        if ((all_valid && !bestIsValid) || (bestError > error)) {
+          val params = PLLClockConfig(VCO = vco_freq.toBigDecimal Hz, CLKI_DIV = clki_div, CLKFB_DIV = clkfb_div, CLKFB_DIV_FRAC = clkfb_frac_value, CLK_REF = -1, CLKFB_FRAC_MODE = true)
+          bestError = error
+          best = params.copy(OUTPUTS = configs.map(_._2))
+          bestIsValid = all_valid
+        }
       }
     }
 

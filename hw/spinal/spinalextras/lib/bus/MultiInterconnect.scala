@@ -7,6 +7,7 @@ import spinal.lib.bus.simple.PipelinedMemoryBusDecoder
 import scala.collection.mutable
 
 trait MultiBusInterface {
+  def address_width : Int
   def create_decoder(mappings : Seq[AddressMapping]) : Seq[MultiBusInterface]
   def create_arbiter(size : Int) : Seq[MultiBusInterface]
 }
@@ -46,7 +47,19 @@ class MultiInterconnect {
       assert(!s.mapping.hit(mapping.lowerBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
       assert(!s.mapping.hit(mapping.highestBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
     }
-    slaves(bus) = SlaveModel(mapping)
+
+    val newMapping = mapping match {
+      case SizeMapping(base, size) => {
+        if((base & (size - 1)) == 0) {
+          MaskMapping(base, ((1L << bus.address_width) - 1) & ~(size - 1))
+        } else {
+          mapping
+        }
+      }
+      case _ => mapping
+    }
+
+    slaves(bus) = SlaveModel(newMapping)
     this
   }
 

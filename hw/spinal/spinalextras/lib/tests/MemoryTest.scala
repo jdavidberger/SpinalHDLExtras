@@ -7,10 +7,11 @@ import spinal.lib._
 import spinal.lib.bus.simple._
 import spinalextras.lib.HardwareMemory.HardwareMemoryWriteCmd
 import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, GSR, OSCD, OSCDConfig, PDPSC512K_Mem}
+import spinalextras.lib.bus.PipelinedMemoryBusCmdExt
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.memory.MemoryBackedFifo
 import spinalextras.lib.misc.{AutoInterconnect, ClockSpecification}
-import spinalextras.lib.{Config, HardwareMemory, Memories, MemoryRequirement, MemoryRequirementBits, PipelinedMemoryBusMemory, StackedHardwareMemory, WideHardwareMemory}
+import spinalextras.lib.{Config, HardwareMemory, HardwareMemoryReadWriteConfig, Memories, MemoryRequirement, MemoryRequirementBits, PipelinedMemoryBusMemory, StackedHardwareMemory, WideHardwareMemory}
 
 import scala.language.{existentials, postfixOps}
 
@@ -101,7 +102,8 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
   val readAddress, writeAddress, responseAddress, lastGoodResponse = Reg(UInt(cfg.addressWidth bits)) init (0)
 
   val dataWidth = cfg.dataWidth
-  val incPerOp = 1 // dataWidth / 8
+  //require(dataWidth % 8 == 0)
+  val incPerOp = 1 << log2Up((dataWidth / 8.0).ceil.toInt)
   //cmd_stream.address := (0x000 + incPerOp * writeCnt.value).resized
   cmd_stream.data := address_to_data(cmd_stream.address, dataWidth).resized
   val cmdHash = address_to_data_mask.map(_(cmd_stream.address, dataWidth)).orNull
@@ -114,9 +116,9 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
   cmd_stream.valid := True
   cmd_stream.write := ~readMode
   when(cmd_stream.write) {
-    cmd_stream.address := (writeAddress.resized & address_mask).resized
+    cmd_stream.payload.assignByteAddress((writeAddress.resized & address_mask).resized)
   } otherwise {
-    cmd_stream.address := (readAddress.resized & address_mask).resized
+    cmd_stream.payload.assignByteAddress((readAddress.resized & address_mask).resized)
   }
   when(cmd_stream.fire) {
     when(cmd_stream.write) {
@@ -180,7 +182,8 @@ class MemoryTestBench(cfg : PipelinedMemoryBusConfig, unique_name : Boolean = fa
     responseAddress := ((responseAddress + incPerOp).resized & address_mask).resized
   }
 
-  val invalid_data = Flow(HardwareMemoryWriteCmd(cmd_stream.config.copy(dataWidth = 32)))
+  //val mem_config = HardwareMemoryReadWriteConfig(cmd_stream.config.copy(dataWidth = 32))
+  val invalid_data = Flow(PipelinedMemoryBusCmd(cmd_stream.config.copy(dataWidth = 32)))
   invalid_data.valid := False
   invalid_data.assignDontCareToUnasigned()
 

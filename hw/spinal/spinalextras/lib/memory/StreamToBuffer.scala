@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
+import spinalextras.lib.bus.PipelinedMemoryBusCmdExt
 import spinalextras.lib.misc.{GlobalSignals, RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
 
@@ -45,7 +46,7 @@ case class StreamToBuffer[T <: Data](
 
   pushMem.map(d => {
     val cmd = cloneOf(io.bus.cmd.payload)
-    cmd.address := writeAddress.resized
+    cmd.assignWordAddress(writeAddress.resized)
     cmd.data := d
     when(io.debug_fake_write) {
       cmd.mask.clearAll()

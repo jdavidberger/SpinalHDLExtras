@@ -71,7 +71,7 @@ class MemoryBackedFIFOsTest extends AnyFunSuite {
 
           for (j <- 0 until (depth * 3).toInt) {
             fifo.push.valid #= true
-            val randValue = j //simRandom.nextLong().abs
+            val randValue = (i << 16) +  j //simRandom.nextLong().abs
             sco.pushRef(randValue)
             println(s"Pushing ${randValue} / ${j} for ${i}")
             fifo.push.payload #= randValue

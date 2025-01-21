@@ -4,7 +4,7 @@ import spinal.core.{Area, Bool, BooleanPimped, Bundle, CombInit, Component, Data
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinal.lib.{KeepAttribute, Stream, StreamFifoInterface, master, slave}
 import spinalextras.lib.HardwareMemory.HardwareMemoryReadWriteCmd
-import spinalextras.lib.bus.PipelineMemoryGlobalBus
+import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt}
 import spinalextras.lib.testing.test_funcs
 import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 
@@ -15,10 +15,9 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
   val mem = mem_factory(MemoryRequirement(dataType, depth, 2, 0, 0))
   val io = slave(new FifoInterface[T](dataType, depth))
 
-  val addrWidth = log2Up(depth)
-  val sysBus = PipelineMemoryGlobalBus(PipelinedMemoryBusConfig(addrWidth, dataType.getBitsWidth))
+  val sysBus = PipelineMemoryGlobalBus(mem.config.toPipelinedMemoryBusConfig)
 
-  val fifo = PipelinedMemoryBusFIFO(dataType, (0, depth), Some(sysBus), localPushDepth = mem.cmd_latency, localPopDepth = mem.latency + 1)
+  val fifo = PipelinedMemoryBusFIFO(dataType, (0, depth << mem.config.wordAddressShift), Some(sysBus), localPushDepth = mem.cmd_latency, localPopDepth = mem.latency + 1)
 
   io.push <> fifo.io.push
   io.pop <> fifo.io.pop
@@ -34,12 +33,12 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
     test_funcs.assertPMBContract(memBus)
 
     when(memBus.cmd.valid) {
-      assert(memBus.cmd.address < (depth), Seq("Mapping higher bound check ", idx.toString, " ", memBus.cmd.address, " ", (depth).toHexString))
+      assert(memBus.cmd.payload.wordAddress < (depth), Seq("Mapping higher bound check ", idx.toString, " ", memBus.cmd.address, " ", (depth).toHexString))
     }
 
     memBus.cmd.map(x => {
       val rtn = HardwareMemoryReadWriteCmd(mem.config)
-      rtn.address := x.address
+      rtn.address := x.wordAddress
 
       rtn.data := x.data
       rtn.write := x.write

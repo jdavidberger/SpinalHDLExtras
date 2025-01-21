@@ -734,9 +734,13 @@ class SpitexApb3Timer(val baseAddress : BigInt) extends Component{
     ev_pending := True
   }
 
-  val uptime_latch = busCtrlWrapped.createAndDriveFlow(Bool(), address = 32)
+  val uptime_latch = Bool()
+  uptime_latch := False
+  busCtrlWrapped.onWrite(address = 32) {
+    uptime_latch := True
+  }
   val uptime = CounterFreeRun(64 bits)
-  val uptime_cycles = RegNextWhen(uptime.value, uptime_latch.valid) init(0)
+  val uptime_cycles = RegNextWhen(uptime.value, uptime_latch) init(0)
   busCtrlWrapped.createReadMultiWord(uptime_cycles, address = 36, "Uptime cycles") := uptime_cycles
 
   io.interrupt := ev_pending & ev_enable

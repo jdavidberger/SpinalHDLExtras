@@ -8,16 +8,27 @@ import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig, PipelinedMemoryBusRsp}
 import spinalextras.lib.HardwareMemory._
 import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, PDPSC16K_Mem, PDPSC512K_Mem}
+import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.misc.ComponentWithKnownLatency
 import spinalextras.lib.testing.test_funcs
 
 import scala.collection.mutable
-import scala.language.postfixOps
+import scala.language.{implicitConversions, postfixOps}
 import scala.reflect.ClassTag
 
+case class HardwareMemoryReadWriteConfig(addressWidth : Int, dataWidth : Int) {
+  def wordAddressShift = log2Up((dataWidth / 8.0).ceil.toInt)
+  implicit def toPipelinedMemoryBusConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(addressWidth + wordAddressShift, dataWidth)
+}
+object HardwareMemoryReadWriteConfig {
+  def apply(cfg: PipelinedMemoryBusConfig): HardwareMemoryReadWriteConfig = {
+    HardwareMemoryReadWriteConfig(cfg.addressWidth - cfg.wordAddressShift, cfg.dataWidth)
+  }
+  implicit def hwReadWriteConfig2PMBConfig(value : HardwareMemoryReadWriteConfig): PipelinedMemoryBusConfig = value.toPipelinedMemoryBusConfig
+}
+
 object HardwareMemory {
-  type HardwareMemoryReadWriteConfig = PipelinedMemoryBusConfig
 
   case class HardwareMemoryReadWriteCmd(config : HardwareMemoryReadWriteConfig) extends Bundle{
     val write = Bool()
@@ -107,7 +118,7 @@ abstract class HardwareMemory[T <: Data]() extends Component {
 
   lazy val actual_num_elements = num_elements
 
-  lazy val config = PipelinedMemoryBusConfig(log2Up(num_elements), dataWidth = requirements.dataType.getBitsWidth)
+  lazy val config = HardwareMemoryReadWriteConfig(log2Up(num_elements), dataWidth = requirements.dataType.getBitsWidth)
   def bitsWidth = requirements.dataType.getBitsWidth
 
   lazy val io = new Bundle {
@@ -160,13 +171,13 @@ abstract class HardwareMemory[T <: Data]() extends Component {
       pmb.cmd.ready := True
 
       read.cmd.valid := pmb.cmd.valid && !pmb.cmd.write
-      read.cmd.payload := pmb.cmd.address
+      read.cmd.payload := pmb.cmd.payload.wordAddress
 
       pmb.rsp.valid := read.rsp.valid
       pmb.rsp.data := read.rsp.data
 
       write.cmd.valid := pmb.cmd.valid && pmb.cmd.write
-      write.cmd.address := pmb.cmd.address
+      write.cmd.address := pmb.cmd.payload.wordAddress
       if(write.cmd.mask != null)
         write.cmd.mask := pmb.cmd.mask
       write.cmd.payload.data := pmb.cmd.data
@@ -182,7 +193,7 @@ abstract class HardwareMemory[T <: Data]() extends Component {
 
         read_write.cmd.write := pmb.cmd.write
         read_write.cmd.valid := pmb.cmd.valid
-        read_write.cmd.address := pmb.cmd.address
+        read_write.cmd.address := pmb.cmd.payload.wordAddress
         if(read_write.cmd.mask != null)
           read_write.cmd.mask := pmb.cmd.mask
         read_write.cmd.payload.data := pmb.cmd.data

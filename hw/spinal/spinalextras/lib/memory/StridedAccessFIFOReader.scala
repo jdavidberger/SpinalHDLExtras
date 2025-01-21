@@ -9,7 +9,7 @@ import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.sim.StreamMonitor
 import spinal.lib.{Counter, CounterUpDown, Flow, Fragment, Stream, StreamDemux, StreamFifo, StreamJoin, master}
 import spinalextras.lib.Config
-import spinalextras.lib.bus.PipelineMemoryGlobalBus
+import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.bus.simple.SimpleMemoryProvider
 import spinalextras.lib.logging.PipelinedMemoryBusLogger
 import spinalextras.lib.misc.{CounterTools, CounterUpDownUneven, PipelinedMemoryBusBuffered, RegisterTools, StreamTools}
@@ -34,6 +34,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     outSize += 1
   }
 
+  val baseAddressWords = baseAddress >> busConfig.wordAddressShift
   val outDatatype = Vec(dataType, outSize )
 
   val io = new Bundle {
@@ -118,9 +119,9 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   }
 
   val chunk_cmd = new Area {
-    val read_address_words = Reg(UInt(read_port.config.addressWidth bits)) init(baseAddress)
+    val read_address_words = Reg(UInt((read_port.config.addressWidth - read_port.config.wordAddressShift) bits)) init(baseAddressWords)
 
-    read_port.cmd.address := read_address_words
+    read_port.cmd.payload.assignWordAddress(read_address_words)
     val cnt = Counter(bufferSizeInBusWords)
     val chunk_idx = Counter(chunks_per_frame)
 
@@ -131,9 +132,9 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     val chunkidx_offset = chunkidx_offset_area.valueNext
 
     val read_address_words_logical =
-      baseAddress +^ ((roundrobin_idx_cmd.value * busWordsPerOutputChannel +^ chunk_idx.value * bufferSizeInBusWords +^ cnt.value))
+      baseAddressWords +^ ((roundrobin_idx_cmd.value * busWordsPerOutputChannel +^ chunk_idx.value * bufferSizeInBusWords +^ cnt.value))
 
-    read_address_words := (baseAddress +^ ((roundrobin_idx_offset +^ chunkidx_offset +^ cnt.valueNext))).resized
+    read_address_words := (baseAddressWords +^ ((roundrobin_idx_offset +^ chunkidx_offset +^ cnt.valueNext))).resized
 
     assert(read_address_words_logical === read_address_words, "Read address is wrong")
 

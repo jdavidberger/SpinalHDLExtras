@@ -7,19 +7,22 @@ import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
 import spinal.lib.bus.regif.AccessType.{RO, RW}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinal.lib.bus.simple._
-import spinalextras.lib.bus.PipelineMemoryGlobalBus
+import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.misc.{CounterUpDownUneven, RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
+import spinalextras.lib.bus.bus._
 
 import scala.collection.mutable
 import scala.language.postfixOps
 
-case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : Int, baseAddress : Int = 0,
+case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBytes : Int, baseAddress : Int = 0,
                                                var config : PipelinedMemoryBusConfig = null,
                                                rsp_latency : Int = 0, cmd_latency : Int = 0, read_trigger : Int = -1) extends Component with HasFormalAsserts {
   if(config == null) {
-    config = PipelinedMemoryBusConfig(addressWidth = log2Up(depth), dataWidth = dataType.getBitsWidth)
+    config = PipelinedMemoryBusConfig(addressWidth = log2Up(depthInBytes), dataWidth = dataType.getBitsWidth)
   }
+  val depthInWords = depthInBytes >> config.wordAddressShift
+
   val bufferSize = rsp_latency + 1
   val midDatatype = Bits(StreamTools.lcm(dataType.getBitsWidth, config.dataWidth) bits)
   val bufferSizeInBits = bufferSize * config.dataWidth
@@ -44,11 +47,11 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
   readBusCmdQueue.io.push <> readBusCmd
   readBus.cmd <> readBusCmdQueue.io.pop.haltWhen(io.flush)
 
-  val read_counter = Counter(depth, readBusCmd.fire && !readBusCmd.write)
+  val read_counter = Counter(depthInWords, readBusCmd.fire && !readBusCmd.write)
 
   readBusCmd.setIdle()
   readBusCmd.write := False
-  readBusCmd.address := ((read_counter.value).resize(readBusCmd.address.getBitsWidth bits) + baseAddress)
+  readBusCmd.payload.assignByteAddress(((read_counter.value << readBus.config.wordAddressShift) +^ baseAddress).resized)
 
   var fifo = StreamFifo(midDatatype, bufferSizeInMidWords, latency = 0)
   withAutoPull()
@@ -114,7 +117,7 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
     readBusCmdQueue.formalAssumeInputs()
     readBusCmdQueue.formalAssumes()
 
-    val busContract = test_funcs.assertPMBContract(readBus, max_outstanding = depth)
+    val busContract = test_funcs.assertPMBContract(readBus, max_outstanding = depthInBytes)
     val busInFlightOccInBits = busContract.outstanding_cnt.value * config.dataWidth
     val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits +^ readBusCmdQueue.io.occupancy * config.dataWidth
     assertOrAssume((usage.value +^ burnRtn) === (usageCheckInBits))
@@ -136,10 +139,14 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depth : I
 case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
                                              sm : SizeMapping,
                                              sysBus : Option[PipelineMemoryGlobalBus] = None, localPushDepth : Int = 0, localPopDepth : Int = 0) extends Component with HasFormalAsserts {
-  val depthInWords = sm.size.toInt
+  val depthInBytes = sm.size.toInt
   val baseAddress = sm.base.toInt
 
-  val config = sysBus.map(g => g.config).getOrElse(PipelinedMemoryBusConfig(addressWidth = log2Up(depthInWords), dataWidth = dataType.getBitsWidth))
+  val config = sysBus.map(g => g.config).getOrElse(PipelinedMemoryBusConfig(addressWidth = log2Up(depthInBytes), dataWidth = dataType.getBitsWidth))
+  val depthInWords = depthInBytes >> config.wordAddressShift
+
+  require(log2Up(depthInBytes + baseAddress) <= config.addressWidth)
+
   val readBus = sysBus.get.add_master(s"pmb_fifo_read_${baseAddress.hexString()}")
   val bus = sysBus.map(g => g.add_master(s"pmb_fifo_write_${baseAddress.hexString()}")).getOrElse(master(PipelinedMemoryBus(config)))
 
@@ -171,7 +178,7 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
   assert(writeBusContract.outstanding_cnt.value === 0)
   assert(!writeBus.cmd.valid || writeBus.cmd.write)
 
-  val ramBackedBuffer = PipelinedMemoryBusBuffer(dataType, depthInWords, baseAddress, sharedBus.config, rsp_latency = localPopDepth)
+  val ramBackedBuffer = PipelinedMemoryBusBuffer(dataType, depthInBytes, baseAddress, sharedBus.config, rsp_latency = localPopDepth)
 
   ramBackedBuffer.io.bus <> readBus
   ramBackedBuffer.io.memoryAvailable.payload := False
@@ -220,7 +227,9 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     val cmd = PipelinedMemoryBusCmd(writeBus.config)
     cmd.mask.setAll()
     cmd.write := ~io.debug_fake_write
-    cmd.address := (write_counter.value).resize(cmd.address.getBitsWidth bits) + baseAddress
+    val byteAddress = (write_counter.value << writeBus.config.wordAddressShift).resize(cmd.address.getBitsWidth bits) +^ baseAddress
+    assert(byteAddress.msb === False)
+    cmd.assignByteAddress(byteAddress.resized)
     cmd.data := wrd.asBits
     cmd
   }).haltWhen(full | io.flush) >> writeBus.cmd

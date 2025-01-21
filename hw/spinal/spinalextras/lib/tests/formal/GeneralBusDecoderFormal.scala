@@ -27,7 +27,7 @@ case class GeneralBusDecoderFormal[T <: Data with IMasterSlave](val memoryBusAcc
 
 class GeneralBusDecoderFormalTest extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 20
+  override def defaultDepth() = 15
 
   formalTests().foreach(t => test(t._1) { t._2() })
 

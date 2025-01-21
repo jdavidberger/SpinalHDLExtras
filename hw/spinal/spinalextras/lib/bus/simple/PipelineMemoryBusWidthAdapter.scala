@@ -9,6 +9,7 @@ import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.regif.BusIf
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinalextras.lib.Config
+import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, PipelinedMemoryBusLogger, SignalLogger}
 import spinalextras.lib.testing.test_funcs
 
@@ -72,7 +73,8 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
         (id, payload, _) => {
           val rid = if(endianness == BIG) (factor - id - 1) else id
           val cmd = PipelinedMemoryBusCmd(pmbOut)
-          cmd.address := (payload.address << (shift_in - shift_out)) + id
+          //cmd.address := (payload.address << (shift_in - shift_out)) + id
+          cmd.address := payload.address + (id << cmd.config.wordAddressShift)
           cmd.data := (payload.data >> (cmd.data.getWidth * rid)).resized
           cmd.write := payload.write
           cmd.mask := (payload.mask >> (output_words * rid)).resized
@@ -96,9 +98,10 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
 
       val cmdStream = io.input.cmd.map(payload => {
         val cmd = PipelinedMemoryBusCmd(pmbOut)
-        val index = payload.address.resize((input_size_per_output_size) bits)
+        val index = payload.wordAddress.resize((input_size_per_output_size) bits)
         val rindex = if(endianness == LITTLE) index else (input_size_per_output_size - index)
-        cmd.address := (payload.address >> (shift_out - shift_in)).resized
+        //cmd.address := (payload.address >> (shift_out - shift_in)).resized
+        cmd.address := payload.address
         cmd.data := (payload.data << (pmbIn.dataWidth * rindex)).resized
         cmd.mask := (payload.mask << (input_words * rindex)).resized
         cmd.write := payload.write
@@ -177,7 +180,10 @@ case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
   }
 
   var port = mem.readWriteSyncPort(maskWidth = io.bus.cmd.mask.getWidth)
-  port.address := mapping.removeOffset(io.bus.cmd.address).resized
+  val wordAddressShift = busConfig.wordAddressShift
+  assert(mapping.hit(io.bus.cmd.address))
+  val mappedByteAddress = mapping.removeOffset(io.bus.cmd.address)
+  port.address := ( mappedByteAddress >> wordAddressShift).resized
   port.wdata := io.bus.cmd.data
   port.mask := io.bus.cmd.mask
   port.write := io.bus.cmd.write

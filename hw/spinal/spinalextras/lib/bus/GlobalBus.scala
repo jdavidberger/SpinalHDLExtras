@@ -319,7 +319,7 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
       //interconn.noTransactionLockOn(topBus)
     }
 
-    interconn.addMasters(interconnect_spec():_*)
+    interconn.addMasters(spec:_*)
 //
 //    def directWithFormal(m : PipelinedMemoryBus, s : PipelinedMemoryBus) : Unit = {
 //      val mContract = test_funcs.assertPMBContract(m).setName(s"c${m.name}_gb_contract")

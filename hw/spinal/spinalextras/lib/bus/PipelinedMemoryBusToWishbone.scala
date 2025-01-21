@@ -1,6 +1,7 @@
 package spinalextras.lib.bus
 
 import spinal.core._
+import spinal.core.formal.HasFormalAsserts
 import spinal.core.sim.{SimBitVectorPimper, SimBoolPimper, SimClockDomainHandlePimper, SimPublic, SimTimeout, fork, simTime}
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
@@ -58,7 +59,7 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
       if(wbConfig.isPipelined) rspQueue else 1)
 
   assert(io.pmb.cmd.valid === False || (io.wb.byteAddress() & (io.wb.config.wordAddressInc() - 1)) === 0, "PMB needs word alignment")
-  io.pmb.cmd.payload.address := addressMap(io.wb.wordAddress()).resized
+  io.pmb.cmd.payload.address := addressMap(io.wb.byteAddress()).resized
   io.pmb.cmd.payload.write := io.wb.WE
   io.pmb.cmd.payload.data := io.wb.DAT_MOSI.resized
   io.pmb.cmd.valid := io.wb.CYC && io.wb.STB && readyForNewReq
@@ -107,7 +108,7 @@ object WishboneToPipelinedMemoryBus {
   }
 }
 
-case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, rspQueue : Int = 8) extends Component{
+case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, rspQueue : Int = 8) extends Component {
   //assert(wbConfig.dataWidth == pipelinedMemoryBusConfig.dataWidth)
 
   val io = new Bundle {
@@ -116,6 +117,7 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
   }
 
   test_funcs.assertPMBContract(io.pmb)
+  test_funcs.assertWishboneBusContract(io.wb)
 
   val (readyForNewReq, hasOutstandingReq, reqWasWE) =
     WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,

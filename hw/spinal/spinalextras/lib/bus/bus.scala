@@ -1,6 +1,7 @@
 package spinalextras.lib
 
 import spinal.core._
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone}
 
 package object bus {
@@ -76,5 +77,28 @@ package object bus {
         }
       }
     }
+  }
+
+  implicit class PipelinedMemoryBusConfigExt(config : PipelinedMemoryBusConfig) {
+    def wordAddressShift = log2Up((config.dataWidth / 8.0).ceil.toInt)
+  }
+
+  implicit class PipelinedMemoryBusCmdExt(cmd: PipelinedMemoryBusCmd) {
+    def wordAddress = cmd.address >> cmd.config.wordAddressShift
+
+    def assignByteAddress(byteAddress : UInt): Unit = {
+      cmd.address := byteAddress
+    }
+    def assignWordAddress(wordAddress : UInt): Unit = {
+      var byteAddress = wordAddress << cmd.config.wordAddressShift
+      if(wordAddress.hasTag(tagAutoResize)) {
+        byteAddress = byteAddress.resized
+      }
+      assignByteAddress(byteAddress)
+    }
+  }
+
+  implicit class PipelinedMemoryBusExt(bus: PipelinedMemoryBus) {
+
   }
 }

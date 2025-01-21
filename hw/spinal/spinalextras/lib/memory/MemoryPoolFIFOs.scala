@@ -6,7 +6,7 @@ import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, Pip
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.HardwareMemory.{HardwareMemoryReadWriteCmd, HardwareMemoryWriteCmd}
-import spinalextras.lib.bus.PipelineMemoryGlobalBus
+import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.memory.MemoryPoolFIFOs.splitReadWrite
 import spinalextras.lib.testing.test_funcs
 import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
@@ -45,13 +45,14 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
   }
 
   val totalDepth = sizes.sum
+  val totalDepthInBytes = totalDepth << (dataType.getBitsWidth / 8.0).ceil.toInt
   val mem = mem_factory(MemoryRequirement(dataType, totalDepth, 2, 0, 0), technologyKind)
-  val sysBus = PipelineMemoryGlobalBus(PipelinedMemoryBusConfig(log2Up(totalDepth), dataType.getBitsWidth))
+  val sysBus = PipelineMemoryGlobalBus(mem.config.toPipelinedMemoryBusConfig)
 
   var base = 0
   val fifos = sizes.zip(io.fifos).map(sm_fifo => {
-    val fifo = new PipelinedMemoryBusFIFO(dataType, (base, sm_fifo._1.toInt), Some(sysBus), localPopDepth = mem.latency)
-    base = base + sm_fifo._1.toInt
+    val fifo = new PipelinedMemoryBusFIFO(dataType, (base, sm_fifo._1.toInt << sysBus.config.wordAddressShift), Some(sysBus), localPopDepth = mem.latency)
+    base = base + (sm_fifo._1.toInt << sysBus.config.wordAddressShift)
     fifo.io.push <> sm_fifo._2.push
     fifo.io.pop <> sm_fifo._2.pop
     fifo.io.flush := sm_fifo._2.flush
@@ -85,7 +86,7 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
     val memBus = arbitratedBusses(idx)
     memBus.cmd.map(x => {
       val rtn = HardwareMemoryReadWriteCmd(mem.config)
-      rtn.address := x.address
+      rtn.address := x.wordAddress
       rtn.data := x.data
       rtn.write := x.write
       if (rtn.mask != null)

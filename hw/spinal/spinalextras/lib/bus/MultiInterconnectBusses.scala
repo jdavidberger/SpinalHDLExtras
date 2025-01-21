@@ -13,6 +13,7 @@ import scala.language.postfixOps
 case class PipelinedMemoryBusMultiBus(bus : PipelinedMemoryBus,
                                       pendingMax : Int = 3,
                                       pendingRspMax : Int = 1, rspRouteQueue : Boolean = false, transactionLock : Boolean = true) extends MultiBusInterface {
+  override def address_width = bus.config.addressWidth
   override def create_decoder(mappings:  Seq[AddressMapping]) = new Composite(bus, "") {
     val decoder = new PipelinedMemoryBusDecoder(bus.config, mappings, pendingMax)
     decoder.io.input <> bus
@@ -42,7 +43,7 @@ package object bus {
 
   implicit class InstructionCacheMemBusExt(val bus: InstructionCacheMemBus) extends MultiBusInterface {
     import spinalextras.lib.bus.bus_traits._
-
+    override def address_width = bus.p.addressWidth
     override def create_decoder(mappings: Seq[AddressMapping]): Seq[InstructionCacheMemBusExt] = new Composite(bus) {
       val decoder = new GeneralBusDecoder(new InstructionCacheMemBusExtImpl(bus), mappings)
       decoder.io.input <> bus
@@ -61,6 +62,7 @@ package object bus {
   }
 
   implicit class BMBBusExt(val bus: Bmb) extends MultiBusInterface {
+    override def address_width = bus.p.access.addressWidth
     override def create_decoder(mappings: Seq[AddressMapping]): Seq[BMBBusExt]   = new Composite(bus) {
       val decoder = BmbDecoder(bus.p, mappings, capabilities = mappings.map(_ => bus.p))
       decoder.io.input <> bus
@@ -77,7 +79,7 @@ package object bus {
   def xipParam(bus: XipBus) = BmbParameter(24, 8, 1, 1, 2)
 
   implicit class XipBusExt(val bus: XipBus) extends MultiBusInterface {
-
+    override def address_width = bus.p.addressWidth
     override def create_decoder(mappings:  Seq[AddressMapping]): Seq[MultiBusInterface] = ???
     override def create_arbiter(size:  Int): Seq[MultiBusInterface] = new Composite(bus, "arbiter") {
       import spinalextras.lib.bus.bus_traits._
@@ -89,6 +91,7 @@ package object bus {
 
 
   implicit class WishboneExt(val bus: Wishbone) extends MultiBusInterface {
+    override def address_width = bus.config.addressWidth
     override def create_decoder(mappings:  Seq[AddressMapping]): Seq[MultiBusInterface] = ???
     override def create_arbiter(size:  Int): Seq[MultiBusInterface] = ???
   }

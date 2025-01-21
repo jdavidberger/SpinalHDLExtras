@@ -64,7 +64,7 @@ class GlobalLogger {
     signals.appendAll(s.map(x => (x._1, topify(x._2), ClockDomain.current, tags)))
   }
 
-  var output_path = "."
+  var output_path : String = null
   def set_output_path(fn : String): Unit = {
     output_path = fn
   }
@@ -76,6 +76,9 @@ class GlobalLogger {
 
     if(built) {
       return
+    }
+    if(output_path == null) {
+      output_path = spinal.core.GlobalData.get.config.targetDirectory
     }
     val signals = this.signals.filter(s => {
       s._4.intersect(tags).nonEmpty || tags.isEmpty
@@ -97,6 +100,7 @@ class GlobalLogger {
         outputStream.foreach(_.setIdle())
       }
     }
+    output_path = null
   }
   def create_logger_stream(depth: Int, outputStream : Stream[Bits], tags: Set[String] = Set()): Unit = {
     Component.toplevel.addPrePopTask(() => {

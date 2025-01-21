@@ -1,13 +1,14 @@
 package spinalextras.lib.tests
 
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.core.sim._
 import spinal.core._
+import spinal.core.sim.{SimBaseTypePimper, SimBoolPimper, SimClockDomainHandlePimper, SimEquivBitVectorBigIntPimper, SimTimeout}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinal.lib.slave
 import spinalextras.lib.Config
+import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.bus.simple.{PipelineMemoryBusWidthAdapter, SimpleMemoryProvider}
 
 class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
@@ -42,7 +43,7 @@ class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
           val data = (i + 0xabcd123456789L) % (1L << configIn.dataWidth - 1)
           dut.io.bus.cmd.valid #= true
           dut.io.bus.cmd.data #= data
-          dut.io.bus.cmd.address #= i
+          dut.io.bus.cmd.address #= (i << dut.io.bus.config.wordAddressShift)
           dut.io.bus.cmd.write #= true
           sco.pushRef(data)
           dut.clockDomain.waitSamplingWhere(dut.io.bus.cmd.ready.toBoolean)
@@ -52,7 +53,7 @@ class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
         for (i <- 0 until 1000) {
           dut.io.bus.cmd.valid #= true
           dut.io.bus.cmd.data #= 0xdeadbeefL % (1L << configIn.dataWidth - 1)
-          dut.io.bus.cmd.address #= i
+          dut.io.bus.cmd.address #= i << dut.io.bus.config.wordAddressShift
           dut.io.bus.cmd.write #= false
           dut.clockDomain.waitSamplingWhere(dut.io.bus.cmd.ready.toBoolean)
           dut.io.bus.cmd.valid #= false
@@ -68,8 +69,8 @@ class PipelineMemoryBusWidthAdapterTest extends AnyFunSuite {
     for (outWidth <- Seq(8, 16, 32, 64, 128)) {
       for(endianness <- Seq(LITTLE, BIG)) {
         test(s"PipelinedMemoryBusAdapterTest_${inWidth}_${outWidth}_${endianness.getClass.getSimpleName}") {
-          runTest(PipelinedMemoryBusConfig(32 - log2Up(inWidth / 8), inWidth),
-            PipelinedMemoryBusConfig(32 - log2Up(outWidth / 8), outWidth), endianness)
+          runTest(PipelinedMemoryBusConfig(32, inWidth),
+            PipelinedMemoryBusConfig(32, outWidth), endianness)
         }
       }
     }

@@ -9,6 +9,7 @@ import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinal.lib.wishbone.sim.{WishboneSequencer, WishboneStatus, WishboneTransaction}
 import spinalextras.lib.Config
 import spinalextras.lib.bus.PipelinedMemoryBusToWishbone
+import spinalextras.lib.bus._
 
 import scala.collection.mutable
 import scala.util.Random
@@ -24,6 +25,7 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
         }.setDefinitionName("PipelinedMemoryBusToWishbone")
       ) { dut =>
         dut.io.wb.DAT_MISO #= 0xcafecafeL
+        dut.io.pmb.cmd.valid #= false
         dut.io.wb.ACK #= false
         dut.io.pmb.cmd.valid #= false
 
@@ -37,7 +39,7 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
           WishboneTransaction(BigInt(Random.nextInt(200) * 4), BigInt(Random.nextInt(200)))
         }
         var running = true
-
+        var waitForAck = false
         val wb_thread = fork {
           var q = new mutable.Queue[(BigInt, Boolean)]()
 
@@ -47,10 +49,11 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
             if (q.nonEmpty) {
               dut.io.wb.DAT_MISO #= 0xcafecafeL
               if (dut.io.wb.ACK.randomize()) {
+                waitForAck = false
                 val (addr, was_write) = q.dequeue()
                 if (!was_write) {
                   val response = BigInt(Random.nextInt(1000))
-                  println(s"Pushing ${addr} ${response} ${dut.sysclk.toBigInt}")
+                  println(s"Pushing WB ACK ${addr} ${response} ${dut.sysclk.toBigInt}")
                   dut.io.wb.DAT_MISO #= response
                   pmb_resp.pushRef(response)
                 } else {
@@ -64,12 +67,14 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
               stalled = dut.io.wb.STALL.toBoolean
             }
 
-            if (!stalled && dut.io.wb.CYC.toBoolean && dut.io.wb.STB.toBoolean) {
+            if (!waitForAck && !stalled && dut.io.wb.CYC.toBoolean && dut.io.wb.STB.toBoolean && !dut.io.wb.ACK.toBoolean) {
+              waitForAck = true
               println(s"Need response for a: ${dut.io.wb.ADR.toBigInt} ${dut.io.wb.WE.toBoolean} ${dut.sysclk.toBigInt} ${simTime()}")
               q.enqueue((dut.io.wb.ADR.toBigInt, dut.io.wb.WE.toBoolean))
             }
 
             dut.clockDomain.waitSampling()
+            dut.io.wb.ACK #= false
           }
         }
 
@@ -89,9 +94,9 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
         fork {
           val busStatus = WishboneStatus(dut.io.wb)
           while (true) {
-            dut.clockDomain.waitSamplingWhere(busStatus.isTransfer)
+            dut.clockDomain.waitSamplingWhere(busStatus.isAck)
             val tran = WishboneTransaction.sampleAsSlave(dut.io.wb)
-            println(s"Popping ${tran}")
+            println(s"Popping ${tran} ${simTime()} into pushDut ${dut.sysclk.toBigInt}")
             sco.pushDut(tran)
           }
         }
@@ -115,7 +120,7 @@ class PipelinedMemoryBusToWishboneTest extends AnyFunSuite {
           }
           println(s"Pushing ${tran} ${tran.address << word_shift} ${we} ${dut.sysclk.toBigInt}")
           sco.pushRef(tran)
-          dut.io.pmb.cmd.address #= tran.address >> word_shift
+          dut.io.pmb.cmd.payload.address #= (tran.address >> word_shift) << dut.io.pmb.config.wordAddressShift
           dut.io.pmb.cmd.write #= we
           dut.io.pmb.cmd.valid #= true
           dut.io.pmb.cmd.data #= tran.data
