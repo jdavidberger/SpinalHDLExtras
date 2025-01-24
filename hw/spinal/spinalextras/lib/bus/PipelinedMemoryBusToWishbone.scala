@@ -91,7 +91,7 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
 
 object WishboneToPipelinedMemoryBus {
   def apply(bus: Wishbone, rspQueue : Int): PipelinedMemoryBus = {
-    val config = PipelinedMemoryBusConfig(addressWidth = bus.config.addressWidth - log2Up(bus.config.wordAddressInc()), dataWidth = bus.config.dataWidth)
+    val config = PipelinedMemoryBusConfig(addressWidth = bus.byteAddress().getWidth, dataWidth = bus.config.dataWidth)
     WishboneToPipelinedMemoryBus(bus, rspQueue, config)
   }
 
@@ -148,7 +148,7 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
 
 object PipelinedMemoryBusToWishbone {
   def apply(bus : PipelinedMemoryBus, rspQueue : Int): Wishbone = {
-    apply(bus, rspQueue, WishboneConfig(addressWidth = bus.config.addressWidth, dataWidth = bus.config.dataWidth, useSTALL = rspQueue > 1, addressGranularity = AddressGranularity.WORD))
+    apply(bus, rspQueue, WishboneConfig(addressWidth = bus.config.addressWidth, dataWidth = bus.config.dataWidth, useSTALL = rspQueue > 1, addressGranularity = AddressGranularity.BYTE))
   }
   def apply(bus : PipelinedMemoryBus, rspQueue : Int, config : WishboneConfig): Wishbone = {
     apply(bus, rspQueue, config, identity)
@@ -171,6 +171,13 @@ object PipelinedMemoryBusToWishbone {
   }
   def apply(bus : PipelinedMemoryBus, config : WishboneConfig): Wishbone = {
     apply(bus, 0, config, addressMap = identity)
+  }
+  def createDriver(bus : PipelinedMemoryBus, config : WishboneConfig): Wishbone = {
+    val wb = Wishbone(config)
+    val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, 0, addressMap = identity)
+    adapter.io.pmb <> bus
+    adapter.io.wb <> wb
+    wb
   }
 }
 

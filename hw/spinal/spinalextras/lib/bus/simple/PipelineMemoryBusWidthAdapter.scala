@@ -82,6 +82,7 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
         }
       }
       cmd.throwWhen(cmd.write && cmd.mask === 0).stage() <> io.output.cmd
+      //cmd.stage() <> io.output.cmd
 
       val rspStream = Stream(io.input.rsp.data.clone())
       val overflow = Bool()
@@ -96,12 +97,14 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
       val input_size_per_output_size = shift_out - shift_in
       //require(endianness == LITTLE)
 
+      val index = io.input.cmd.payload.wordAddress.resize((input_size_per_output_size) bits)
+      val rindex = if(endianness == LITTLE) index else ((1 << input_size_per_output_size) - 1 - index)
+
       val cmdStream = io.input.cmd.map(payload => {
         val cmd = PipelinedMemoryBusCmd(pmbOut)
-        val index = payload.wordAddress.resize((input_size_per_output_size) bits)
-        val rindex = if(endianness == LITTLE) index else (input_size_per_output_size - index)
+
         //cmd.address := (payload.address >> (shift_out - shift_in)).resized
-        cmd.address := payload.address
+        cmd.address := (payload.address >> cmd.config.wordAddressShift) << cmd.config.wordAddressShift
         cmd.data := (payload.data << (pmbIn.dataWidth * rindex)).resized
         cmd.mask := (payload.mask << (input_words * rindex)).resized
         cmd.write := payload.write
@@ -112,7 +115,7 @@ case class PipelineMemoryBusWidthAdapter(pmbIn : PipelinedMemoryBusConfig,
       val indices = toQueue.throwWhen(toQueue.payload._1.write).map(_._2)
 
       val q = if(rspQueue > 1) indices.queue(rspQueue) else indices.s2mPipe()
-      toOut.map(_._1) <> io.output.cmd
+      toOut.map(_._1).throwWhen(toOut._1.write && toOut._1.mask === 0) <> io.output.cmd
 
       val overflow = Bool()
       StreamJoin(q, io.output.rsp.toStream(overflow).stage()).map( matched_rsp => {

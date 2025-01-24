@@ -108,7 +108,7 @@ object SpitexConfig{
       new DBusSimplePlugin(
         catchAddressMisaligned = true,
         catchAccessFault = true,
-        earlyInjection = false,
+        //earlyInjection = false,
         bigEndian = bigEndian
       ),
       //new CsrPlugin(CsrPluginConfig.small(mtvecInit = if(withXip) 0xE0040020l else 0x80000020l)),
@@ -741,7 +741,7 @@ class SpitexApb3Timer(val baseAddress : BigInt) extends Component{
   }
   val uptime = CounterFreeRun(64 bits)
   val uptime_cycles = RegNextWhen(uptime.value, uptime_latch) init(0)
-  busCtrlWrapped.createReadMultiWord(uptime_cycles, address = 36, "Uptime cycles") := uptime_cycles
+  busCtrlWrapped.createReadMultiWord(uptime_cycles, address = 36, "Uptime cycles") := EndiannessSwap(uptime_cycles)
 
   io.interrupt := ev_pending & ev_enable
 

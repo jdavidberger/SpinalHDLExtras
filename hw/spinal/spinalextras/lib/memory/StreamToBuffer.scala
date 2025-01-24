@@ -4,7 +4,8 @@ import spinal.core._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
-import spinalextras.lib.bus.PipelinedMemoryBusCmdExt
+
+import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.misc.{GlobalSignals, RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
 
@@ -32,7 +33,8 @@ case class StreamToBuffer[T <: Data](
   test_funcs.assertPMBContract(io.bus)
 
   val pushMem = Stream(Fragment(Bits(busConfig.dataWidth bits)))
-  val baseAddressUInt = U(baseAddress, busConfig.addressWidth bits)
+  require(baseAddress % (1 << busConfig.wordAddressShift) == 0)
+  val baseAddressUInt = U(baseAddress >> busConfig.wordAddressShift, busConfig.addressWidth bits)
   val writeAddress = RegNext(counter.valueNext + baseAddressUInt, init = baseAddressUInt)
 
   StreamTools.AdaptFragmentWidth(io.push.map(x => {

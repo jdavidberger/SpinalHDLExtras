@@ -20,6 +20,16 @@ case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMas
     valid := False
     cmd.assignDontCare()
   }
+
+  def transactionFlow() : Flow[PipelinedMemoryBusCmd] = {
+    val tx = Flow(PipelinedMemoryBusCmd(config))
+    tx.address := cmd.address
+    tx.data := cmd.write ? cmd.data | rsp
+    tx.mask := cmd.mask
+    tx.write := cmd.write
+    tx.valid := fire
+    tx
+  }
 }
 
 object DirectBus {

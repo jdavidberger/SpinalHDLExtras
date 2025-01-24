@@ -48,18 +48,7 @@ class MultiInterconnect {
       assert(!s.mapping.hit(mapping.highestBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
     }
 
-    val newMapping = mapping match {
-      case SizeMapping(base, size) => {
-        if((base & (size - 1)) == 0) {
-          MaskMapping(base, ((1L << bus.address_width) - 1) & ~(size - 1))
-        } else {
-          mapping
-        }
-      }
-      case _ => mapping
-    }
-
-    slaves(bus) = SlaveModel(newMapping)
+    slaves(bus) = SlaveModel(mapping)
     this
   }
 
@@ -95,6 +84,18 @@ class MultiInterconnect {
     }
   }
 
+  def to_mask_mapping(bus: MultiBusInterface)(mapping: AddressMapping): AddressMapping = {
+    mapping match {
+      case SizeMapping(base, size) => {
+        if ((base & (size - 1)) == 0) {
+          MaskMapping(base, ((1L << bus.address_width) - 1) & ~(size - 1))
+        } else {
+          mapping
+        }
+      }
+      case _ => mapping
+    }
+  }
   def build(): Unit = {
     val connectionsInput  = mutable.HashMap[ConnectionModel, MultiBusInterface]()
     val connectionsOutput = mutable.HashMap[ConnectionModel, MultiBusInterface]()
@@ -102,7 +103,7 @@ class MultiInterconnect {
     for(bus <- masters){
       val busConnections = connections.filter(_.m == bus)
       val busSlaves = busConnections.map(c => slaves(c.s))
-      val decodedOutputs = create_decoder(bus, busSlaves.map(_.mapping))
+      val decodedOutputs = create_decoder(bus, busSlaves.map(_.mapping).map(to_mask_mapping(bus)))
 
       for((connection, decoderOutput) <- (busConnections, decodedOutputs).zipped) {
         connectionsInput(connection) = decoderOutput
@@ -170,7 +171,7 @@ class MultiInterconnectByTag extends MultiInterconnect {
       println(s"\t${m} ${tags(m)}")
       val connected_slaves = connections.filter(_.m == m).map(_.s)
       connected_slaves.foreach(s => {
-        val mappingName = slaves(s).mapping match {
+        val mappingName = to_mask_mapping(m)(slaves(s).mapping) match {
           case MaskMapping(base, mask) => s"MaskMapping(0x${base.toString(16)}, 0x${mask.toString(16)})"
           case SizeMapping(base, size) => s"SizeMapping(0x${base.toString(16)}, 0x${size.toString(16)})"
           case _ => slaves(s).mapping.toString

@@ -276,7 +276,7 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
   override lazy val formalValidInputs = io.push.formalIsValid() && writeBus.formalIsConsumerValid() && readBus.formalIsConsumerValid()
 
   override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
-    val ramBackedBufferAsserts = ramBackedBuffer.formalChecks()
+    val ramBackedBufferAsserts = ramBackedBuffer.formalAssertsComposite()
 
     assertOrAssume(readBusContract.outstanding_cnt === ramBackedBufferAsserts.busContract.outstanding_cnt)
     assertOrAssume(inFlight.value === ramBackedBufferAsserts.occupancy)

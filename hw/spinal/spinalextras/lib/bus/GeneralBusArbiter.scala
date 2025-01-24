@@ -123,6 +123,7 @@ class GeneralBusArbiter[T <: Data with IMasterSlave](val memoryBusAccess: IMemor
 
   override lazy val formalValidInputs = Vec(io.inputs.map(memoryBusAccess.isProducerValid)).andR && memoryBusAccess.isConsumerValid(io.output)
   override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
+    withAutoPull()
     val isValidInputConsumer = io.inputs.map(memoryBusAccess.isConsumerValid)
     isValidInputConsumer.foreach(assertOrAssume(_))
 
@@ -194,6 +195,7 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val memoryBusAccess: I
   formalAsserts()
   override lazy val formalValidInputs = Vec(io.outputs.map(memoryBusAccess.isConsumerValid)).andR && memoryBusAccess.isProducerValid(io.input)
   override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
+    withAutoPull()
     val isValidOutputConsumer = io.outputs.map(memoryBusAccess.isConsumerValid)
     isValidOutputConsumer.foreach(assertOrAssume(_))
 
