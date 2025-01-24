@@ -1,0 +1,3 @@
+[submodule "third_party/VexRiscv"]
+	path = third_party/VexRiscv
+	url = git@github.com:SpinalHDL/VexRiscv.git
