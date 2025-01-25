@@ -6,6 +6,7 @@ import spinal.lib._
 import spinal.lib.bus.misc.{AddressMapping, DefaultMapping}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipCmd}
 import vexriscv.ip._
+import vexriscv.plugin.{DBusSimpleBus, DBusSimpleCmd, DBusSimpleRsp}
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -51,7 +52,7 @@ trait IMemoryBus[BUS <: Data with IMasterSlave] {
   def map_cmd(input: Stream[CMD], output : Stream[CMD], takeWhen : Bool):Stream[CMD] = input << output.takeWhen(takeWhen)
   def map_cmd(input: BUS, output : BUS, takeWhen : Bool) : Stream[CMD] = map_cmd(cmd(input), cmd(output), takeWhen)
 
-  def map_rsp(input : BUS, output : Stream[RSP])
+  def map_rsp(input : BUS, output : Stream[RSP], decodeNoHit : Bool)
   def map_rsp(input : BUS, output : BUS)
   def set_rsp_idle(input : BUS) : Unit = {}
   def set_rsp_blocked(input : BUS) : Unit = {}
@@ -183,7 +184,7 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val memoryBusAccess: I
     val output_rsp = Stream(memoryBusAccess.rsp_payload(io.input))
     output_rsp.valid := io.outputs.map(memoryBusAccess.rsp_fire).orR || (rspPending && rspNoHit)
     output_rsp.payload := io.outputs.map(memoryBusAccess.rsp_payload).read(OHToUInt(rspHits))
-    memoryBusAccess.map_rsp(io.input, output_rsp)
+    memoryBusAccess.map_rsp(io.input, output_rsp, rspNoHit)
 
     val cmdWait = (memoryBusAccess.cmd(io.input).valid && rspPending && hits =/= rspHits) || rspRequiredCountQ.io.push.ready === False
     when(cmdWait) {
@@ -224,6 +225,59 @@ package object bus_traits {
 //    }
 //}
 
+
+  implicit class DSimpleBusExtImpl(bus: DBusSimpleBus) extends IMemoryBus[DBusSimpleBus] {
+    override  type CMD = DBusSimpleCmd
+    override  type RSP = DBusSimpleRsp
+    type BUS = DBusSimpleBus
+    override  val dataType: HardType[DBusSimpleBus] = bus
+    override def cmd_requires_response(cmd:  CMD): Bool = !cmd.wr
+    override def rsp_fire(bus:  DBusSimpleBus): Bool = bus.rsp.ready
+    override def cmd(bus:  DBusSimpleBus): Stream[CMD] = bus.cmd
+    override def map_rsp(input:  DBusSimpleBus, output:  Stream[RSP], decoderMiss : Bool): Unit = {
+      output.ready := True
+      input.rsp.ready := output.valid
+      input.rsp.error := decoderMiss
+      input.rsp.data := output.data
+    }
+
+    override def map_rsp(input:  DBusSimpleBus, output: DBusSimpleBus): Unit = {
+      input.rsp := output.rsp
+    }
+    override def address(cmd:  DBusSimpleCmd): UInt = cmd.address
+    override def rsp_payload(bus:  DBusSimpleBus): DSimpleBusExtImpl.this.RSP = bus.rsp
+
+    override def rsp_required_count(bus : DBusSimpleBus) : UInt = Mux(bus.cmd.wr, 0, 1)
+//
+//
+//    def formalContract = memoize { input: BUS =>
+//      new Composite(input, "formalContract") {
+//        val outstandingRsp = Reg(UInt(32 bits)) init (0)
+//
+//        val toAdd, toRemove = UInt(32 bits)
+//        toAdd := 0
+//        toRemove := 0
+//        when(input.cmd.fire) {
+//          toAdd := input.p.burstSize
+//        }
+//        when(input.rsp.fire) {
+//          toRemove := 1
+//        }
+//        val delta = toAdd.intoSInt - toRemove.intoSInt
+//        val nextOutstandingRsp = (outstandingRsp.intoSInt + delta).asUInt.resized
+//        outstandingRsp := nextOutstandingRsp
+//        val canRspBeValid = outstandingRsp =/= 0 || (toAdd > 0)
+//        assume((outstandingRsp.intoSInt +^ delta) < outstandingRsp.maxValue)
+//      }
+//    }
+//
+    override def isProducerValid(bus: BUS): Bool = {
+      bus.cmd.formalIsValid()
+    }
+//
+    override def isConsumerValid(bus: BUS): Bool = True
+  }
+
   implicit class InstructionCacheMemBusExtImpl(bus: InstructionCacheMemBus) extends IMemoryBus[InstructionCacheMemBus] {
     override  type CMD = InstructionCacheMemCmd
     override  type RSP = InstructionCacheMemRsp
@@ -232,7 +286,13 @@ package object bus_traits {
     override def cmd_requires_response(cmd:  CMD): Bool = True
     override def rsp_fire(bus:  InstructionCacheMemBus): Bool = bus.rsp.fire
     override def cmd(bus:  InstructionCacheMemBus): Stream[CMD] = bus.cmd
-    override def map_rsp(input:  InstructionCacheMemBus, output:  Stream[RSP]): Unit = input.rsp << output.toFlow
+    override def map_rsp(input:  InstructionCacheMemBus, output:  Stream[RSP], decoderMiss : Bool): Unit = {
+      output.ready := True
+      input.rsp.valid := output.valid
+      input.rsp.payload.error := decoderMiss
+      input.rsp.payload.data := output.data
+    }
+
     override def map_rsp(input:  InstructionCacheMemBus, output: InstructionCacheMemBus): Unit = input.rsp << output.rsp
     override def address(cmd:  InstructionCacheMemCmd): UInt = cmd.address
     override def rsp_payload(bus:  InstructionCacheMemBus): InstructionCacheMemBusExtImpl.this.RSP = bus.rsp.payload
@@ -283,7 +343,9 @@ package object bus_traits {
 
     override def cmd(bus: BUS): Stream[CMD] = bus.cmd
 
-    override def map_rsp(input: BUS, output: Stream[RSP]): Unit = input.rsp << output
+    override def map_rsp(input: BUS, output: Stream[RSP], decoderMiss : Bool): Unit = {
+      input.rsp << output
+    }
 
     override def map_rsp(input: BUS, output: BUS): Unit = input.rsp << output.rsp
 

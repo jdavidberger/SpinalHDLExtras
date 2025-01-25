@@ -43,6 +43,8 @@ package object bus {
 
   implicit class InstructionCacheMemBusExt(val bus: InstructionCacheMemBus) extends MultiBusInterface {
     import spinalextras.lib.bus.bus_traits._
+    override def toString = bus.toString()
+
     override def address_width = bus.p.addressWidth
     override def create_decoder(mappings: Seq[AddressMapping]): Seq[InstructionCacheMemBusExt] = new Composite(bus) {
       val decoder = new GeneralBusDecoder(new InstructionCacheMemBusExtImpl(bus), mappings)
@@ -57,8 +59,22 @@ package object bus {
     }.inputs
   }
 
-  implicit class DBusSimpleBusExt(bus: DBusSimpleBus) extends PipelinedMemoryBusMultiBus(bus.toPipelinedMemoryBus()) {
+  implicit class DBusSimpleBusExt(val bus: DBusSimpleBus) extends MultiBusInterface {
+    import spinalextras.lib.bus.bus_traits._
+    override def toString = bus.toString()
 
+    override def address_width = bus.cmd.address.getWidth
+    override def create_decoder(mappings: Seq[AddressMapping]): Seq[DBusSimpleBusExt] = new Composite(bus) {
+      val decoder = new GeneralBusDecoder(new DSimpleBusExtImpl(bus), mappings)
+      decoder.io.input <> bus
+      val outputs = decoder.io.outputs.map(outputBus => DBusSimpleBusExt(bus = outputBus))
+    }.outputs
+
+    override def create_arbiter(size:  Int): Seq[DBusSimpleBusExt] = new Composite(bus) {
+      val arbiter = new GeneralBusArbiter(new DSimpleBusExtImpl(bus), size)
+      arbiter.io.output <> bus
+      val inputs = arbiter.io.inputs.map(inputBus => DBusSimpleBusExt(bus = inputBus))
+    }.inputs
   }
 
   implicit class BMBBusExt(val bus: Bmb) extends MultiBusInterface {
@@ -79,6 +95,8 @@ package object bus {
   def xipParam(bus: XipBus) = BmbParameter(24, 8, 1, 1, 2)
 
   implicit class XipBusExt(val bus: XipBus) extends MultiBusInterface {
+    override def toString = bus.toString()
+
     override def address_width = bus.p.addressWidth
     override def create_decoder(mappings:  Seq[AddressMapping]): Seq[MultiBusInterface] = ???
     override def create_arbiter(size:  Int): Seq[MultiBusInterface] = new Composite(bus, "arbiter") {
@@ -91,6 +109,8 @@ package object bus {
 
 
   implicit class WishboneExt(val bus: Wishbone) extends MultiBusInterface {
+    override def toString = bus.toString()
+
     override def address_width = bus.config.addressWidth
     override def create_decoder(mappings:  Seq[AddressMapping]): Seq[MultiBusInterface] = ???
     override def create_arbiter(size:  Int): Seq[MultiBusInterface] = ???
@@ -147,10 +167,30 @@ package object bus {
     }).toFlow >> m.bus.rsp
   }}
 
+
+  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip") {
+    m.bus.cmd.map(c => {
+      val wordShift = log2Up(c.address.getWidth / 8)
+      val cmd = cloneOf(s.bus.cmd.payload)
+      cmd.address := ((c.address >> wordShift) << wordShift).resized //(c.address << log2Up(m.bus.config.dataWidth / 8)).resized
+      cmd.length := m.bus.cmd.data.getWidth / 8 - 1
+      cmd
+    }) >> s.bus.cmd
+
+    val output = Stream(Fragment(Bits(m.bus.cmd.data.getWidth bits)))
+    StreamFragmentWidthAdapter(s.bus.rsp, output)
+
+    output.ready := True
+    m.bus.rsp.ready := output.valid
+    m.bus.rsp.data := output.payload.fragment
+    m.bus.rsp.error := False
+  }}
+
   MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip"){
     m.bus.cmd.map(c => {
+      val wordShift = log2Up(c.address.getWidth / 8)
       val cmd = cloneOf(s.bus.cmd.payload)
-      cmd.address := c.address.resized//(c.address << log2Up(m.bus.p.memDataWidth / 8)).resized
+      cmd.address := ((c.address >> wordShift) << wordShift).resized //(c.address << log2Up(m.bus.config.dataWidth / 8)).resized
       cmd.length := (m.bus.cmd.p.burstSize << log2Up(m.bus.p.memDataWidth / 8)) - 1
       cmd
     }) >> s.bus.cmd
@@ -172,5 +212,14 @@ package object bus {
 
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: WishboneExt) => {
     PipelinedMemoryBusToWishbone(m.bus, s.bus.config) <> s.bus
+  }}
+
+
+  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: WishboneExt) => new Composite(m.bus, "to_wb") {
+    m.bus.toWishbone().connectTo(s.bus, allowAddressResize = true, allowDataResize = true)
+  }}
+
+  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: PipelinedMemoryBusMultiBus) => new Composite(m.bus, "to_pmb") {
+    m.bus.toPipelinedMemoryBus() >> s.bus
   }}
 }
