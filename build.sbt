@@ -8,7 +8,9 @@ val spinalCore = "com.github.spinalhdl" %% "spinalhdl-core" % spinalVersion
 val spinalLib = "com.github.spinalhdl" %% "spinalhdl-lib" % spinalVersion
 val spinalIdslPlugin = compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % spinalVersion)
 
-val vexRisc = ProjectRef(file("third_party/VexRiscv/"), "root")
+val vexRiscv = if(file("../VexRiscv/").exists())
+  ProjectRef(file("../VexRiscv/"), "root") else
+  ProjectRef(uri("ssh://git@github.com/jdavidberger/VexRiscv.git"), "root")
 
 lazy val SpinalHDLExtras = (project in file("."))
   .settings(
@@ -25,6 +27,6 @@ lazy val SpinalHDLExtras = (project in file("."))
 
       "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % "2.17.2"
     )
-  ).dependsOn(vexRisc)//.dependsOn(spinalCore, spinalLib)
+  ).dependsOn(vexRiscv)
 
 fork := true
