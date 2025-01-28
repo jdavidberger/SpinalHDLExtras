@@ -23,7 +23,7 @@ trait FormalTestSuite {
 
   def generateRtlCover(): Seq[(String, () => Component)] = generateRtl()
 
-  def generateRtlProve() = generateRtl()
+  def generateRtlProve(): Seq[(String, () => Component)]  = generateRtl()
 
   def defaultDepth() = 100
 

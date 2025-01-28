@@ -36,10 +36,10 @@ class StreamToBufferFormalTest extends AnyFunSuite with FormalTestSuite {
   override def defaultDepth() = 10
 
   override def generateRtl() = Seq(
-    ("8bit", () => new StreamToBufferFormal(Bits(8 bits), 100, 0xcafe)),
-    ("24bit", () => new StreamToBufferFormal(Bits(24 bits), 100, 0xcafe)),
-    ("32bit", () => new StreamToBufferFormal(Bits(32 bits), 100, 0xcafe)),
+    ("8bit", () => new StreamToBufferFormal(Bits(8 bits), 100, 0xcafe0)),
+    ("24bit", () => new StreamToBufferFormal(Bits(24 bits), 100, 0xcafe0)),
+    ("32bit", () => new StreamToBufferFormal(Bits(32 bits), 100, 0xcafe0)),
     ("32bit_0offset", () => new StreamToBufferFormal(Bits(32 bits), 100, 0)),
-    ("64bit", () => new StreamToBufferFormal(Bits(64 bits), 100, 0xcaff))
+    ("64bit", () => new StreamToBufferFormal(Bits(64 bits), 100, 0xcaff0))
   )
 }

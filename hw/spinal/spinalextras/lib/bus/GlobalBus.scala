@@ -291,7 +291,7 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
 
 }
 object PipelineMemoryGlobalBus {
-  def Default = PipelineMemoryGlobalBus(PipelinedMemoryBusConfig(30,32))
+  def Default = PipelineMemoryGlobalBus(PipelinedMemoryBusConfig(32,32))
 }
 
 case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends GlobalBus[PipelinedMemoryBus] {

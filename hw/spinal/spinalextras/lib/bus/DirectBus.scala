@@ -1,6 +1,7 @@
 package spinalextras.lib.bus
 
 import spinal.core._
+import spinal.core.formal.HasFormalAsserts
 import spinal.lib._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 
@@ -14,6 +15,7 @@ case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMas
     in(rsp, ready)
   }
 
+  def isStall = valid && !ready
   def fire = valid && ready
 
   def setIdle(): Unit = {
@@ -30,6 +32,16 @@ case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMas
     tx.valid := fire
     tx
   }
+
+  def formalIsProducerValid() = {
+    val wasStall = RegNext(isStall) init(False)
+    val steadyValid = valid || !wasStall
+    val lastPayload = RegNextWhen(cmd, valid)
+    val payloadInvariant = (lastPayload === cmd) || !wasStall
+    steadyValid && payloadInvariant
+  }
+
+  def formalIsConsumerValid() = True
 }
 
 object DirectBus {
@@ -40,7 +52,7 @@ object DirectBus {
     busOut
   }
 
-  def toPipelinedMemoryBus(dBus : DirectBus): PipelinedMemoryBus = new Composite(dBus, "toPipelinedMemoryBus"){
+  def toPipelinedMemoryBus(dBus : DirectBus): PipelinedMemoryBus = new Composite(dBus, "toPipelinedMemoryBus") with HasFormalAsserts {
     val bus = PipelinedMemoryBus(dBus.config)
 
     val expectingRead = RegInit(False) setWhen(bus.readRequestFire) clearWhen(bus.rsp.fire)
@@ -56,6 +68,13 @@ object DirectBus {
     dBus.ready := bus.rsp.valid || (bus.cmd.fire && bus.cmd.write)
 
     assert(bus.formalContract.outstandingReads === expectingRead.asUInt)
+
+    override lazy val formalValidInputs = bus.formalIsConsumerValid() && dBus.formalIsProducerValid()
+
+    override protected def formalChecks()(implicit useAssumes: Boolean): Unit = {
+      assertOrAssume(bus.formalIsProducerValid())
+      assertOrAssume(bus.formalContract.outstandingReads.value === (!cmdLatch).asUInt)
+    }
   }.bus
 
 }

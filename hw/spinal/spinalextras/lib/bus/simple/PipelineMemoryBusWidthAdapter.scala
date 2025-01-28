@@ -184,7 +184,9 @@ case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
 
   var port = mem.readWriteSyncPort(maskWidth = io.bus.cmd.mask.getWidth)
   val wordAddressShift = busConfig.wordAddressShift
-  assert(mapping.hit(io.bus.cmd.address))
+  when(io.bus.cmd.valid) {
+    assert(mapping.hit(io.bus.cmd.address))
+  }
   val mappedByteAddress = mapping.removeOffset(io.bus.cmd.address)
   port.address := ( mappedByteAddress >> wordAddressShift).resized
   port.wdata := io.bus.cmd.data

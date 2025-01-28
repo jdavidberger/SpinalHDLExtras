@@ -1,15 +1,31 @@
 package spinalextras.lib.mipi
 
-import org.scalatest.funsuite.AnyFunSuite
+import com.fasterxml.jackson.core.{JsonGenerator, JsonParser}
+import com.fasterxml.jackson.databind._
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer
+import com.fasterxml.jackson.databind.module.SimpleModule
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.databind.ser.std.StdSerializer
+import com.fasterxml.jackson.dataformat.yaml._
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import spinal.core._
-import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.regif.AccessType.{RO, ROV, WC}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
-import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinalextras.lib.Config
+import spinalextras.lib.lattice.IPX
+import spinalextras.lib.mipi.MIPIDataTypes.{MIPIDataTypes, RAW10}
+import spinalextras.lib.misc.{ClockSpecification, HertzDeserializer}
 
+import java.io.FileReader
+import scala.Console.println
 import scala.language.postfixOps
+
+class Byte2PixelConfig(val name : String,
+                       val mipiConfig : MIPIConfig,
+                       val pixel_clock_frequency : ClockSpecification
+                      ) {
+}
 
 case class byte2pixel(cfg : MIPIConfig,
                       byte_cd: ClockDomain,
@@ -219,3 +235,58 @@ case class byte2pixel(cfg : MIPIConfig,
   }
 }
 
+
+object GenerateByte2Pixel {
+  val mapper = new ObjectMapper(new YAMLFactory())
+  mapper.registerModule(DefaultScalaModule)
+  val module = new SimpleModule()
+  module.addDeserializer(classOf[MIPIDataTypes], MIPIDatatypeDeserializer())
+  module.addSerializer(classOf[MIPIDataTypes], MIPIDatatypeSerializer())
+  module.addDeserializer(classOf[HertzNumber], HertzDeserializer())
+  mapper.registerModule(module)
+
+  def processFile(filePath : String): Unit = {
+    val reader = new FileReader(filePath)
+    val config: Byte2PixelConfig = mapper.readValue(reader, classOf[Byte2PixelConfig])
+
+    val report = Config.spinal.copy(rtlHeader = mapper.writeValueAsString(config),
+      targetDirectory = s"hw/gen/${config.name}",
+      device = Device(vendor = "lattice", family = "lifcl"),
+      defaultClockDomainFrequency = UnknownFrequency()
+      ).generateVerilog(
+      new byte2pixel(config.mipiConfig,
+        ClockDomain.external("byte_cd", frequency = FixedFrequency(config.mipiConfig.dphy_byte_freq)),
+        ClockDomain.external("pixel_cd", frequency = config.pixel_clock_frequency.toClockFrequency()))
+        .setDefinitionName(config.name + "_byte2pixel").noIoPrefix()
+    )
+    IPX.generate_ipx(report)
+  }
+
+  def main(args: Array[String]): Unit = {
+    if (args.size > 0) {
+      processFile(args(0))
+    } else {
+      val exampleYaml = mapper.writeValueAsString(new Byte2PixelConfig(
+          name = "imx219",
+        mipiConfig = MIPIConfig(
+          NUM_RX_LANES = 2,
+          RX_GEAR = 8,
+          OUTPUT_LANES = 1,
+          ref_dt = RAW10,
+          dphy_byte_freq = 50 MHz
+        ),
+        pixel_clock_frequency = ClockSpecification(60 MHz)
+      ))
+
+      println(
+        s"""
+           |GenerateByte2Pixel <spec-file.yml>
+           |
+           |Spec file example:
+           |```
+           |${exampleYaml}
+           |```
+           |""".stripMargin)
+    }
+  }
+}

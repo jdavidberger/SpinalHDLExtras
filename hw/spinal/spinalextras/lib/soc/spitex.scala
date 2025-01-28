@@ -534,7 +534,7 @@ case class SpitexSim() extends Component {
   som.io.uart.rxd := True
   som.io.wb.DAT_MISO.clearAll()
   som.io.wb.ACK := False
-
+  som.io.wb.ERR := False
 }
 
 object SpitexSim{

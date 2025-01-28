@@ -1,8 +1,24 @@
 package spinalextras.lib.mipi
 
+import com.fasterxml.jackson.core.{JsonGenerator, JsonParser}
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer
+import com.fasterxml.jackson.databind.ser.std.StdSerializer
+import com.fasterxml.jackson.databind.{DeserializationContext, SerializerProvider}
 import spinal.core.HertzNumber
 import spinalextras.lib.mipi.MIPIDataTypes.MIPIDataTypes
 
+case class MIPIDatatypeDeserializer() extends StdDeserializer[MIPIDataTypes](classOf[MIPIDataTypes]) {
+  override def deserialize(p: JsonParser, ctxt: DeserializationContext) = {
+    MIPIDataTypes.withName(p.getText)
+  }
+}
+
+case class MIPIDatatypeSerializer() extends StdSerializer[MIPIDataTypes](classOf[MIPIDataTypes]) {
+
+  override def serialize(value: MIPIDataTypes, gen: JsonGenerator, provider: SerializerProvider) = {
+    gen.writeString(value.toString)
+  }
+}
 
 object MIPIDataTypes extends Enumeration {
   type MIPIDataTypes = Value
