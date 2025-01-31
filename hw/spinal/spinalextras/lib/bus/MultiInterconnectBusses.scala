@@ -215,15 +215,15 @@ package object bus {
   }}
 
 
-  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: WishboneMultiBusInterface) => new Composite(m.bus, "to_wb") {
-    val wb = m.bus.toWishbone()
-    wb.connectToGranularity(s.bus, allowAddressResize = true, allowDataResize = true)
-    if(wb.ERR != null && s.bus.ERR == null) {
-      wb.ERR := False
+  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: WishboneMultiBusInterface) => new Composite(m.bus, "dbus_to_wb") {
+    val dbus_as_wb = m.bus.toWishbone()
+    dbus_as_wb.connectToGranularity(s.bus, allowAddressResize = true, allowDataResize = true)
+    if(dbus_as_wb.ERR != null && s.bus.ERR == null) {
+      dbus_as_wb.ERR := False
     }
   }}
 
-  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: PipelinedMemoryBusMultiBus) => new Composite(m.bus, "to_pmb") {
+  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: PipelinedMemoryBusMultiBus) => new Composite(m.bus, "dbus_to_pmb") {
     m.bus.toPipelinedMemoryBus() >> s.bus
   }}
 }

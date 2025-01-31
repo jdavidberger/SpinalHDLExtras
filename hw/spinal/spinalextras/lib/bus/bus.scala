@@ -64,7 +64,7 @@ package object bus {
         case 1 => {
           assert(allowAddressResize || bus.ADR.getBitsWidth == wordAddress.getWidth,
             s"allowAddressResize must be true to assign from an unlike address space for ${this} and ${wordAddress}")
-          bus.ADR := wordAddress
+          bus.ADR := wordAddress.resized
         }
         case x: Int => {
           val byteAddress = wordAddress << log2Up(x)
@@ -91,10 +91,28 @@ package object bus {
       }
     }
 
+    def assignAddress(that : Wishbone, allowAddressResize: Boolean = false): Unit = {
+      val byteAddress = that.byteAddress()
+
+      config.wordAddressInc() match {
+        case 1 => {
+          val wordAddress = byteAddress >> log2Up(that.config.dataWidth / 8)
+          assert(allowAddressResize || bus.ADR.getBitsWidth == wordAddress.getWidth || bus.ADR.getBitsWidth == byteAddress.getWidth,
+            s"allowAddressResize must be true to assign from an unlike address space for ${this} and ${wordAddress}")
+          bus.ADR := wordAddress.resized
+        }
+        case x: Int => {
+          assert(allowAddressResize || bus.ADR.getBitsWidth == byteAddress.getWidth,
+            s"allowAddressResize must be true to assign from an unlike address space for ${this} and ${byteAddress}")
+          bus.ADR := byteAddress.resized
+        }
+      }
+    }
+
     def connectToGranularity(that: Wishbone, allowDataResize: Boolean = false, allowAddressResize: Boolean = false, allowTagResize: Boolean = false): Unit = {
       bus.connectTo(that, allowDataResize, allowAddressResize, allowTagResize)
       that.ADR.removeDataAssignments()
-      that.assignByteAddress(bus.byteAddress(), allowAddressResize = allowAddressResize)
+      that.assignWordAddress(bus.wordAddress(), allowAddressResize = allowAddressResize)
     }
   }
 

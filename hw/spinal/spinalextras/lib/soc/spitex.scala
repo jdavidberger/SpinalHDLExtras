@@ -1,6 +1,7 @@
 package spinalextras.lib.soc
 
 import spinal.core._
+import spinal.core.formal.HasFormalAsserts
 import spinal.lib._
 import spinal.lib.bus.amba3.apb._
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, BusSlaveFactoryAddressWrapper, SizeMapping}
@@ -16,6 +17,7 @@ import spinalextras.lib.blackbox.lattice.lifcl.{OSCD, OSCDConfig}
 import spinalextras.lib.blackbox.opencores.i2c_master_top
 import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
 import spinalextras.lib.io.TristateBuffer
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.misc.ClockSpecification
 import vexriscv.demo.MuraxPipelinedMemoryBusRam
 import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus}
@@ -269,14 +271,31 @@ case class Spitex(config : SpitexConfig = SpitexConfig.default) extends Componen
 
   def add_master(bus: IBusSimpleBus): Unit = {
     interconnect.addMaster(bus, "iBus")
+
+    GlobalLogger(Set("iBus"),
+      FlowLogger.streams(bus.cmd.setName("iBus_cmd")),
+      FlowLogger.flows(bus.rsp.setName("iBus_rsp"))
+    )
   }
 
   def add_master(bus: InstructionCacheMemBus): Unit = {
     interconnect.addMaster(bus, "iBus")
+    GlobalLogger(Set("iBus"),
+      FlowLogger.streams(bus.cmd.setName("iBus_cmd")),
+      FlowLogger.flows(bus.rsp.setName("iBus_rsp"))
+    )
   }
 
-  def add_master(bus: DBusSimpleBus): Unit = {
+  def add_master(bus: DBusSimpleBus): Unit = new Composite(this, "add_master") {
     interconnect.addMaster(bus, "dBus")
+    val dbusRspFlow = Flow(cloneOf(bus.rsp))
+    dbusRspFlow.valid := bus.rsp.ready
+    dbusRspFlow.payload := bus.rsp
+
+    GlobalLogger(Set("dBus"),
+      FlowLogger.streams(bus.cmd.setName("dBus")),
+      FlowLogger.flows(dbusRspFlow.setName("dbusRspFlow"))
+    )
   }
 
   def add_slave(bus: PipelinedMemoryBus, name : String, mapping : AddressMapping, tags : String*): Unit = {
@@ -323,9 +342,11 @@ case class Spitex(config : SpitexConfig = SpitexConfig.default) extends Componen
 
     //Checkout plugins used to instanciate the CPU to connect them to the SoC
     val timerInterrupt = False
-    val externalInterrupts = Reg(Bits(32 bits)) init(0)
+    val externalInterrupts = Bits(32 bits)
+    externalInterrupts := 0
+
     for(i <- 0 until config.externalInterrupts) {
-      externalInterrupts(i) setWhen(io.externalInterrupts(i))
+      externalInterrupts(i) := io.externalInterrupts(i)
     }
 
     val usb32_irq_loc = 0
@@ -335,7 +356,7 @@ case class Spitex(config : SpitexConfig = SpitexConfig.default) extends Componen
     val i2s_rx = 6
     val i2s_tx = 7
 
-    add_slave(io.wb, "wb0", SizeMapping(0xb0000000L, 0x0f000000L), "dBus")
+    add_slave(io.wb, "wb0", SizeMapping(0xb0000000L, 0x10000000L), "dBus")
 
     for(plugin <- cpu.plugins) plugin match{
       case plugin : IBusCachedPlugin =>
@@ -394,12 +415,12 @@ case class Spitex(config : SpitexConfig = SpitexConfig.default) extends Componen
 
     val uartCtrl = SpitexApb3UartCtrl(uartCtrlConfig)
     uartCtrl.io.uart <> io.uart
-    externalInterrupts(uart_irq_loc) setWhen(uartCtrl.io.interrupt)
+    externalInterrupts(uart_irq_loc) := (uartCtrl.io.interrupt)
     apbMapping += uartCtrl.io.apb  -> (0x1800, 1 kB)
 
     val timer = new SpitexApb3Timer(0x2800)
     timerInterrupt setWhen(timer.io.interrupt)
-    externalInterrupts(timer0_irq_loc) setWhen(timer.io.interrupt)
+    externalInterrupts(timer0_irq_loc) := (timer.io.interrupt)
     apbMapping += timer.io.apb     -> (timer.baseAddress, 1 kB)
 
     val i2cCtrl = new i2c_master_top()
@@ -466,6 +487,11 @@ case class Spitex(config : SpitexConfig = SpitexConfig.default) extends Componen
     )
 
     interconnect.build()
+
+//    withAutoPull()
+//    when(!ClockDomain.current.readResetWire) {
+//      HasFormalAsserts.formalAssertsChildren(Component.current, assumesInputValid = false, useAssumes = false)
+//    }
   }
 
 }
@@ -522,7 +548,7 @@ case class SpitexSim() extends Component {
   ClockDomain.push(oscd.hf_clk().get.copy(reset = reset))
 
   val som = new Spitex()
-  val flash = new W25Q128JVxIM_quad("/home/justin/source/cr/zephyr-workspace3/build/zephyr/zephyr.hex")
+  val flash = new W25Q128JVxIM_quad("/home/justin/source/cr/tinyCLUNX33/Firmware/example_i2c_init/firmware.hex")
   flash.io.spiflash_dq <> som.io.spiflash_dq
   flash.io.spiflash_cs_n <> som.io.spiflash_cs_n
   flash.io.spiflash_clk <> som.io.spiflash_clk
@@ -637,6 +663,8 @@ case class SpitexApb3UartCtrl(config : UartCtrlMemoryMappedConfig) extends Compo
 
       val txfull = !streamUnbuffered.ready
       val txempty = !stream.valid
+      val nonFull = !txfull
+
       busCtrlWrapped.read(txfull, address = 4) // TXFULL
       busCtrlWrapped.read(txempty, address = 0x18) // TXEMPTY
     }
@@ -656,6 +684,7 @@ case class SpitexApb3UartCtrl(config : UartCtrlMemoryMappedConfig) extends Compo
       busCtrlWrapped.read(rxempty, address = 8) // RXEMPTY
       busCtrlWrapped.read(rxfull, address = 0x1c) // RXFULL
 
+      val nonEmpty = !rxempty
       def genCTS(freeThreshold : Int) = RegNext(fifoOccupancy <= config.rxFifoDepth - freeThreshold) init(False)  // freeThreshold => how many remaining space should be in the fifo before allowing transfer
     }
 
@@ -665,11 +694,20 @@ case class SpitexApb3UartCtrl(config : UartCtrlMemoryMappedConfig) extends Compo
     val interruptCtrl = new Area {
       val writeIntEnable = busCtrlWrapped.createReadAndWrite(Bool(), address = ev_enable_addr, 0) init(False)
       val readIntEnable  = busCtrlWrapped.createReadAndWrite(Bool(), address = ev_enable_addr, 1) init(False)
-      val writeInt  = writeIntEnable & !write.stream.valid
-      val readInt   = readIntEnable  &  read.streamBreaked.valid
-      val interrupt = readInt || writeInt
-      busCtrlWrapped.read(writeInt, address = ev_pending_addr, 0)
-      busCtrlWrapped.read(readInt , address = ev_pending_addr, 1)
+      val writeInt  = writeIntEnable & write.nonFull
+      val readInt   = readIntEnable  & read.nonEmpty
+
+      val ev_pending = busCtrlWrapped.createReadAndClearOnSet(Bits(2 bits), address = ev_pending_addr) init(0)
+      when(writeInt.rise(False)) {
+        ev_pending(0) := True
+      }
+      when(readInt.rise(False)) {
+        ev_pending(1) := True
+      }
+      val interrupt = ev_pending.orR
+
+//      busCtrlWrapped.read(writeInt, address = ev_pending_addr, 0)
+//      busCtrlWrapped.read(readInt , address = ev_pending_addr, 1)
     }
 
 //    val misc = new Area{
@@ -715,16 +753,17 @@ class SpitexApb3Timer(val baseAddress : BigInt) extends Component{
   val ev_enable = busCtrlWrapped.createReadAndWrite(Bool(), address = 28) init(False)
 
   val counter_value = Reg(UInt(32 bits)) init(0)
-  val counter_is_zero = RegNext(counter_value === 1, init = False)
+  val counter_is_zero = counter_value === 0
 
   when(update_value.valid) {
     update := counter_value
   }
 
   when(en) {
-    counter_value := counter_value - 1
     when(counter_is_zero) {
       counter_value := reload_value
+    } otherwise {
+      counter_value := counter_value - 1
     }
   } otherwise {
     counter_value := load_value

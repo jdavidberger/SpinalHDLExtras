@@ -65,8 +65,7 @@ package object general {
     override def map_rsp(input:  InstructionCacheMemBus, output:  Stream[RSP], decoderMiss : Bool): Unit = {
       output.ready := True
       input.rsp.valid := output.valid
-      input.rsp.payload.error := decoderMiss
-      input.rsp.payload.data := output.data
+      input.rsp.payload := output.payload
     }
 
     override def map_rsp(input:  InstructionCacheMemBus, output: InstructionCacheMemBus): Unit = input.rsp << output.rsp
@@ -130,10 +129,6 @@ package object general {
     override def rsp_required_count(bus: BUS): UInt = bus.cmd.length +^ 1
 
     override def formalRspPending(input: BUS) = formalContract(input).outstandingRsp
-
-    override def isProducerValid(bus: BUS): Bool = {
-      bus.cmd.formalIsValid()
-    }
 
     //override def isConsumerValid(bus: BUS): Bool = XipBusMemBusExtImpl.isConsumerValid(bus)
   }

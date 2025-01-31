@@ -38,9 +38,13 @@ class ResponseCounter(sizeBits : Int, pendingMax : Int) extends Component with H
   override lazy val formalValidInputs = io.increaseBy.formalIsValid()
 
   override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
+    withAutoPull()
     q.formalAssumes()
-    val totalInQ = q.formalFold(U(0))((a, b, c) => Mux(c, b +^ a +^ 1, a))
-    assertOrAssume(totalInQ >= rsp_counter)
+
+    if(globalData.config.formalAsserts) {
+      val totalInQ = q.formalFold(U(0))((a, b, c) => Mux(c, b +^ a +^ 1, a))
+      assertOrAssume(totalInQ >= rsp_counter)
+    }
     assertOrAssume(io.decrease.formalIsValid())
 
     when(!q.io.pop.valid) {
@@ -95,9 +99,9 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
     rspPendingCounter.io.increaseBy.valid := io.input.readRequestValid && latchFirstValid
     rspPendingCounter.io.decrease.ready := io.input.rspFired
 
-    val rspHits = RegNextWhen(hits, io.input.cmd.fire)
-    val rspPending = rspPendingCounter.io.decrease.valid
-    val rspNoHit = if (!hasDefault) !rspHits.orR else False
+    val rspHits = RegNextWhen(hits, rspPendingCounter.io.increaseBy.fire)
+
+    val rspPending = CombInit(rspPendingCounter.io.decrease.valid)
 
     val output_rsp = Stream(io.input.rsp.payload)
     output_rsp.valid := outputsWithDefault.map(_.rsp.fire).orR
@@ -107,6 +111,8 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
     val cmdWait = (io.input.cmd.valid && rspPending && hits =/= rspHits) || (!rspPendingCounter.io.increaseBy.ready && latchFirstValid)
     when(cmdWait) {
       io.input.cmd.ready := False
+      rspPendingCounter.io.increaseBy.valid := False
+      latchFirstValid := True
       outputsWithDefault.foreach(_.cmd.valid := False)
     }
 
@@ -114,11 +120,18 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
 
   override lazy val formalValidInputs = Vec(io.outputs.map(_.isConsumerValid)).andR && io.input.isProducerValid
 
+  def allOutputsSawResponse(): Bool = {
+    Vec((if(logic != null) logic.outputsWithDefault else io.outputs).map(o => RegInit(False) setWhen(o.rsp.fire))).asBits.andR
+  }
+  def noOutstanding() : Bool = {
+    Vec((if(logic != null) logic.outputsWithDefault else io.outputs).map(o => o.formalRspPending === 0)).asBits.andR
+  }
+
   override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
     withAutoPull()
     import busAccesor._
 
-    val isValidOutputConsumer = io.outputs.map(_.isConsumerValid)
+    val isValidOutputConsumer = io.outputs.map(_.isProducerValid)
     isValidOutputConsumer.foreach(assertOrAssume(_))
 
     val inputRspPending = io.input.formalRspPending
@@ -138,8 +151,10 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
       })
       val totalOutputsRspRequired = outstandingRspByOutput.fold(U(0))((x, y) => x +^ y)
 
-      val formalTotalPending = logic.rspPendingCounter.formalTotalPending()
-      assertOrAssume(formalTotalPending === (inputRspPending +^ floating))
+      if(globalData.config.formalAsserts) {
+        val formalTotalPending = logic.rspPendingCounter.formalTotalPending()
+        assertOrAssume(formalTotalPending === (inputRspPending +^ floating))
+      }
 
       //val rspStreamOutput = busAccesor.formalRspPending(logic.rspStream.io.output)
       //assertOrAssume(totalOutputsRspRequired === rspStreamOutput)
