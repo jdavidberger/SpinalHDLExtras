@@ -60,9 +60,9 @@ class PDPSC512K_Mem(target_latency : Int = 2) extends HardwareMemory[Bits]() {
   override lazy val actual_num_elements = (512 KiB) / 32
 
   if(latency == 2) {
-    read.rsp.valid := RegNext(RegNext(read.cmd.valid))
+    read.rsp.valid := RegNext(RegNext(read.cmd.valid, False), False)
   } else {
-    read.rsp.valid := RegNext(read.cmd.valid)
+    read.rsp.valid := RegNext(read.cmd.valid, False)
   }
 
   val write = io.writePorts.head

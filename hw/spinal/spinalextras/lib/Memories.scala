@@ -41,6 +41,7 @@ object HardwareMemory {
     val cmd = Flow(HardwareMemoryReadWriteCmd(config))
     val rsp = Flow(PipelinedMemoryBusRsp(config))
 
+    def readFire = cmd.fire && !cmd.write
     def setIdle(): Unit = {
       cmd.setIdle()
     }
@@ -121,12 +122,14 @@ abstract class HardwareMemory[T <: Data]() extends Component {
   lazy val config = HardwareMemoryReadWriteConfig(log2Up(num_elements), dataWidth = requirements.dataType.getBitsWidth)
   def bitsWidth = requirements.dataType.getBitsWidth
 
+  var self = this
+
   lazy val io = new Bundle {
     val readWritePorts = Array.fill(requirements.numReadWritePorts)(slave((HardwareMemoryReadWritePort(config))))
     val readPorts = Array.fill(requirements.numReadPorts)(slave((HardwareMemoryReadPort(config))))
     val writePorts = Array.fill(requirements.numWritePorts)(slave((HardwareMemoryWritePort(config))))
 
-    val readWritePortsOutstanding = readWritePorts.map(p => {
+    val readWritePortsOutstanding = readWritePorts.map(p => new Composite(p, s"readWrite") {
       val counter = new CounterUpDown(latency+1, handleOverflow = false)
       test_funcs.assertCounter(counter)
       when(p.cmd.fire && !p.cmd.write) {
@@ -137,9 +140,9 @@ abstract class HardwareMemory[T <: Data]() extends Component {
       }
       val v = out(cloneOf(counter.value))
       v := counter.value
-      v
-    })
-    val readPortsOutstanding = readPorts.map(p => {
+    }.v)
+
+    val readPortsOutstanding = readPorts.map(p => new Composite(p, "readPort") {
       val counter = new CounterUpDown(latency+1, handleOverflow = false)
       test_funcs.assertCounter(counter)
       when(p.cmd.fire) {
@@ -150,8 +153,7 @@ abstract class HardwareMemory[T <: Data]() extends Component {
       }
       val v = out(cloneOf(counter.value))
       v := counter.value
-      v
-    })
+    }.v)
   }
 
   def rsps = {
@@ -392,7 +394,7 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
     }
     inPipeline = inPipeline +^ rspFlow.valid.asUInt
     assert(inPipeline === outstanding)
-    inPipeline.setName(s"${outstanding.name}_inPipeline")
+    //inPipeline.setName(s"${outstanding.name}_inPipeline")
     rspFlow
   }
 
@@ -466,7 +468,7 @@ object LatticeMemories {
           (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
             case (1, 1, 0) => new PDPSC512K_Mem(target_latency = latency)
             case (0, 0, 1) => new DPSC512K_Mem()
-            case (0, 0, 2) => new DPSC512K_Mem()
+            case (0, 0, 2) => new DPSC512K_Mem(target_latency = latency)
           }
         }
       }

@@ -49,15 +49,17 @@ class DPSC512K(
   mapCurrentClockDomain(clock=io.CLK)
 }
 
-class DPSC512K_Mem extends HardwareMemory[Bits]() {
+class DPSC512K_Mem(target_latency : Int = 2) extends HardwareMemory[Bits]() {
   override val requirements = MemoryRequirement(
     Bits(32 bits), (1 << 14), 2, 0, 0
   )
+  override lazy val latency : Int = target_latency
+  assert(latency == 2 || latency == 1)
 
   val (port_a, port_b) = (io.readWritePorts(0), io.readWritePorts(1))
 
-  val mem = new DPSC512K(OUTREG = true)
-  override lazy val latency = 2
+  val outreg = latency == 2
+  val mem = new DPSC512K(OUTREG = outreg)
 
   val mem_port_a = (mem.io.DIA, mem.io.ADA, mem.io.WEA, mem.io.CSA, mem.io.BENA_N, mem.io.DOA)
   val mem_port_b = (mem.io.DIB, mem.io.ADB, mem.io.WEB, mem.io.CSB, mem.io.BENB_N, mem.io.DOB)
@@ -70,6 +72,11 @@ class DPSC512K_Mem extends HardwareMemory[Bits]() {
     benb := ~port.cmd.mask
 
     port.rsp.data := dout
-    port.rsp.valid := RegNext(RegNext(port.cmd.valid))
+
+    if(latency == 2) {
+      port.rsp.valid := RegNext(RegNext(port.cmd.fire && !port.cmd.write, False), False)
+    } else {
+      port.rsp.valid := RegNext(port.cmd.fire && !port.cmd.write, False)
+    }
   }
 }
