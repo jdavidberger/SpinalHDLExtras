@@ -74,9 +74,9 @@ class DPSC512K_Mem(target_latency : Int = 2) extends HardwareMemory[Bits]() {
     port.rsp.data := dout
 
     if(latency == 2) {
-      port.rsp.valid := RegNext(RegNext(port.cmd.fire && !port.cmd.write, False), False)
+      port.rsp.valid := RegNext(RegNext(port.readFire, False), False)
     } else {
-      port.rsp.valid := RegNext(port.cmd.fire && !port.cmd.write, False)
+      port.rsp.valid := RegNext(port.readFire, False)
     }
   }
 }
