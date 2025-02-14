@@ -1,16 +1,20 @@
 package spinalextras.lib.bus
 
-import spinal.core.{Component, MultiData}
+import spinal.core.{Bool, Component, MultiData}
+import spinal.lib.IMasterSlave
 import spinal.lib.bus.misc.{AddressMapping, DefaultMapping, MaskMapping, SizeMapping}
 import spinal.lib.bus.simple.PipelinedMemoryBusDecoder
 
 import scala.collection.mutable
 
 trait MultiBusInterface {
-  def bus : MultiData
+  def bus : MultiData with IMasterSlave
   def address_width : Int
   def create_decoder(mappings : Seq[AddressMapping]) : Seq[MultiBusInterface]
   def create_arbiter(size : Int) : Seq[MultiBusInterface]
+
+  def isValidProducer : Bool
+  def isValidConsumer : Bool
 }
 
 object MultiInterconnectConnectFactory {

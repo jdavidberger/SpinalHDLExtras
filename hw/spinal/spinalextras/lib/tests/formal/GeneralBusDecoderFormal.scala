@@ -2,7 +2,7 @@ package spinalextras.lib.tests.formal
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
-import spinal.core.formal.{FormalDut, HasFormalAsserts, SpinalFormalConfig, anyseq}
+import spinal.core.formal.{FormalDut, SpinalFormalConfig, anyseq}
 import spinal.lib._
 import spinal.lib.bus.misc.{AddressMapping, DefaultMapping, SizeMapping}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}

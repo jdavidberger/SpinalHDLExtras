@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.formal._
 import spinal.lib.bus.simple._
+import spinal.lib.formal.HasFormalAsserts
 import spinalextras.lib.memory.PipelinedMemoryBusBuffer
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
@@ -21,6 +22,8 @@ case class PipelinedMemoryBusBufferFormal[T <: Data](dataType : HardType[T], dep
   if(!check_flush) {
     assume(!dut.io.flush)
   }
+
+  HasFormalAsserts.printFormalAssertsReport()
 }
 
 class PipelinedMemoryBusBufferFormalTest extends AnyFunSuite with FormalTestSuite {

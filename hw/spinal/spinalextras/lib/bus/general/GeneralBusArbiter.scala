@@ -1,9 +1,10 @@
 package spinalextras.lib.bus.general
 
 import spinal.core._
-import spinal.core.formal.HasFormalAsserts
+
 import spinal.lib._
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters, XipCmd}
+import spinal.lib.formal.ComponentWithFormalAsserts
 import spinalextras.lib.misc.StreamFifoExt
 import vexriscv.ip._
 import vexriscv.plugin.{DBusSimpleBus, DBusSimpleCmd, DBusSimpleRsp}
@@ -12,7 +13,7 @@ import scala.collection.mutable
 import scala.language.{implicitConversions, postfixOps}
 
 class GeneralBusArbiter[T <: Data with IMasterSlave](val busAccesor: GeneralBusInterface[T], portCount : Int, pendingRspMax : Int = 1,
-                                                     transactionLock : Boolean = true) extends Component with HasFormalAsserts {
+                                                     transactionLock : Boolean = true) extends ComponentWithFormalAsserts {
   import busAccesor._
   def dataType = busAccesor.dataType
 
@@ -129,5 +130,7 @@ class GeneralBusArbiter[T <: Data with IMasterSlave](val busAccesor: GeneralBusI
       assertOrAssume(CountOne(logic.rspRouteOh) <= 1)
       assertOrAssume(io.output.isProducerValid)
     }
+
+    formalCheckOutputsAndChildren()
   }
 }

@@ -1,11 +1,12 @@
 package spinalextras.lib.memory
 
 import spinal.core._
-import spinal.core.formal.HasFormalAsserts
+
 import spinal.lib.bus.regif.BusIf
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.fsm._
 import spinal.lib._
+import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, PipelinedMemoryBusLogger, SignalLogger}
 import spinalextras.lib.misc.RegisterTools
 import spinalextras.lib.testing.test_funcs
@@ -20,7 +21,7 @@ case class StridedAccessFIFOAsync[T <: Data](
                                          bufferSize: Int = 32,
                                          busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
                                          rsp_latency : Int = 0, cmd_latency : Int = 0
-                                       ) extends Component with HasFormalAsserts {
+                                       ) extends ComponentWithFormalAsserts {
   val depthInBits = depth * pushDataType.getBitsWidth
   val depthInOutput = depthInBits / popDataType.getBitsWidth
   val reader = StridedAccessFIFOReaderAsync(popDataType, depthInOutput, baseAddress, outCnt,
@@ -51,7 +52,7 @@ case class StridedAccessFIFOAsync[T <: Data](
   cmd.setIdle()
   writer.io.bus.cmd.setBlocked()
   withAutoPull()
-  assert(asyncFifoBusContract.outstandingReads.value === reader.busContract.outstandingReads.value)
+  assert(asyncFifoBusContract.outstandingReads.value === reader.io.bus.formalContract.outstandingReads.value)
 
   val fsm = new StateMachine {
     val read, wait_push_fall = new State
@@ -99,11 +100,10 @@ case class StridedAccessFIFOAsync[T <: Data](
     PipelinedMemoryBusLogger.attach_debug_registers(busSlaveFactory, io.bus.setName("strided_bus"))
   }
 
-  override lazy val formalValidInputs = io.bus.formalIsConsumerValid() && io.push.formalIsValid() && io.pop.formalIsValid()
+  //override lazy val formalValidInputs = io.bus.formalIsConsumerValid() && io.push.formalIsValid() && io.pop.formalIsValid()
   override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts"){
-    HasFormalAsserts.formalAssertsChildren(self, assumesInputValid = useAssumes, useAssumes = true)
     assertOrAssume(reader.io.pop.formalContract.outstandingFlows === io.pop.formalContract.outstandingFlows)
-    assertOrAssume(io.pop.formalIsValid())
+    formalCheckOutputsAndChildren()
   }
 }
 

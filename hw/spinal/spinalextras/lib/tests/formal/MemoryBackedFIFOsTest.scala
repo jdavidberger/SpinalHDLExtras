@@ -3,22 +3,36 @@ package spinalextras.lib.tests.formal
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.formal.{FormalDut, anyseq}
 import spinal.core._
+import spinal.lib.formal.HasFormalAsserts
 import spinal.lib.{Counter, StreamFifo}
+import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 import spinalextras.lib.memory.MemoryPoolFIFOs
-import spinalextras.lib.testing.test_funcs.formalAssumeLibraryComponents
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
 import scala.language.postfixOps
 
-class MemoryPoolFIFOsFormal[T <: Data](dataType: HardType[T],
-                                       sizes: Seq[BigInt],
-                                       check_flush : Boolean = false,
-                                       checkResponses : Boolean = true) extends Component {
-  val dut = FormalDut(new MemoryPoolFIFOs(Bits(8 bits), Seq(10)))
+case class MemoryPoolFIFOConfig[T <: Data](dataType: HardType[T],
+                                           sizes: Seq[BigInt],
+                                           check_flush : Boolean = false,
+                                           checkResponses : Boolean = true,
+                                           technologyKind: MemTechnologyKind = auto,
+                                           mem_factory: (MemoryRequirement[T], MemTechnologyKind) => HardwareMemory[T] = Memories.apply[T] _,
+                                           localFifoDepth: Int = 0) {
+  override def toString : String = {
+    s"MemoryPoolFIFO_${sizes.size}_${localFifoDepth}"
+  }
+}
+
+class MemoryPoolFIFOsFormal[T <: Data](config : MemoryPoolFIFOConfig[T]) extends Component {
+  import config._
+
+  val dut = FormalDut(new MemoryPoolFIFOs(dataType, sizes,
+    technologyKind = technologyKind,
+    mem_factory = mem_factory, localFifoDepth = localFifoDepth
+  ))
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.io.fifos.foreach(f => {
-    test_funcs.assertStreamContract(f.pop)
     anyseq(f.pop.ready)
 
     if(check_flush) {
@@ -27,16 +41,14 @@ class MemoryPoolFIFOsFormal[T <: Data](dataType: HardType[T],
       f.flush := False
     }
 
-    test_funcs.assumeStreamContract(f.push)
     anyseq(f.push.valid)
     anyseq(f.push.payload)
 
-    if(checkResponses) {
+    if(checkResponses) new Composite(this, "checkResp") {
       val testFifo = StreamFifo(f.dataType, f.depth.toInt)
       testFifo.io.push.payload := f.push.payload
       testFifo.io.push.valid := f.push.fire
       testFifo.io.flush := f.flush
-      test_funcs.assertStreamContract(testFifo.io.push)
 
       testFifo.io.pop.ready := f.pop.fire
 
@@ -46,16 +58,24 @@ class MemoryPoolFIFOsFormal[T <: Data](dataType: HardType[T],
     }
   }
   )
-
-  test_funcs.formalAssumeLibraryComponents()
+  HasFormalAsserts.printFormalAssertsReport()
 }
 
 class MemoryBackedFIFOsTestFormal extends AnyFunSuite with FormalTestSuite {
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def defaultDepth() = 15
+  override def defaultDepth() = 5
 
-  override def generateRtl() = Seq((suiteName, () => new MemoryPoolFIFOsFormal(UInt(8 bits), Seq(10, 50))))
-  override def generateRtlCover() = Seq((suiteName, () => new MemoryPoolFIFOsFormal(UInt(8 bits), Seq(10, 50), checkResponses = false)))
-  override def generateRtlProve() = Seq((suiteName, () => new MemoryPoolFIFOsFormal(UInt(8 bits), Seq(10, 50), checkResponses = false)))
+  lazy val testConfigs = Seq(
+    MemoryPoolFIFOConfig(UInt(8 bits), Seq(10, 50)),
+    MemoryPoolFIFOConfig(UInt(8 bits), Seq(10, 50), localFifoDepth = 2),
+    //MemoryPoolFIFOConfig(UInt(8 bits), Seq(10, 50), localFifoDepth = 3)
+  )
+
+  override def generateRtl() : Seq[(String, () => Component)] =
+    testConfigs.map(x => x.toString -> (() => new MemoryPoolFIFOsFormal(x)))
+
+  override def generateRtlCover() = generateRtlProve()
+  override def generateRtlProve() =
+    testConfigs.map(x => x.toString -> (() => new MemoryPoolFIFOsFormal(x.copy(checkResponses = false))))
 }

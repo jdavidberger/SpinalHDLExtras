@@ -1,9 +1,11 @@
 package spinalextras.lib.misc
 
+import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
+import spinal.lib.formal.ComponentWithFormalAsserts
 import spinal.lib.fsm.{EntryPoint, State, StateMachine}
-import spinalextras.lib.testing.test_funcs
+import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -83,7 +85,76 @@ class AdaptWidthByState[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardT
 
 }
 
-class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T], endianness: Endianness = LITTLE) extends Component {
+class StreamWidthAdapterWithOccupancy[T <: Data,T2 <: Data](inputDataType : HardType[T], outputDataType : HardType[T2], endianness: Endianness = LITTLE, padding : Boolean = false) extends ComponentWithFormalAsserts {
+  val inputWidth = inputDataType.getBitsWidth
+  val outputWidth = outputDataType.getBitsWidth
+
+  val factor = {
+    if(inputWidth == outputWidth) {
+      0
+    } else if(inputWidth > outputWidth) {
+      (inputWidth + outputWidth - 1) / outputWidth
+    } else {
+      (outputWidth + inputWidth - 1) / inputWidth
+    }
+  }
+
+  val io = new Bundle {
+    val input = slave(Stream(inputDataType))
+    val output = master(Stream(outputDataType))
+
+    val occupancy = out(UInt(log2Up(factor) bits))
+  }
+  val input = io.input
+  val output = io.output
+
+  if(inputWidth == outputWidth){
+    output.arbitrationFrom(input)
+    output.payload.assignFromBits(input.payload.asBits)
+    io.occupancy := 0
+
+  } else if(inputWidth > outputWidth){
+    require(inputWidth % outputWidth == 0 || padding)
+    val factor = (inputWidth + outputWidth - 1) / outputWidth
+    val paddedInputWidth = factor * outputWidth
+    val counter = Counter(factor,inc = output.fire)
+    io.occupancy := counter.value
+    output.valid := input.valid
+    endianness match {
+      case `LITTLE` => output.payload.assignFromBits(input.payload.asBits.resize(paddedInputWidth).subdivideIn(factor slices).read(counter))
+      case `BIG`    => output.payload.assignFromBits(input.payload.asBits.resize(paddedInputWidth).subdivideIn(factor slices).reverse.read(counter))
+    }
+    input.ready := output.ready && counter.willOverflowIfInc
+  } else{
+    require(outputWidth % inputWidth == 0 || padding)
+    val factor  = (outputWidth + inputWidth - 1) / inputWidth
+    val paddedOutputWidth = factor * inputWidth
+    val counter = Counter(factor,inc = input.fire)
+    io.occupancy := counter.value
+    val buffer  = Reg(Bits(paddedOutputWidth - inputWidth bits))
+    when(input.fire){
+      buffer := input.payload ## (buffer >> inputWidth)
+    }
+    output.valid := input.valid && counter.willOverflowIfInc
+    endianness match {
+      case `LITTLE` => output.payload.assignFromBits((input.payload ## buffer).resize(outputWidth))
+      case `BIG`    => output.payload.assignFromBits((input.payload ## buffer).subdivideIn(factor slices).reverse.asBits().resize(outputWidth))
+    }
+    input.ready := !(!output.ready && counter.willOverflowIfInc)
+  }
+}
+
+object StreamWidthAdapterWithOccupancy {
+  def apply[T <: Data, T2 <: Data](input: Stream[T], output: Stream[T2], endianness: Endianness = LITTLE, padding: Boolean = false): StreamWidthAdapterWithOccupancy[T, T2] = {
+    val dut = new StreamWidthAdapterWithOccupancy(input.payload, output.payload, endianness, padding = padding)
+    dut.io.input <> input
+    dut.io.output <> output
+    dut
+  }
+}
+
+class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T], endianness: Endianness = LITTLE) extends ComponentWithFormalAsserts {
+
   val io = new Bundle {
     val in = slave(Stream(dataTypeIn))
     val output = master(Stream(dataTypeOut))
@@ -92,39 +163,67 @@ class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T],
     val isEmpty = out(Bool())
   }
 
-  def logic =
-    if(dataTypeIn.getBitsWidth == dataTypeOut.getBitsWidth) new Composite(this, "logic_single") {
+  val logic =
+    if(dataTypeIn.getBitsWidth == dataTypeOut.getBitsWidth) {
       io.in >> io.output
       io.occupancy := 0
       io.isEmpty := True
 
       val latency = 1
+
+      null
     } else new Composite(this, "logic_multi") {
       val in = io.in
       val output = io.output
 
       val streamMid = Stream(Bits(StreamTools.lcm(in.payload.getBitsWidth, output.payload.getBitsWidth) bits))
 
-      StreamWidthAdapter(in, streamMid, endianness = endianness)
+      val swaIn = StreamWidthAdapterWithOccupancy(in, streamMid, endianness = endianness)
       val streamMid_stage = streamMid.stage()
-      StreamWidthAdapter(streamMid_stage, output, endianness = endianness)
+      val swaOut = StreamWidthAdapterWithOccupancy(streamMid_stage, output, endianness = endianness)
+
+      val insPerMid = streamMid.payload.getBitsWidth / in.payload.getBitsWidth
 
       val counterIn = Counter(streamMid.payload.getBitsWidth / in.payload.getBitsWidth, inc = in.fire)
       val counterOut = Counter(streamMid.payload.getBitsWidth / output.payload.getBitsWidth, inc = output.fire)
 
       io.occupancy := streamMid_stage.valid.asUInt
+
       io.isEmpty := streamMid_stage.valid === False && counterIn.value === 0 && counterOut.value === 0
 
       val latency = streamMid.getBitsWidth / dataTypeIn.getBitsWidth
     }
 
-  val latency = logic.latency
+  lazy val formalCounter = {
+    val counter = new CounterUpDownUneven(1 << 16, dataTypeIn.getBitsWidth, dataTypeOut.getBitsWidth)
+    when(io.in.fire) {
+      counter.increment()
+    }
+    when(io.output.fire) {
+      counter.decrement()
+    }
+    counter
+  }
 
-  test_funcs.assertStreamContract(io.in)
-  test_funcs.assertStreamContract(io.output)
+  val latency = if(logic == null) 1 else logic.latency
+
+  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
+    val counter = formalCounter
+    counter.formalAssertOrAssume()
+
+    if(logic != null) new Composite(this, "logic") {
+      val inBitsOcc = logic.swaIn.io.occupancy * dataTypeIn.getBitsWidth
+      val outBitsOcc = logic.swaOut.io.occupancy * dataTypeOut.getBitsWidth
+      val midBitsOcc = logic.streamMid_stage.valid.asUInt * logic.streamMid.payload.getWidth
+      val calcOcc = inBitsOcc +^ midBitsOcc -^ outBitsOcc
+      assertOrAssume(midBitsOcc >= outBitsOcc)
+      assertOrAssume(calcOcc === counter.value)
+    }
+    formalCheckOutputsAndChildren()
+  }
 }
 
-class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends Component {
+class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends ComponentWithFormalAsserts {
   val io = new Bundle {
     val in = slave(Stream(Fragment(dataTypeIn)))
     val out = master(Stream(Fragment(dataTypeOut)))
@@ -135,9 +234,6 @@ class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : Hard
 
   val streamMid = Stream(Fragment(Bits(StreamTools.lcm(in.fragment.getBitsWidth, out.fragment.getBitsWidth) bits)))
   def latency = streamMid.fragment.getBitsWidth / dataTypeIn.getBitsWidth
-
-  test_funcs.assertStreamContract(in)
-  test_funcs.assertStreamContract(out)
 
   StreamFragmentWidthAdapter(in, streamMid, endianness = LITTLE, earlyLast = true)
   StreamFragmentWidthAdapter(streamMid.stage(), out, endianness = LITTLE, earlyLast = true)

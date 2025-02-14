@@ -1,13 +1,15 @@
 package spinalextras.lib.memory
 
+import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
+import spinal.core.formal.{FormalDut, anyconst}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
-
+import spinal.lib.formal.ComponentWithFormalAsserts
 import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.misc.{GlobalSignals, RegisterTools, StreamTools}
-import spinalextras.lib.testing.test_funcs
+import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 
 import scala.language.postfixOps
 
@@ -16,7 +18,7 @@ case class StreamToBuffer[T <: Data](
     depth: Int,
     baseAddress: BigInt,
     busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
-) extends Component {
+) extends ComponentWithFormalAsserts {
   val depthInBusWords = depth * dataType.getBitsWidth / busConfig.dataWidth
   require((depth * dataType.getBitsWidth % busConfig.dataWidth) == 0)
   val counter = Counter(depthInBusWords)
@@ -28,9 +30,6 @@ case class StreamToBuffer[T <: Data](
     val bus = master(PipelinedMemoryBus(busConfig))
     val debug_fake_write = in(Bool()) default(False)
   }
-
-  test_funcs.assertStreamContract(io.push)
-  test_funcs.assertPMBContract(io.bus)
 
   val pushMem = Stream(Fragment(Bits(busConfig.dataWidth bits)))
   require(baseAddress % (1 << busConfig.wordAddressShift) == 0)

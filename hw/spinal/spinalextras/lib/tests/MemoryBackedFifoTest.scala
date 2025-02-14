@@ -10,9 +10,10 @@ import spinalextras.lib.memory.MemoryBackedFifo
 class MemoryBackedFifoTest extends AnyFunSuite {
   def doTest[T <: BitVector](dataType: HardType[T], depth: Int, throughputTest : Boolean = false): Unit = {
     Config.sim.withFstWave.doSim(
-      new MemoryBackedFifo(dataType, depth)
+      new MemoryBackedFifo(dataType, depth, withAsserts = true)
     ) { dut =>
       SimTimeout(5000 us)
+
       dut.io.push.valid #= false
       dut.io.pop.ready #= false
       dut.io.flush #= false

@@ -97,7 +97,8 @@ object SpinexConfig{
         bigEndian = bigEndian
       ),
       //new CsrPlugin(CsrPluginConfig.small(mtvecInit = if(withXip) 0xE0040020l else 0x80000020l)),
-      new CsrPlugin(CsrPluginConfig.small(mtvecInit = null).copy(mtvecAccess = WRITE_ONLY, ecallGen = true, wfiGenAsNop = true, withPrivilegedDebug = true, xtvecModeGen = false)),
+      new CsrPlugin(CsrPluginConfig.small(mtvecInit = null).copy(mtvecAccess = WRITE_ONLY,
+        ecallGen = true, wfiGenAsNop = true, withPrivilegedDebug = true, xtvecModeGen = false, debugTriggers = 8)),
       new MulDivIterativePlugin(
         genMul = true,
         genDiv = true,
@@ -114,7 +115,7 @@ object SpinexConfig{
       new IntAluPlugin,
       new SrcPlugin(
         separatedAddSub = false,
-        executeInsertion = true
+        executeInsertion = false
       ),
       new LightShifterPlugin,
       new HazardSimplePlugin(

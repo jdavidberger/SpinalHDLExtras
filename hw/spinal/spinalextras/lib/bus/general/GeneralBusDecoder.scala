@@ -1,14 +1,15 @@
 package spinalextras.lib.bus.general
 
 import spinal.core._
-import spinal.core.formal.HasFormalAsserts
+
 import spinal.lib._
 import spinal.lib.bus.misc.{AddressMapping, DefaultMapping}
+import spinal.lib.formal.ComponentWithFormalAsserts
 import spinalextras.lib.misc.StreamFifoExt
 
 import scala.language.postfixOps
 
-class ResponseCounter(sizeBits : Int, pendingMax : Int) extends Component with HasFormalAsserts {
+class ResponseCounter(sizeBits : Int, pendingMax : Int) extends ComponentWithFormalAsserts {
   val io = new Bundle {
     val increaseBy = slave(Stream(UInt(sizeBits bits)))
     val decrease = master(Stream(Bits(0 bits)))
@@ -55,7 +56,7 @@ class ResponseCounter(sizeBits : Int, pendingMax : Int) extends Component with H
   }
 }
 
-case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: GeneralBusInterface[T], mappings: Seq[AddressMapping], pendingMax: Int = 3) extends Component with HasFormalAsserts {
+case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: GeneralBusInterface[T], mappings: Seq[AddressMapping], pendingMax: Int = 3) extends ComponentWithFormalAsserts {
   import busAccesor._
 
   val io = new Bundle {
@@ -118,8 +119,6 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
 
   }
 
-  override lazy val formalValidInputs = Vec(io.outputs.map(_.isConsumerValid)).andR && io.input.isProducerValid
-
   def allOutputsSawResponse(): Bool = {
     Vec((if(logic != null) logic.outputsWithDefault else io.outputs).map(o => RegInit(False) setWhen(o.rsp.fire))).asBits.andR
   }
@@ -167,6 +166,8 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
       assert(io.outputs.size == 1)
       assertOrAssume(inputRspPending === io.outputs.head.formalRspPending)
     }
+
+    formalCheckOutputsAndChildren()
   }
 
 }

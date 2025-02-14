@@ -1,14 +1,16 @@
 package spinalextras.lib.bus
 
 import spinal.core._
-import spinal.core.formal.HasFormalAsserts
+
 import spinal.core.sim.{SimBitVectorPimper, SimBoolPimper, SimClockDomainHandlePimper, SimPublic, SimTimeout, fork, simTime}
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
 import spinal.lib._
+import spinal.lib.formal.ComponentWithFormalAsserts
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneSequencer, WishboneStatus, WishboneTransaction}
 import spinalextras.lib.Config
+import spinalextras.lib.bus._
 import spinalextras.lib.testing.test_funcs
 
 import scala.collection.mutable
@@ -44,49 +46,43 @@ object WishbonePipelinedHelpers {
 }
 
 case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemoryBusConfig,
-                                        wbConfig: WishboneConfig, rspQueue : Int = 8, addressMap : (UInt => UInt) = identity) extends Component{
+                                        wbConfig: WishboneConfig, rspQueue : Int = 8, addressMap : (UInt => UInt) = identity) extends ComponentWithFormalAsserts {
   val io = new Bundle {
     val wb = slave(Wishbone(wbConfig))
     val pmb = master(PipelinedMemoryBus(pipelinedMemoryBusConfig))
   }
 
-  val wbAssert = test_funcs.assertWishboneBusContract(io.wb)
-  val pmbContract = test_funcs.assertPMBContract(io.pmb)
-  test_funcs.assertStreamContract(io.pmb.cmd)
-
-  val (readyForNewReq, hasOutstandingReq, reqWasWE) =
-    WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,
-      if(wbConfig.isPipelined) rspQueue else 1)
-
   assert(io.pmb.cmd.valid === False || (io.wb.byteAddress() & (io.wb.config.wordAddressInc() - 1)) === 0, "PMB needs word alignment")
-  io.pmb.cmd.payload.address := addressMap(io.wb.byteAddress()).resized
-  io.pmb.cmd.payload.write := io.wb.WE
-  io.pmb.cmd.payload.data := io.wb.DAT_MOSI.resized
-  io.pmb.cmd.valid := io.wb.CYC && io.wb.STB && readyForNewReq
+  val pendingRead = RegInit(False) setWhen(io.pmb.readRequestFire) clearWhen(io.wb.ACK)
+  io.pmb.cmd.valid := io.wb.masterHasRequest & !pendingRead
+  io.pmb.cmd.data := io.wb.DAT_MOSI
+  io.pmb.cmd.address := io.wb.byteAddress().resized
+  io.pmb.cmd.write := io.wb.WE
 
-  if(io.wb.ERR != null)
-    io.wb.ERR := False
-
-  if(io.wb.SEL != null)
-    io.pmb.cmd.mask := io.wb.SEL.resized
-  else
-    io.pmb.cmd.mask.setAll()
-
-  if(io.wb.STALL != null) {
-    io.wb.STALL := !readyForNewReq || !io.pmb.cmd.ready
+  if(io.wb.SEL != null) {
+    io.pmb.cmd.mask := io.wb.SEL
   } else {
-    assert(pmbContract.outstanding_cnt <= 1)
-    when(pmbContract.outstanding_cnt === 1) {
-      assert(io.wb.masterHasRequest && !io.wb.WE && !readyForNewReq)
+    io.pmb.cmd.mask.setAll()
+  }
+  io.wb.DAT_MISO := io.pmb.rsp.data
+  io.wb.ACK := io.pmb.rsp.valid
+
+  when(io.wb.masterHasRequest) {
+    when(io.wb.WE) {
+      io.wb.ACK := io.pmb.cmd.fire
+    } otherwise {
+      //pendingRead := io.pmb.cmd.fire && !io.pmb.rsp.valid
     }
   }
-  io.wb.DAT_MISO := io.pmb.rsp.data.resized
 
-  val cmdWriteFire = io.pmb.cmd.fire && io.pmb.cmd.write
-  val cmdReadFire = io.pmb.cmd.fire && ~io.pmb.cmd.write
-  io.wb.ACK := cmdWriteFire || io.pmb.rsp.valid
 
-  //assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
+  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
+    assertOrAssume(pendingRead.asUInt === io.pmb.formalContract.outstandingReads)
+    when(pendingRead) {
+      assertOrAssume(io.wb.masterHasRequest && !io.wb.WE)
+    }
+    formalCheckOutputsAndChildren()
+  }
 }
 
 object WishboneToPipelinedMemoryBus {
@@ -108,7 +104,7 @@ object WishboneToPipelinedMemoryBus {
   }
 }
 
-case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, rspQueue : Int = 8) extends Component {
+case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, rspQueue : Int = 8) extends ComponentWithFormalAsserts {
   //assert(wbConfig.dataWidth == pipelinedMemoryBusConfig.dataWidth)
 
   val io = new Bundle {
@@ -116,8 +112,8 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
     val wb = master(Wishbone(wbConfig))
   }
 
-  test_funcs.assertPMBContract(io.pmb)
-  test_funcs.assertWishboneBusContract(io.wb)
+  //test_funcs.assertPMBContract(io.pmb)
+  //test_funcs.assertWishboneBusContract(io.wb)
 
   val (readyForNewReq, hasOutstandingReq, reqWasWE) =
     WishbonePipelinedHelpers.create_translation_signals(io.wb.WE, io.pmb.cmd.fire, io.wb.ACK,
@@ -141,7 +137,7 @@ case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemor
 
   //assert(!io.wb.ACK || hasOutstandingReq, "Miscounted acks")
   val rsp = cloneOf(io.pmb.rsp)
-  rsp.valid := !reqWasWE & io.wb.ACK
+  rsp.valid := !reqWasWE & io.wb.isRequestAck
   rsp.payload.data := io.wb.DAT_MISO.resized
   io.pmb.rsp <> rsp.stage()
 }
@@ -155,14 +151,18 @@ object PipelinedMemoryBusToWishbone {
   }
   def apply(bus : PipelinedMemoryBus, rspQueue : Int, config : WishboneConfig, addressMap : (UInt => UInt)): Wishbone = {
     val wb = Wishbone(config)
-    if(bus.isMasterInterface ^ (bus.component == Component.current)) {
+    if(bus.isMasterInterface ^ (bus.component == Component.current)) new Composite(bus, "pmb2wb") {
       val adapter = new PipelinedMemoryBusToWishbone(config, bus.config, rspQueue)
       adapter.io.pmb <> bus
       adapter.io.wb <> wb
-    } else {
+      bus.assertBusEquivalence(adapter.io.pmb)
+      wb.formalAssertEquivalence(adapter.io.wb)
+    } else new Composite(bus, "wb2pmb") {
       val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, rspQueue, addressMap = addressMap)
       adapter.io.pmb <> bus
       adapter.io.wb <> wb
+      bus.assertBusEquivalence(adapter.io.pmb)
+      wb.formalAssertEquivalence(adapter.io.wb)
     }
     wb
   }
@@ -172,13 +172,14 @@ object PipelinedMemoryBusToWishbone {
   def apply(bus : PipelinedMemoryBus, config : WishboneConfig): Wishbone = {
     apply(bus, 0, config, addressMap = identity)
   }
-  def createDriver(bus : PipelinedMemoryBus, config : WishboneConfig): Wishbone = {
+  def createDriver(bus : PipelinedMemoryBus, config : WishboneConfig): Wishbone = new Composite(bus, "wb2pmb"){
     val wb = Wishbone(config)
     val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, 0, addressMap = identity)
     adapter.io.pmb <> bus
     adapter.io.wb <> wb
-    wb
-  }
+    //bus.assertBusEquivalence(adapter.io.pmb)
+    //wb.formalAssertEquivalence(adapter.io.wb)
+  }.wb
 }
 
 

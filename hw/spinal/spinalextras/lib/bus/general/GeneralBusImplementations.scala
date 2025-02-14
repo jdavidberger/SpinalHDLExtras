@@ -3,6 +3,7 @@ package spinalextras.lib.bus
 import spinal.core.{Bits, Bool, False, HardType, Mux, Reg, RegNext, True, UInt, cloneOf, when}
 import spinal.lib.{Fragment, Stream}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters, XipCmd}
+import spinal.lib.cpu.riscv.debug.DebugModuleCmdErr.BUS
 import spinalextras.lib.bus.general.GeneralBusInterface
 import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus, InstructionCacheMemCmd, InstructionCacheMemRsp}
 import vexriscv.plugin.{DBusSimpleBus, DBusSimpleCmd, DBusSimpleRsp}
@@ -47,6 +48,12 @@ package object general {
     override def rsp_required_count(bus : DBusSimpleBus) : UInt = Mux(bus.cmd.wr, 0, 1)
 
     //
+
+    override def map_rsp_read_error(input: BUS): Unit = {
+      input.rsp.ready := True
+      input.rsp.error := True
+      input.rsp.data.assignDontCare()
+    }
   }
 
   object InstructionCacheMemBusInterfaceExtImpl {
@@ -97,6 +104,12 @@ package object general {
 
       bus
     }
+
+    override def map_rsp_read_error(input: BUS): Unit = {
+      input.rsp.valid := True
+      input.rsp.error := True
+      input.rsp.data.assignDontCare()
+    }
   }
 
   implicit class XipBusMemBusInterfaceExtImpl(config: XipBusParameters) extends GeneralBusInterface[XipBus] {
@@ -131,5 +144,10 @@ package object general {
     override def formalRspPending(input: BUS) = formalContract(input).outstandingRsp
 
     //override def isConsumerValid(bus: BUS): Bool = XipBusMemBusExtImpl.isConsumerValid(bus)
+
+    override def map_rsp_read_error(input: BUS): Unit = {
+      input.rsp.valid := True
+      input.rsp.fragment.assignFromBits(0xdeadbeefL)
+    }
   }
 }

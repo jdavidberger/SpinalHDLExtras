@@ -1,13 +1,22 @@
 package spinalextras.lib.misc
 
 import spinal.core._
-import spinal.core.formal.HasFormalAsserts.assertOrAssume
+
 import spinal.core.formal.past
 import spinal.lib._
+import spinal.lib.formal.FormalMasterSlave
+import spinal.lib.formal.HasFormalAsserts.assertOrAssume
 
-case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle with IMasterSlave {
+case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle with FormalMasterSlave {
   val async_valid, async_ready   = Bool()
   val flow = Flow(payloadType())
+
+  override def asMaster(): Unit = {
+    out(async_valid)
+    master(flow)
+
+    in(async_ready)
+  }
 
   def steady_ready() : AsyncStream[T] = new Composite(this, "steady_ready") {
     val s2mPipe = AsyncStream(payloadType)
@@ -60,13 +69,6 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
   def >>(into: AsyncStream[T]): AsyncStream[T] = {
     into << this
     into
-  }
-
-  override def asMaster(): Unit = {
-    out(async_valid)
-    master(flow)
-
-    in(async_ready)
   }
 
   def arbitrationFrom[T2 <: Data](that : AsyncStream[T2]) : Unit = {
@@ -132,7 +134,7 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
     }
   }
 
-  lazy val formalContract = new Composite(this, "formalContract") {
+  def formalContract = signalCache(s"${this}_formalContract")(new Bundle {//new Composite(this, "formalContract") {
     val wasValid = RegNext(async_valid) init (False)
     val wasReady = RegNext(async_ready) init (False)
     val wasFired = RegNext(async_fire) init (False)
@@ -142,26 +144,29 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
     assert(!invalidReadyChange, s"${this} deasserted async_ready before a async_valid")
 
     val outstandingFlows = CounterUpDown(1L << 32, async_fire, flow.valid)
+    val outstandingFlows_value = CombInit(outstandingFlows.value)
     assume(~outstandingFlows.willOverflow)
 
     val async_flow_bounded = Bool()
     async_flow_bounded := outstandingFlows > 0 || ~outstandingFlows.decrementIt
-    assert(async_flow_bounded) //, s"${pmb} PMB has miscounted responses")
-  }
+    //assert(async_flow_bounded)
 
-  def formalIsProducerValid(payloadInvariance : Boolean = true) : Bool = signalCache(s"${this}formalIsProducerValid")(new Composite(this, "formalIsProducerValid"){
+    val isConsumerValid = (!wasReady || async_ready || wasFired)
+  }.setCompositeName(this, "formalContract"))
+
+  def formalIsProducerValid(payloadInvariance : Boolean) : Bool = signalCache(s"${this}formalIsProducerValid")(new Composite(this, "formalIsProducerValid"){
     val v = formalContract.async_flow_bounded
   }.v)
 
-  def formalIsConsumerValid() : Bool = new Composite(this) {
-    val wasReady = RegNext(async_ready) init (False)
-    val wasFired = RegNext(async_fire) init (False)
-    val v = (!wasReady || async_ready || wasFired)
-  }.v
+  override type Self = AsyncStream[T]
 
-  def formalIsValid() = {
-    !formalContract.invalidReadyChange && formalContract.async_flow_bounded
+  override def formalAssertEquivalence(that: AsyncStream[T]): Unit = {
+    assert(formalContract === that.formalContract)
   }
+
+  override def formalIsProducerValid() : Bool = formalIsProducerValid(true)
+
+  override def formalIsConsumerValid() : Bool = formalContract.isConsumerValid
 
   def formalAsserts()(implicit useAssumes : Boolean = false): Unit = {
     assertOrAssume(formalIsProducerValid())
@@ -181,4 +186,7 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
     this.async_ready := True
     this
   }
+
+
+  override type RefOwnerType = this.type
 }

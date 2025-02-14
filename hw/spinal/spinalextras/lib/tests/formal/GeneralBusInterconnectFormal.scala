@@ -2,7 +2,7 @@ package spinalextras.lib.tests.formal
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
-import spinal.core.formal.{FormalDut, HasFormalAsserts, anyseq, initstate}
+import spinal.core.formal.{FormalDut, anyseq, initstate}
 import spinal.lib._
 import spinal.lib.bus.misc.{AddressMapping, MaskMapping, SizeMapping}
 import spinal.lib.bus.regif.WishboneBusInterface
@@ -10,6 +10,7 @@ import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
+import spinal.lib.formal.HasFormalAsserts
 import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, PipelinedMemoryBusMultiBus, WishboneExt}
 import spinalextras.lib.bus.general.{GeneralBusArbiter, GeneralBusInterface, XipBusMemBusInterfaceExtImpl}
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
@@ -114,6 +115,7 @@ case class GeneralBusInterconnectFormal[T <: Data with IMasterSlave](val masterD
 
   withAutoPull()
   HasFormalAsserts.formalAssertsChildren(this, assumesInputValid = true, useAssumes = false)
+  HasFormalAsserts.printFormalAssertsReport()
 }
 
 

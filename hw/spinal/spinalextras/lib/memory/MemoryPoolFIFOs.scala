@@ -5,6 +5,7 @@ import spinal.lib.bus.misc.{DefaultMapping, MaskMapping, SizeMapping}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
+import spinal.lib.formal.ComponentWithFormalAsserts
 import spinalextras.lib.HardwareMemory.{HardwareMemoryReadWriteCmd, HardwareMemoryWriteCmd}
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.memory.MemoryPoolFIFOs.splitReadWrite
@@ -38,7 +39,7 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
                                       sizes: Seq[BigInt],
                                       technologyKind: MemTechnologyKind = auto,
                                       mem_factory: (MemoryRequirement[T], MemTechnologyKind) => HardwareMemory[T] = Memories.apply[T] _,
-                                      localFifoDepth: Int = 0) extends Component {
+                                      localFifoDepth: Int = 0) extends ComponentWithFormalAsserts {
 
   val io = new Bundle {
     val fifos = sizes.map(sm => slave(new FifoInterface[T](dataType, sm)))
@@ -70,7 +71,7 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
   def create_arbiters(inputs : Seq[PipelinedMemoryBus], pendingRspMax : Int, rspRouteQueue : Boolean, transactionLock : Boolean): PipelinedMemoryBus = {
     val c = PipelinedMemoryBusArbiter(inputs.head.config, inputs.size, pendingRspMax, rspRouteQueue, transactionLock)
     (inputs, c.io.inputs).zipped.foreach {case (in, in_port) => {
-      assert(test_funcs.assertPMBContract(in).outstanding_cnt.value === test_funcs.assertPMBContract(in_port).outstanding_cnt.value)
+      assert(in.formalContract.outstandingReads.value === in_port.formalContract.outstandingReads.value)
       (in <> in_port)
     }}
     c.io.output
@@ -79,8 +80,6 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
   val arbitratedBusses =
     Seq(create_arbiters(groupedMasters.map(_(0)), 8, rspRouteQueue = true, transactionLock = false),
       create_arbiters(groupedMasters.map(_(1)), 1, rspRouteQueue = false, transactionLock = false))
-
-
 
   mem.io.readWritePorts.zipWithIndex.foreach({case (rw, idx) => {
     val memBus = arbitratedBusses(idx)
@@ -94,8 +93,7 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
       rtn
     }).toFlow <> rw.cmd
 
-    val memBusContract = test_funcs.assertPMBContract(memBus)
-    assert(memBusContract.outstanding_cnt.value === mem.io.readWritePortsOutstanding(idx))
+    assert(memBus.formalContract.outstandingReads.value === mem.io.readWritePortsOutstanding(idx))
 
     rw.rsp >> memBus.rsp
   }})

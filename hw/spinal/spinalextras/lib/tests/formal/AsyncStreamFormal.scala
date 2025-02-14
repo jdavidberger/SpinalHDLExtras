@@ -2,15 +2,16 @@ package spinalextras.lib.tests.formal
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
-import spinal.core.formal.{FormalDut, HasFormalAsserts, anyseq}
+import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
+import spinal.lib.formal.ComponentWithFormalAsserts
 import spinalextras.lib.misc.AsyncStream
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
 import scala.language.postfixOps
 
-class AsyncStreamTest extends Component with HasFormalAsserts {
+class AsyncStreamTest extends ComponentWithFormalAsserts {
   val io = new Bundle {
     val stream_in = slave(AsyncStream(Bool()))
     val stream_out = master(AsyncStream(Bool()))
@@ -18,16 +19,17 @@ class AsyncStreamTest extends Component with HasFormalAsserts {
 
   io.stream_in >> io.stream_out
 
-  override lazy val formalValidInputs = io.stream_in.formalIsProducerValid() && io.stream_out.formalIsConsumerValid()
-  override def formalChecks()(implicit useAssumes: Boolean) = null
+  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = {
+    io.stream_in.formalAssertEquivalence(io.stream_out)
+    super.formalChecks()
+  }
 }
+
 case class AsyncStreamFormal() extends Component {
   val dut = FormalDut(new AsyncStreamTest())
   assumeInitial(ClockDomain.current.isResetActive)
 
-  dut.formalAssumeInputs()
-  dut.formalAsserts()
-  test_funcs.anyseq_inputs(dut.io)
+  dut.anyseq_inputs()
 }
 
 

@@ -35,6 +35,8 @@ trait GeneralBusInterface[BUS <: Data with IMasterSlave] {
   def map_cmd(input: BUS, output : BUS, takeWhen : Bool) : Stream[CMD] = map_cmd(cmd(input), cmd(output), takeWhen)
 
   def map_rsp(input : BUS, output : Stream[RSP], decodeNoHit : Bool)
+  def map_rsp_read_error(input : BUS) : Unit
+
   def map_rsp(input : BUS, output : BUS)
   def set_rsp_idle(input : BUS) : Unit = {}
   def set_rsp_blocked(input : BUS) : Unit = {}
@@ -76,6 +78,7 @@ trait GeneralBusInterface[BUS <: Data with IMasterSlave] {
     def setBlocked() = set_rsp_blocked(bus)
     def setIdle() = set_rsp_idle(bus)
     def connect(that : MapRsp) = map_rsp(bus, that.bus)
+    def readError() : Unit = map_rsp_read_error(bus)
     def payload = rsp_payload(bus)
     def fire = rsp_fire(bus)
   }

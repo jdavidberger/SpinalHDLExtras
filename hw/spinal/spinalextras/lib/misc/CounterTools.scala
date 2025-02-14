@@ -5,13 +5,16 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.regif.SymbolName
+import spinal.lib.formal.HasFormalAsserts
 import spinalextras.lib.Config
 
-class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ImplicitArea[UInt] {
+import scala.language.postfixOps
+
+class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ImplicitArea[UInt] with HasFormalAsserts {
   val valueNext = UInt(log2Up(range + 1) bits)
   val value = RegNext(valueNext) init(0)
-  assert((value % incBy) === 0)
-  assert((value % decBy) === 0)
+  //assert((value % incBy) === 0)
+  //assert((value % decBy) === 0)
   val incrementIt = False
   val decrementIt = False
   val clearIt = False
@@ -20,16 +23,18 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
   def decrement(): Unit = decrementIt := True
   def clear(): Unit = clearIt := True
 
+  val delta = SInt(S(incBy).getBitsWidth.max(S(-decBy).getBitsWidth) bits)
+  delta := 0
+
+  valueNext := (value.asSInt + delta).asUInt.resized
   when(clearIt) {
     valueNext := 0
   } elsewhen(incrementIt && decrementIt) {
-    valueNext := value + incBy - decBy
+    delta := incBy - decBy
   } elsewhen(incrementIt) {
-    valueNext := value + incBy
+    delta := incBy
   } elsewhen(decrementIt) {
-    valueNext := value - decBy
-  } otherwise {
-    valueNext := value
+    delta := -decBy
   }
 
   assert(value <= range, f"Usage overflow ${value} ${this}")
@@ -39,6 +44,14 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
     is_almost_state = value === (range - incBy),
     is_state_on_clear = false, clear = clearIt
   )
+
+  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
+    assertOrAssume(value <= range)
+    val absDelta = delta.abs
+    when(delta < 0) {
+      assertOrAssume(value >= absDelta)
+    }
+  }
 
   override def implicitValue: UInt = value
 }

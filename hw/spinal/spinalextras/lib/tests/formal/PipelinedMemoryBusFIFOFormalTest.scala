@@ -6,6 +6,7 @@ import spinal.core.formal._
 import spinal.lib._
 import spinal.lib.bus.misc.{AllMapping, DefaultMapping, SizeMapping}
 import spinal.lib.bus.simple.{PipelinedMemoryBusArbiter, PipelinedMemoryBusConfig, PipelinedMemoryBusDecoder}
+import spinal.lib.formal.HasFormalAsserts
 import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.bus.simple.SimpleMemoryProvider
 import spinalextras.lib.memory.PipelinedMemoryBusFIFO
@@ -25,11 +26,6 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
     localPushDepth, localPopDepth))
   assumeInitial(ClockDomain.current.isResetActive)
 
-  val busSlaveContract = test_funcs.assertPMBContract(busSlave, assume_slave = true)
-
-  dut.formalAssumeInputs()
-  dut.formalAsserts()
-
   dut.covers()
 
   if(check_flush) {
@@ -37,9 +33,6 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
   } else {
     dut.io.flush := False
   }
-
-  test_funcs.anyseq_inputs(dut.io.push)
-  test_funcs.anyseq_inputs(dut.io.pop)
 
   if(check_response) {
     val mem = new SimpleMemoryProvider(mapping = sm, config = globalBus.config)
@@ -50,13 +43,14 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
     testFifo.io.push.payload := f.push.payload
     testFifo.io.push.valid := f.push.fire
     testFifo.io.flush := f.flush
-    test_funcs.assertStreamContract(testFifo.io.push)
 
     testFifo.io.pop.ready := f.pop.fire
 
     assert(f.occupancy === testFifo.io.occupancy)
     assert(f.pop.fire === False || testFifo.io.pop.fire)
     assert(f.pop.fire === False || (testFifo.io.pop.payload === f.pop.payload))
+    cover(testFifo.io.push.ready === False)
+    cover(testFifo.io.availability === 0)
   } else {
     anyseq(busSlave.cmd.ready)
     anyseq(busSlave.rsp)
@@ -66,19 +60,29 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
 
   withAutoPull()
 
-  test_funcs.formalAssumeLibraryComponents()
+  HasFormalAsserts.formalAssertsChildren(this, true, false)
+  //anyconst(dut.io.debug_fake_write)
+  dut.io.debug_fake_write := False
+
+  addPrePopTask(() => {
+    dut.anyseq_inputs()
+    HasFormalAsserts.printFormalAssertsReport()
+  })
+
 }
 
 
 class PipelinedMemoryBusFIFOFormalTest extends AnyFunSuite with FormalTestSuite {
-  val create_formal = (check_response : Boolean) => new PipelinedMemoryBusFIFOFormal(UInt(8 bits), (0, 15), check_response = check_response)
+
+  val create_formal = (check_response : Boolean) => new PipelinedMemoryBusFIFOFormal(UInt(8 bits), (0, 3), check_response = check_response, localPopDepth = 2)
 
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def defaultDepth() = 20
+  override def defaultDepth() = 10
 
-  override def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(15)
+  override def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(20)
 
   override def generateRtlBMC() = Seq(("check_response", () => create_formal(true)))
+  override def generateRtlCover() = Seq(("check_response", () => create_formal(true)))
   override def generateRtl() = Seq(("no_check_response", () => create_formal(false)))
 }

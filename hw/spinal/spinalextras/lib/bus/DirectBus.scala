@@ -1,9 +1,10 @@
 package spinalextras.lib.bus
 
 import spinal.core._
-import spinal.core.formal.HasFormalAsserts
+
 import spinal.lib._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
+import spinal.lib.formal.HasFormalAsserts
 
 case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMasterSlave {
   val cmd = PipelinedMemoryBusCmd(config)

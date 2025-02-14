@@ -2,8 +2,46 @@ package spinalextras.lib.testing
 
 import spinal.core.formal._
 import spinal.core._
+import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
 
 import java.io.IOException
+
+import scala.reflect.runtime.universe._
+import scala.reflect.runtime.{currentMirror => cm}
+
+object ReflectionUtils {
+  def constructorArgs(obj: Any): Map[String, Any] = {
+    val mirror = cm.reflect(obj)
+    val instanceSymbol = mirror.symbol
+    val instanceType = instanceSymbol.toType
+
+    // Extract constructor parameters
+    val constructorParams = instanceType.decls.collect {
+      case m: MethodSymbol if m.isPrimaryConstructor => m
+    }.flatMap(_.paramLists.flatten)
+
+    val instanceMirror = mirror
+
+    // Get field values using reflection
+    constructorParams
+      .map(name => {
+        val field = obj.getClass.getDeclaredFields.filter(_.getName.endsWith(f"${name.name}")).head
+        val v = field.get(obj)
+        name.toString -> v // instanceMirror.reflectMethod(member.asMethod)()
+      })
+      .toMap
+  }
+}
+
+case class GeneralFormalDut(f : () => ComponentWithFormalAsserts) extends Component {
+  val dut = FormalDut(f())
+  assumeInitial(ClockDomain.current.isResetActive)
+
+  dut.anyseq_inputs()
+  HasFormalAsserts.printFormalAssertsReport()
+  //println(ReflectionUtils.constructorArgs(dut))
+}
+
 
 trait FormalTestSuite {
   val config = FormalConfig._spinalConfig.copy(defaultConfigForClockDomains = ClockDomainConfig(
@@ -16,6 +54,11 @@ trait FormalTestSuite {
   val formalConfig = FormalConfig
     .withDebug
     .withConfig(config)
+    .withEngies(Seq(SmtBmc(nopresat = false,
+      //solver = SmtBmcSolver.Boolector,
+      progress = false, noincr = false,
+      //track_assumes = true, minimize_assumes = true
+    )))
 
   def generateRtl(): Seq[(String, () => Component)]
 

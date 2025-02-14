@@ -2,7 +2,7 @@ package spinalextras.lib.tests.formal
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
-import spinal.core.formal.{FormalDut, HasFormalAsserts, anyseq}
+import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.regif.WishboneBusInterface
 import spinal.lib.bus.wishbone.WishboneConfig

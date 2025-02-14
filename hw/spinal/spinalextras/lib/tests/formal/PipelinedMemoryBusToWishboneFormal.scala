@@ -6,6 +6,7 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinal.lib.bus.wishbone.{AddressGranularity, WishboneConfig}
+import spinal.lib.formal.HasFormalAsserts
 import spinalextras.lib.bus.PipelinedMemoryBusToWishbone
 import spinalextras.lib.memory.{StreamToBuffer, StridedAccessFIFOReaderAsync}
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
@@ -16,19 +17,12 @@ case class PipelinedMemoryBusToWishboneFormal(wbConfig: WishboneConfig, pipeline
   val dut = FormalDut(new PipelinedMemoryBusToWishbone(wbConfig, pipelinedMemoryBusConfig, rspQueue))
   assumeInitial(ClockDomain.current.isResetActive)
 
-  dut.io.pmb.cmd.formalAssumesSlave()
-  anyseq(dut.io.pmb.cmd.valid)
-  anyseq(dut.io.pmb.cmd.payload)
+  dut.anyseq_inputs()
 
+  cover(dut.io.pmb.rsp.valid && dut.io.pmb.rsp.data === 0xfafabeeeL)
+  cover(dut.io.pmb.formalContract.outstandingReads === 1)
   assume((dut.io.wb.byteAddress() & (dut.io.wb.config.wordAddressInc() - 1)) === 0)
-
-  val wbContract = test_funcs.assumeWishboneBusContract(dut.io.wb)
-  for((n, el) <- dut.io.wb.elements) {
-    if(el.isInput) {
-      println(n, el)
-      anyseq(el)
-    }
-  }
+  HasFormalAsserts.printFormalAssertsReport()
 }
 
 

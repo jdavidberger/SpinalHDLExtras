@@ -20,11 +20,8 @@ case class PipelineMemoryBusArbiterFormal(pipelinedMemoryBusConfig : PipelinedMe
     bus.cmd.formalAssumesSlave()
   })
 
-  val outputContract = test_funcs.assertPMBContract(dut.io.output, assume_slave = true)
   anyseq(dut.io.output.cmd.ready)
   anyseq(dut.io.output.rsp)
-
-  test_funcs.assumePMBArbiter(dut)
 }
 
 class PipelineMemoryBusArbiterFormalTest extends AnyFunSuite with FormalTestSuite {

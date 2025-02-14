@@ -1,22 +1,17 @@
 package spinalextras.lib.memory
 
-import org.scalatest.funsuite.AnyFunSuite
-import spinal.core.sim.{SimBaseTypePimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout, simRandom}
 import spinal.core._
-import spinal.core.formal.HasFormalAsserts
 import spinal.lib.bus.regif.BusIf
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
-import spinal.lib.sim.StreamMonitor
-import spinal.lib.{Counter, CounterUpDown, Flow, Fragment, Stream, StreamDemux, StreamFifo, StreamJoin, master}
-import spinalextras.lib.Config
-import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
-import spinalextras.lib.bus.simple.SimpleMemoryProvider
+import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
+import spinal.lib.{Counter, Flow, Fragment, StreamFifo, StreamJoin, master}
+import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.logging.PipelinedMemoryBusLogger
-import spinalextras.lib.misc.{CounterTools, CounterUpDownUneven, PipelinedMemoryBusBuffered, RegisterTools, StreamTools}
-import spinalextras.lib.testing.test_funcs
 import spinalextras.lib.misc._
+import spinalextras.lib.testing.test_funcs
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
 
@@ -28,8 +23,9 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
                                                     outCnt: Int,
                                                     busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
                                                     rsp_latency : Int = 0
-                                                  ) extends Component with HasFormalAsserts {
+                                                  ) extends ComponentWithFormalAsserts {
   var outSize = (busConfig.dataWidth / dataType.getBitsWidth.floatValue()).ceil.toInt
+  require(outSize <= depth)
   while(depth % outSize != 0) {
     outSize += 1
   }
@@ -49,7 +45,7 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   require(depth % outCnt == 0)
 
   def div_assert_even(num : Int, den : Int): Int = {
-    if(num % den != 0) {
+    if(den > 0 && num % den != 0) {
       println(s"Non even requirement ${num} ${den}")
     }
     require((num % den) == 0)
@@ -57,7 +53,6 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   }
 
   val outWordsPerFrame = div_assert_even(depth, outDatatype.size * outCnt)
-  val busContract = io.bus.formalContract
 
   val bufferSize = rsp_latency + 1
   val minBufferSizeInBits = bufferSize * busConfig.dataWidth
@@ -205,6 +200,66 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     }
   }
 
+  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
+    adapter.formalAssumes()
+
+    val busBitsOutstanding = io.bus.config.dataWidth * io.bus.formalContract.outstandingReads.value
+    val outBitsOutstanding = outDatatype.getBitsWidth * io.pop.formalContract.outstandingFlows.value
+    val adapterBits = CombInit(adapter.formalCounter.value)
+    assertOrAssume((busBitsOutstanding +^ adapterBits) >= outBitsOutstanding)
+
+    val busReadsLeftInCnt = (chunk_cmd.cnt.end + 1 - chunk_cmd.cnt.value)
+    val signal_valid_remaining_lut: Seq[UInt] = {
+      val lst = new ArrayBuffer[Int]()
+      lst += signal_valid.last.toInt // 0 0 3
+      // 3
+      for (i <- 1 until signal_valid.size) {
+        lst += lst.last + signal_valid(signal_valid.size - i - 1).toInt
+      }
+      lst.reverse.map(U(_)).toSeq
+    }
+
+    val validFiresLeftInCnt = Vec(signal_valid_remaining_lut)(chunk_cmd.cnt) * outDatatype.getBitsWidth
+    assertOrAssume((busBitsOutstanding +^ adapterBits +^ busReadsLeftInCnt * busConfig.dataWidth) === (outBitsOutstanding +^ validFiresLeftInCnt))
+
+//    val total_req, total_res = Counter(32 bits)
+//    assume(!total_req.willOverflow)
+//    assume(!total_res.willOverflow)
+//
+//    when(chunk_cmd.cnt.willIncrement) { total_req.increment() }
+//    when(chunk_rsp.cnt.willIncrement) { total_res.increment() }
+//
+//    assertOrAssume(total_req.value % (chunk_cmd.cnt.end + 1) === chunk_cmd.cnt.value)
+//    assertOrAssume(((total_req.value / (chunk_cmd.cnt.end + 1)) % (roundrobin_idx_cmd.end + 1)) === roundrobin_idx_cmd.value)
+//    assertOrAssume(((total_req.value / ((chunk_cmd.cnt.end + 1) * (roundrobin_idx_cmd.end + 1))) % (chunk_cmd.chunk_idx.end + 1)) === chunk_cmd.chunk_idx.value)
+//
+//    assertOrAssume(total_res.value % (chunk_rsp.cnt.end + 1) === chunk_rsp.cnt.value)
+//    assertOrAssume((total_res.value / (chunk_rsp.cnt.end + 1)) % (roundrobin_idx_rsp.end + 1) === roundrobin_idx_rsp.value)
+//    assertOrAssume(total_res.value % (popCounter.end + 1) === popCounter.value)
+
+    //assertOrAssume(total_res +^ io.bus.formalContract.outstandingReads === total_req)
+    val req_size = io.bus.config.dataWidth
+    val res_size = outDatatype.getBitsWidth
+    //assertOrAssume(total_req * req_size >= total_res * res_size)
+
+    import chunk_cmd._
+    val reads_made = (chunk_idx.value * bufferSizeInBusWords * outCnt) +^
+      (roundrobin_idx_cmd.value * bufferSizeInBusWords) +^
+      cnt.value
+    when(armRead) {
+      //assertOrAssume(reads_made >= io.bus.formalContract.outstandingReads.value)
+    } otherwise {
+      assertOrAssume(cnt.value === 0)
+      assertOrAssume(roundrobin_idx_cmd.value === 0)
+      assertOrAssume(chunk_idx.value === 0)
+    }
+//    val popsRemaining = CombInit((popCounter.maxValue + 1) - popCounter.value)
+//    val popsOutstanding = CombInit(io.pop.formalContract.outstandingFlows.value)
+//
+//    assertOrAssume(popsRemaining >= popsOutstanding)
+    formalCheckOutputsAndChildren()
+  }
+
   def attach_bus(busSlaveFactory: BusIf): Unit = {
     PipelinedMemoryBusLogger.attach_debug_registers(busSlaveFactory, io.bus.setName("strided_reader_bus"))
 
@@ -223,14 +278,8 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     debug_fake_read := RegisterTools.Register(busSlaveFactory, "rdr_debug_ctrl", False)
   }
 
-  override lazy val formalValidInputs = io.bus.formalIsConsumerValid() && io.pop.formalIsConsumerValid()
-  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
-    HasFormalAsserts.formalAssertsChildren(self, assumesInputValid = useAssumes, useAssumes = true)
-
-    io.pop.formalAsserts()
-    io.bus.formalAsserts()
-  }
 }
+
 case class StridedAccessFIFOReader[T <: Data](
     dataType: HardType[T],
     /** Depth in units of dataType */
@@ -239,7 +288,7 @@ case class StridedAccessFIFOReader[T <: Data](
     outCnt: Int,
     busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
     rsp_latency : Int = 0
-) extends Component {
+) extends ComponentWithFormalAsserts {
   val io = new Bundle {
     val pop = master Stream (Fragment(Vec(dataType, outCnt)))
 
@@ -255,8 +304,7 @@ case class StridedAccessFIFOReader[T <: Data](
   val asyncReader = StridedAccessFIFOReaderAsync (dataType, depth, baseAddress, outCnt, busConfig, rsp_latency)
   asyncReader.io.bus <> io.bus
 
-  test_funcs.assertStreamContract(io.pop)
-  test_funcs.assertPMBContract(io.bus)
+  withAutoPull()
   val midDatatype = Bits(StreamTools.lcm(dataType.getBitsWidth, busConfig.dataWidth) bits)
 
   val bufferSize = rsp_latency + 1

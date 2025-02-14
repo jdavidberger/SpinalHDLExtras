@@ -2,7 +2,7 @@ package spinalextras.lib.tests.formal
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
-import spinal.core.formal.{FormalDut, anyseq}
+import spinal.core.formal.{FormalDut, anyconst, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinalextras.lib.memory.{StreamToBuffer, StridedAccessFIFOReaderAsync}
@@ -19,15 +19,8 @@ case class StreamToBufferFormal[T <: Data](
   val dut = FormalDut(StreamToBuffer(dataType, depth, baseAddress, busConfig))
   assumeInitial(ClockDomain.current.isResetActive)
 
-  dut.io.bus.cmd.formalAssertsMaster()
-  dut.io.push.formalAssumesSlave()
-
-  anyseq(dut.io.push.valid)
-  anyseq(dut.io.push.payload)
-
-  test_funcs.assertPMBContract(dut.io.bus, assume_slave = true)
-  anyseq(dut.io.bus.cmd.ready)
-  anyseq(dut.io.bus.rsp)
+  anyconst(dut.io.debug_fake_write)
+  dut.anyseq_inputs()
 }
 
 class StreamToBufferFormalTest extends AnyFunSuite with FormalTestSuite {

@@ -367,7 +367,7 @@ case class LatticeMemoryTest() extends Component {
 
 case class LatticeFifoTest() extends Component {
   val GSR_INST = GSR.no_op()
-  var osc = new ResetArea(False, false) {
+  var osc = new ClockingArea(new ClockDomain(False, null, config = ClockDomain.current.config.copy(resetKind = BOOT))) {
     val osc = new OSCD(OSCDConfig.create(ClockSpecification(45 MHz, tolerance = .1)))
   }.osc
 
@@ -375,8 +375,9 @@ case class LatticeFifoTest() extends Component {
     val rst_counter = new Timeout(128)
   }.rst_counter
 
-  new ClockingArea(osc.hf_clk().get.copy(reset = !rst_counter)) {
-    val mem = new MemoryBackedFifo(Bits(33 bits), 1 << 12)//, mem_factory = (r : MemoryRequirement[Bits]) => new PDPSC512K_Mem())
+  val reset = CombInit(!rst_counter.state)
+  new ClockingArea(osc.hf_clk().get.copy(reset = reset)) {
+    val mem = new MemoryBackedFifo(Bits(33 bits), 1 << 12, latencyRange = (2, 2))//, mem_factory = (r : MemoryRequirement[Bits]) => new PDPSC512K_Mem())
     val tb = FifoTestBench(mem.dataType)
     mem.io.push <> tb.io.push
     mem.io.pop <> tb.io.pop
