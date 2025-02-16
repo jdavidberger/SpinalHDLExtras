@@ -23,11 +23,16 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBy
   }
   val depthInWords = depthInBytes >> config.wordAddressShift
 
-  val bufferSize = rsp_latency + 1
   val midDatatype = Bits(StreamTools.lcm(dataType.getBitsWidth, config.dataWidth) bits)
+
+  val bufferSize = (rsp_latency + 1).max(midDatatype.getWidth / config.dataWidth)
+
   val bufferSizeInBits = bufferSize * config.dataWidth
   val bufferSizeInMidWords = bufferSizeInBits / midDatatype.getWidth
   val readTriggerInBits = read_trigger * config.dataWidth
+
+  assert(bufferSizeInMidWords > 0)
+  require(bufferSizeInBits % midDatatype.getBitsWidth == 0)
 
   val io = new Bundle {
     val bus = master(PipelinedMemoryBus(config))
@@ -60,6 +65,7 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBy
 
   val usage = new CounterUpDownUneven(bufferSizeInBits, config.dataWidth, midDatatype.getBitsWidth)
   val burnRtn = Reg(usage.value.clone()) init(0)
+  assert(burnRtn.getWidth >= U(usage.decBy).getBitsWidth)
   haltCmdQueue := burnRtn =/= 0
 
   val fifoOccInBits = fifo.io.occupancy * fifo.dataType.getBitsWidth
@@ -95,8 +101,9 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBy
   val overflow = Bool()
 
   val read_port_unpack = Flow(midDatatype)
-  val adapt_out_width = StreamTools.AdaptWidth(io.bus.rsp.map(_.data.asBits), read_port_unpack)
+   val adapt_out_width = StreamTools.AdaptWidth(io.bus.rsp.map(_.data.asBits), read_port_unpack)
   read_port_unpack.toStream(overflow) <> fifo.io.push
+  assert(~overflow, "overflow buffer is full")
 
   when(io.flush) {
     read_counter.clearAll()
@@ -118,7 +125,7 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBy
     val busContract = readBus.formalContract
     val busInFlightOccInBits = readBus.formalContract.outstandingReads.value * config.dataWidth
     val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits +^ readBusCmdQueue.io.occupancy * config.dataWidth
-    assertOrAssume((usage.value +^ burnRtn) === (usageCheckInBits), "Usage counts should be equal to equal to the usageCheck")
+    assertOrAssume((usage.value +^ burnRtn) === (usageCheckInBits), s"Usage counts should be equal to the usageCheck ${this}")
 
     fifo.formalAssertInputs()
     fifo.formalAssumes()

@@ -13,8 +13,12 @@ import scala.language.postfixOps
 class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ImplicitArea[UInt] with HasFormalAsserts {
   val valueNext = UInt(log2Up(range + 1) bits)
   val value = RegNext(valueNext) init(0)
-  //assert((value % incBy) === 0)
-  //assert((value % decBy) === 0)
+
+  require((range % incBy) == 0)
+  require((range % decBy) == 0)
+
+  assert((value % incBy) === 0 || (value % decBy) === 0 )
+
   val incrementIt = False
   val decrementIt = False
   val clearIt = False
@@ -37,7 +41,10 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
     delta := -decBy
   }
 
-  assert(value <= range, f"Usage overflow ${value} ${this}")
+  val willOverflowIfInc: Bool = value > (range - incBy)
+  val willUnderflowIfDec: Bool = value < decBy
+
+  //assert(value <= range, f"Usage overflow ${value} ${this}")
 
   val isMax = CounterTools.isSingleTargetState(
     moveTowardState = incrementIt, moveAwayFromState = decrementIt, is_in_state = value === range,
@@ -45,8 +52,15 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
     is_state_on_clear = false, clear = clearIt
   )
 
+  override lazy val formalValidInputs = new Composite(this, "formalValidInputs") {
+    val validIncrement = (!incrementIt || !willOverflowIfInc || (decrementIt && Bool(incBy <= decBy)))
+    val validDecrement = (!decrementIt || !willUnderflowIfDec || (incrementIt && Bool(incBy >= decBy)))
+    val valid = validDecrement && validIncrement
+  }.valid
+
   override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
-    assertOrAssume(value <= range)
+    assertOrAssume(value <= range, f"Usage overflow ${value} ${this}, max ${range}")
+    assertOrAssume(value % decBy.min(incBy) === 0)
     val absDelta = delta.abs
     when(delta < 0) {
       assertOrAssume(value >= absDelta)

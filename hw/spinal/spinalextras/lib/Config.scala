@@ -13,7 +13,9 @@ object Config {
     ),
     onlyStdLogicVectorAtTopLevelIo = false,
     oneFilePerComponent = false,
-    mergeAsyncProcess = true,
+
+    // Warning -- Sometimes iverilog gives bad results when this is true
+    mergeAsyncProcess = false,
     //asyncResetCombSensitivity = true,
     //removePruned = true,
     headerWithDate = false,

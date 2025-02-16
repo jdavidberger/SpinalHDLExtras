@@ -32,8 +32,13 @@ class PipelinedMemoryBusBufferFormalTest extends AnyFunSuite with FormalTestSuit
 
   var configs =
     for(rsp_latency <- Seq(0, 3, 8, 10);
+        addressWidth <- Seq(32, 9);
+        datawidth <- ((Seq(32, 8)));
+        busWidth <- ((Seq(32)));
         cmd_latency <- 0 until 3) yield {
-      (s"PMBBufferTest_${rsp_latency}_${cmd_latency}", () => new PipelinedMemoryBusBufferFormal(UInt(8 bits), 500, config = PipelinedMemoryBusConfig(32, 32), rsp_latency = rsp_latency, cmd_latency = cmd_latency))
+      (s"PMBBufferTest_rl${rsp_latency}_cl${cmd_latency}_bw${busWidth}_dw${datawidth}_aw${addressWidth}",
+        () => new PipelinedMemoryBusBufferFormal(UInt(datawidth bits), 400,
+          config = PipelinedMemoryBusConfig(addressWidth, busWidth), rsp_latency = rsp_latency, cmd_latency = cmd_latency))
     }
 
   formalTests().foreach(t => test(t._1) { t._2() })

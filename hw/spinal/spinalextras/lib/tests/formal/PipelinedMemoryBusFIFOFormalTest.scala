@@ -60,11 +60,11 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
 
   withAutoPull()
 
-  HasFormalAsserts.formalAssertsChildren(this, true, false)
   //anyconst(dut.io.debug_fake_write)
   dut.io.debug_fake_write := False
 
   addPrePopTask(() => {
+    HasFormalAsserts.formalAssertsChildren(this, assumesInputValid = true, useAssumes = false)
     dut.anyseq_inputs()
     HasFormalAsserts.printFormalAssertsReport()
   })
@@ -83,6 +83,6 @@ class PipelinedMemoryBusFIFOFormalTest extends AnyFunSuite with FormalTestSuite 
   override def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(20)
 
   override def generateRtlBMC() = Seq(("check_response", () => create_formal(true)))
-  override def generateRtlCover() = Seq(("check_response", () => create_formal(true)))
+  override def generateRtlCover() = Seq(("check_response", () => create_formal(false)))
   override def generateRtl() = Seq(("no_check_response", () => create_formal(false)))
 }

@@ -4,7 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
 import spinal.core._
 import spinal.core.formal.{FormalDut, anyseq}
-import spinal.lib.formal.ComponentWithFormalAsserts
+import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
 import spinal.lib.{Counter, CounterFreeRun, StreamFifo}
 import spinal.lib.sim._
 import spinalextras.lib.Config
@@ -41,10 +41,19 @@ class MemoryBackedFIFOsTest extends AnyFunSuite {
 
   def doTest[T <: BitVector](dataType: HardType[T], depths: Seq[BigInt], disableReady : Boolean = true): Unit = {
     Config.sim.doSim(
-      new MemoryPoolFIFOs(dataType, depths)
+      {
+        val dut = MemoryPoolFIFOs(dataType, depths)
+        if(Component.current == null) {
+          Component.push(Component.toplevel)
+        }
+        dut.formalAsserts()
+        HasFormalAsserts.printFormalAssertsReport()
+        dut
+      }
     ) { dut =>
       SimTimeout(5000 us)
       var allDone = false
+
       val scos = dut.io.fifos.map(
         f => {
           val sco = new ScoreboardInOrder[BigInt]()

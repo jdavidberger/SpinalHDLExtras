@@ -245,7 +245,7 @@ object StreamTools {
     val smaller = Math.min(numberOne, numberTwo)
 
     println(bigger, smaller)
-    (1 until smaller).filter((factor) => (factor * bigger) % smaller == 0).map((factor) => Math.abs(factor * bigger)).toVector(0)
+    (1 to smaller).filter((factor) => (factor * bigger) % smaller == 0).map((factor) => Math.abs(factor * bigger)).toVector(0)
   }
 
   def AdaptWidth[T <: Data](in: Stream[T], datatypeOut: HardType[T]): Stream[T] = {
