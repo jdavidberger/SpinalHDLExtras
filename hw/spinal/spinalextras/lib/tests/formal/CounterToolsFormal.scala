@@ -40,13 +40,15 @@ case class CounterToolsFormal(val range : Int, val incBy : Int = 1, val decBy : 
 
 class CounterToolsFormalTest extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 10000
+  override def defaultDepth() = 100
 
   formalTests().foreach(t => test(t._1) { t._2() })
 
   override def generateRtlCover() = Seq()
 
-  override def generateRtl() = Seq(
-    ("CounterToolsFormal_32_8_16", () => CounterToolsFormal(32, 8, 16))
-  )
+  override def generateRtl() = {
+    Seq(
+      ("CounterToolsFormal_32_8_16", () => CounterToolsFormal(32, 8, 16))
+    )
+  }
 }

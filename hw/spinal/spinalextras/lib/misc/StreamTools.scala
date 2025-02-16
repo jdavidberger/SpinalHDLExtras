@@ -195,7 +195,7 @@ class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T],
     }
 
   lazy val formalCounter = {
-    val counter = new CounterUpDownUneven(1 << 16, dataTypeIn.getBitsWidth, dataTypeOut.getBitsWidth)
+    val counter = new CounterUpDownUneven(dataTypeIn.getBitsWidth * dataTypeOut.getBitsWidth * 1 << 16, dataTypeIn.getBitsWidth, dataTypeOut.getBitsWidth)
     when(io.in.fire) {
       counter.increment()
     }
@@ -240,6 +240,10 @@ class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : Hard
 }
 
 object StreamTools {
+  def gcd(a: Int, b: Int): Int = {
+    if (b == 0) 0
+    else gcd(b, a % b);
+  }
   def lcm(numberOne: Int, numberTwo: Int) = {
     val bigger = Math.max(numberOne, numberTwo)
     val smaller = Math.min(numberOne, numberTwo)

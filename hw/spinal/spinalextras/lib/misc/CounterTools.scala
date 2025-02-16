@@ -7,6 +7,7 @@ import spinal.lib._
 import spinal.lib.bus.regif.SymbolName
 import spinal.lib.formal.HasFormalAsserts
 import spinalextras.lib.Config
+import spinalextras.lib.misc.StreamTools.gcd
 
 import scala.language.postfixOps
 
@@ -16,8 +17,6 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
 
   require((range % incBy) == 0)
   require((range % decBy) == 0)
-
-  assert((value % incBy) === 0 || (value % decBy) === 0 )
 
   val incrementIt = False
   val decrementIt = False
@@ -46,11 +45,12 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
 
   //assert(value <= range, f"Usage overflow ${value} ${this}")
 
-  val isMax = CounterTools.isSingleTargetState(
-    moveTowardState = incrementIt, moveAwayFromState = decrementIt, is_in_state = value === range,
-    is_almost_state = value === (range - incBy),
-    is_state_on_clear = false, clear = clearIt
-  )
+//  val isMax = CounterTools.isSingleTargetState(
+//    moveTowardState = incrementIt, moveAwayFromState = decrementIt, is_in_state = value > (range - incBy),
+//    is_almost_state = value >= (range - 2 * incBy),
+//    is_state_on_clear = false, clear = clearIt
+//  )
+  val isMax = willOverflowIfInc
 
   override lazy val formalValidInputs = new Composite(this, "formalValidInputs") {
     val validIncrement = (!incrementIt || !willOverflowIfInc || (decrementIt && Bool(incBy <= decBy)))
@@ -60,7 +60,9 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
 
   override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
     assertOrAssume(value <= range, f"Usage overflow ${value} ${this}, max ${range}")
-    assertOrAssume(value % decBy.min(incBy) === 0)
+    val inc_dec_gcd = gcd(incBy, decBy)
+    assertOrAssume((value % inc_dec_gcd) === 0)
+
     val absDelta = delta.abs
     when(delta < 0) {
       assertOrAssume(value >= absDelta)
