@@ -85,7 +85,7 @@ object HardwareMemory {
 }
 
 case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : BigInt, numReadWritePorts : Int,
-                                        numReadPorts : Int, numWritePorts : Int,
+                                        numReadPorts : Int = 0, numWritePorts : Int = 0,
                                         needsMask : Boolean = false,
                                         latencyRange : (Int, Int) = (1, 3)) {
   lazy val allocationSize = dataType.getBitsWidth * num_elements
@@ -228,6 +228,12 @@ class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory
     rsp.valid := memories.head.rsps(idx).valid
     assert(Vec(memories.map(_.rsps(idx).valid).map(x => x === rsp.valid)).andR, "Read responses not synced")
   }}
+
+  memories.foreach(mem => {
+    require(io.readPorts.length == mem.io.readPorts.length)
+    require(io.readWritePorts.length == mem.io.readWritePorts.length)
+  })
+
 
   io.readPorts.zipWithIndex.foreach(port_idx => {
     val (port, idx) = port_idx
@@ -467,8 +473,8 @@ object LatticeMemories {
           val latency = requirements.latencyRange._2.min(2)
           (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
             case (1, 1, 0) => new PDPSC512K_Mem(target_latency = latency)
-            case (0, 0, 1) => new DPSC512K_Mem()
-            case (0, 0, 2) => new DPSC512K_Mem(target_latency = latency)
+            case (0, 0, 1) => new DPSC512K_Mem(target_latency = latency, read_write_ports = 1)
+            case (0, 0, 2) => new DPSC512K_Mem(target_latency = latency, read_write_ports = 2)
           }
         }
       }

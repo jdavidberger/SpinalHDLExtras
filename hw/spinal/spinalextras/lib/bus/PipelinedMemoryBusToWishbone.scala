@@ -64,6 +64,9 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
   } else {
     io.pmb.cmd.mask.setAll()
   }
+  if(io.wb.ERR != null) {
+    io.wb.ERR := False
+  }
   io.wb.DAT_MISO := io.pmb.rsp.data
   io.wb.ACK := io.pmb.rsp.valid
 

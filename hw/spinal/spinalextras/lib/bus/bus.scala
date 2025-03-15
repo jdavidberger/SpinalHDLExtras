@@ -136,6 +136,16 @@ package object bus {
   }
 
   implicit class PipelinedMemoryBusExt(bus: PipelinedMemoryBus) {
+    def resizeAddress(addr : Int) : PipelinedMemoryBus = {
+      val pmb = PipelinedMemoryBus(addr, bus.config.dataWidth)
+      bus.cmd.payload.address := pmb.cmd.payload.address.resized
+      bus.cmd.payload.data := pmb.cmd.payload.data
+      bus.cmd.mask := pmb.cmd.payload.mask
+      bus.cmd.write := pmb.cmd.payload.write
 
+      bus.cmd.arbitrationFrom(pmb.cmd)
+      pmb.rsp << bus.rsp
+      pmb
+    }
   }
 }

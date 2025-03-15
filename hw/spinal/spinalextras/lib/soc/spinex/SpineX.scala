@@ -11,11 +11,11 @@ import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBus
 import spinal.lib.com.spi.ddr._
 import spinal.lib.com.uart._
 import spinal.lib.cpu.riscv.debug._
-import spinalextras.lib.Config
+import spinalextras.lib.{Config, Memories, MemoryRequirement}
 import spinalextras.lib.blackbox.lattice.lifcl.{OSCD, OSCDConfig}
 import spinalextras.lib.blackbox.memories.W25Q128JVxIM_quad
 import spinalextras.lib.blackbox.opencores.i2c_master_top
-import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
+import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusExt, PipelinedMemoryBusMultiBus}
 import spinalextras.lib.io.TristateBuffer
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.misc.ClockSpecification
@@ -216,13 +216,17 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
     //****** MainBus slaves ********
 //    val mainBusMapping = ArrayBuffer[(PipelinedMemoryBus,SizeMapping)]()
-    val ram = new MuraxPipelinedMemoryBusRam(
-      onChipRamSize = onChipRamSize,
-      onChipRamHexFile = onChipRamHexFile,
-      pipelinedMemoryBusConfig = pipelinedMemoryBusConfig,
-      bigEndian = bigEndianDBus
-    )
-    add_slave(ram.io.bus, "ram", SizeMapping(0x40000000l, onChipRamSize), "iBus", "dBus")
+//    val ram = new MuraxPipelinedMemoryBusRam(
+//      onChipRamSize = onChipRamSize,
+//      onChipRamHexFile = onChipRamHexFile,
+//      pipelinedMemoryBusConfig = pipelinedMemoryBusConfig,
+//      bigEndian = bigEndianDBus
+//    )
+    val mem = Memories(MemoryRequirement(Bits(32 bits), onChipRamSize,
+      numReadWritePorts = 1,
+      needsMask = true))
+    val mem_pmbs = mem.pmbs()
+    add_slave(mem_pmbs.head.resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "iBus", "dBus")
 //    mainBusMapping += ram.io.bus -> (0x80000000l, onChipRamSize)
 
     val apbBridge = new PipelinedMemoryBusToApbBridge(

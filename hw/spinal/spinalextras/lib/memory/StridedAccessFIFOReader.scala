@@ -209,18 +209,27 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     assertOrAssume((busBitsOutstanding +^ adapterBits) >= outBitsOutstanding)
 
     val busReadsLeftInCnt = (chunk_cmd.cnt.end + 1 - chunk_cmd.cnt.value)
-    val signal_valid_remaining_lut: Seq[UInt] = {
+    val signal_valid_remaining_lut = ({
       val lst = new ArrayBuffer[Int]()
       lst += signal_valid.last.toInt // 0 0 3
       // 3
       for (i <- 1 until signal_valid.size) {
         lst += lst.last + signal_valid(signal_valid.size - i - 1).toInt
       }
-      lst.reverse.map(U(_)).toSeq
-    }
+      lst.reverse.map(U(_))
+    })
 
-    val validFiresLeftInCnt = Vec(signal_valid_remaining_lut)(chunk_cmd.cnt) * outDatatype.getBitsWidth
-    assertOrAssume((busBitsOutstanding +^ adapterBits +^ busReadsLeftInCnt * busConfig.dataWidth) === (outBitsOutstanding +^ validFiresLeftInCnt))
+    val validFiresLeftInCnt = UInt(signal_valid_remaining_lut.map(_.getBitsWidth).max bits)
+    validFiresLeftInCnt.assignDontCare()
+    signal_valid_remaining_lut.zipWithIndex.foreach(v => {
+      when(chunk_cmd.cnt === v._2) {
+        validFiresLeftInCnt := v._1.resized
+      }
+    })
+    val validFiresBitsLeftInCnt = validFiresLeftInCnt * outDatatype.getBitsWidth
+    assertOrAssume((busBitsOutstanding +^ adapterBits +^ busReadsLeftInCnt * busConfig.dataWidth) ===
+      (outBitsOutstanding +^ validFiresBitsLeftInCnt), s"Oustanding reads math failed to resolve for ${this}")
+    assert(validFiresLeftInCnt =/= 0)
 
 //    val total_req, total_res = Counter(32 bits)
 //    assume(!total_req.willOverflow)

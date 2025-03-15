@@ -22,19 +22,19 @@ class DPSC512K(
     val CLK = in Bool()
 
     val DIA = in Bits(32 bits)
-    val DIB = in Bits(32 bits)
+    val DIB = in Bits(32 bits) default(0)
     val ADA = in Bits(14 bits)
-    val ADB = in Bits(14 bits)
+    val ADB = in Bits(14 bits) default(0)
     val CEA = in Bool() default(True)
-    val CEB = in Bool() default(True)
+    val CEB = in Bool() default(False)
     val WEA = in Bool()
-    val WEB = in Bool()
-    val CSA = in Bool() default(True)
-    val CSB = in Bool() default(True)
+    val WEB = in Bool() default(False)
+    val CSA = in Bool() default(False)
+    val CSB = in Bool() default(False)
     val RSTA = in Bool() default(ClockDomain.current.readResetWire)
     val RSTB = in Bool() default(ClockDomain.current.readResetWire)
     val BENA_N = in Bits(4 bits)
-    val BENB_N = in Bits(4 bits)
+    val BENB_N = in Bits(4 bits) default(0)
     val CEOUTA = in Bool() default(True)
     val CEOUTB = in Bool() default(True)
 
@@ -49,21 +49,20 @@ class DPSC512K(
   mapCurrentClockDomain(clock=io.CLK)
 }
 
-class DPSC512K_Mem(target_latency : Int = 2) extends HardwareMemory[Bits]() {
+class DPSC512K_Mem(target_latency : Int = 2, read_write_ports : Int = 2) extends HardwareMemory[Bits]() {
   override val requirements = MemoryRequirement(
-    Bits(32 bits), (1 << 14), 2, 0, 0
+    Bits(32 bits), (1 << 14), read_write_ports, 0, 0
   )
   override lazy val latency : Int = target_latency
   assert(latency == 2 || latency == 1)
-
-  val (port_a, port_b) = (io.readWritePorts(0), io.readWritePorts(1))
+  assert(read_write_ports == 2 || read_write_ports == 1)
 
   val outreg = latency == 2
   val mem = new DPSC512K(OUTREG = outreg)
 
   val mem_port_a = (mem.io.DIA, mem.io.ADA, mem.io.WEA, mem.io.CSA, mem.io.BENA_N, mem.io.DOA)
   val mem_port_b = (mem.io.DIB, mem.io.ADB, mem.io.WEB, mem.io.CSB, mem.io.BENB_N, mem.io.DOB)
-  for(port_maps <- Seq(port_a, port_b).zip(Seq(mem_port_a, mem_port_b))) {
+  for(port_maps <- io.readWritePorts.zip(Seq(mem_port_a, mem_port_b))) {
     val (port, (di, adr, we, cs, benb, dout)) = port_maps
     di := port.cmd.data
     adr := port.cmd.address.asBits

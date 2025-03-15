@@ -218,6 +218,8 @@ class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T],
       val calcOcc = inBitsOcc +^ midBitsOcc -^ outBitsOcc
       assertOrAssume(midBitsOcc >= outBitsOcc)
       assertOrAssume(calcOcc === counter.value)
+    } else {
+      assertOrAssume(0 === counter.value)
     }
     formalCheckOutputsAndChildren()
   }

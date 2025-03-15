@@ -2,10 +2,10 @@ package spinalextras.lib.testing
 
 import spinal.core.formal._
 import spinal.core._
+import spinal.lib.{Counter, CounterFreeRun}
 import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
 
 import java.io.IOException
-
 import scala.reflect.runtime.universe._
 import scala.reflect.runtime.{currentMirror => cm}
 
@@ -40,6 +40,10 @@ case class GeneralFormalDut(f : () => ComponentWithFormalAsserts) extends Compon
   dut.anyseq_inputs()
   HasFormalAsserts.printFormalAssertsReport()
   //println(ReflectionUtils.constructorArgs(dut))
+
+  val cycles = CounterFreeRun(5)
+  cover(cycles.value > 3)
+
 }
 
 
