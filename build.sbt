@@ -1,3 +1,7 @@
+import java.nio.file.Paths
+import scala.util.Try
+import scala.sys.process.*
+
 ThisBuild / version := "1.0"
 ThisBuild / scalaVersion := "2.12.18"
 ThisBuild / organization := "io.constructiverealities"
@@ -8,7 +12,12 @@ val spinalCore = "com.github.spinalhdl" %% "spinalhdl-core" % spinalVersion
 val spinalLib = "com.github.spinalhdl" %% "spinalhdl-lib" % spinalVersion
 val spinalIdslPlugin = compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % spinalVersion)
 
-val vexRiscv = if(file("../VexRiscv/").exists())
+lazy val gitRoot: String = {
+  val result = Try("git rev-parse --show-superproject-working-tree".!!.trim).toOption
+  result.filter(_.nonEmpty).getOrElse(Paths.get("./").toAbsolutePath.toString) + "/"
+}
+
+val vexRiscv = if(file(s"${gitRoot}VexRiscv/").exists())
   ProjectRef(file("../VexRiscv/"), "root") else
   ProjectRef(uri("ssh://git@github.com/jdavidberger/VexRiscv.git"), "root")
 
