@@ -1,6 +1,6 @@
 import java.nio.file.Paths
 import scala.util.Try
-import scala.sys.process.*
+import scala.sys.process._
 
 ThisBuild / version := "1.0"
 ThisBuild / scalaVersion := "2.12.18"
