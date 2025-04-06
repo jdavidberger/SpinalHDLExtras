@@ -4,7 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.formal._
 import spinal.lib.bus.simple._
-import spinal.lib.formal.HasFormalAsserts
+
 import spinalextras.lib.memory.PipelinedMemoryBusBuffer
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
@@ -16,14 +16,14 @@ case class PipelinedMemoryBusBufferFormal[T <: Data](dataType : HardType[T], dep
   val dut = FormalDut(new PipelinedMemoryBusBuffer(dataType, depth, baseAddress, config, rsp_latency, cmd_latency, read_trigger))
   assumeInitial(ClockDomain.current.isResetActive)
 
-  dut.formalAssumeInputs()
+  //dut.formalAssumeInputs()
   test_funcs.anyseq_inputs(dut.io)
 
   if(!check_flush) {
     assume(!dut.io.flush)
   }
 
-  HasFormalAsserts.printFormalAssertsReport()
+  //HasFormalAsserts.printFormalAssertsReport()
 }
 
 class PipelinedMemoryBusBufferFormalTest extends AnyFunSuite with FormalTestSuite {

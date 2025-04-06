@@ -7,15 +7,15 @@ import spinal.lib._
 import spinal.lib.bus.regif.WishboneBusInterface
 import spinal.lib.bus.wishbone.WishboneConfig
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
-import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
 import spinalextras.lib.bus.general.{GeneralBusArbiter, GeneralBusInterface, XipBusMemBusInterfaceExtImpl}
+import spinalextras.lib.formal.ComponentWithFormalProperties
 import spinalextras.lib.misc.CounterUpDownUneven
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus}
 
 import scala.language.postfixOps
 
-case class CounterUpDownUnevenComponent(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ComponentWithFormalAsserts {
+case class CounterUpDownUnevenComponent(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ComponentWithFormalProperties {
   val counter = new CounterUpDownUneven(range, incBy, decBy)
   val io = new Bundle {
     val inc, dec, clear = in Bool()
@@ -26,7 +26,7 @@ case class CounterUpDownUnevenComponent(val range : Int, val incBy : Int = 1, va
   when(io.clear) { counter.clear() }
   io.count := counter.value
 
-  override lazy val formalValidInputs = counter.formalValidInputs
+  //override lazy val formalValidInputs = counter.formalValidInputs
 }
 
 case class CounterToolsFormal(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends Component {
@@ -34,7 +34,7 @@ case class CounterToolsFormal(val range : Int, val incBy : Int = 1, val decBy : 
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.anyseq_inputs()
-  HasFormalAsserts.printFormalAssertsReport()
+  //HasFormalAsserts.printFormalAssertsReport()
 }
 
 

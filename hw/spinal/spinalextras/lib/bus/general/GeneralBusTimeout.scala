@@ -2,9 +2,9 @@ package spinalextras.lib.bus.general
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.formal.ComponentWithFormalAsserts
+import spinalextras.lib.formal.ComponentWithFormalProperties
 
-class GeneralBusTimeout[T <: Data with IMasterSlave](val busAccesor: GeneralBusInterface[T], val timeout_cycles : Int, val pendingMax : Int = 3) extends ComponentWithFormalAsserts {
+class GeneralBusTimeout[T <: Data with IMasterSlave](val busAccesor: GeneralBusInterface[T], val timeout_cycles : Int, val pendingMax : Int = 3) extends ComponentWithFormalProperties {
   import busAccesor._
   def dataType = busAccesor.dataType
 

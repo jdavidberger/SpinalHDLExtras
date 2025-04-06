@@ -3,7 +3,7 @@ package spinalextras.lib.tests.formal
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.formal.{FormalDut, anyseq}
 import spinal.core._
-import spinal.lib.formal.HasFormalAsserts
+
 import spinal.lib.{Counter, StreamFifo}
 import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 import spinalextras.lib.memory.MemoryPoolFIFOs
@@ -58,7 +58,7 @@ class MemoryPoolFIFOsFormal[T <: Data](config : MemoryPoolFIFOConfig[T]) extends
     }
   }
   )
-  HasFormalAsserts.printFormalAssertsReport()
+  //HasFormalAsserts.printFormalAssertsReport()
 }
 
 class MemoryBackedFIFOsTestFormal extends AnyFunSuite with FormalTestSuite {

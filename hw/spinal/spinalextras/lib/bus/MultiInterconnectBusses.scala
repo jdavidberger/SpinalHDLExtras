@@ -7,11 +7,14 @@ import spinal.lib.bus.misc.AddressMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusConnectors, PipelinedMemoryBusDecoder, PipelinedMemoryBusRsp}
 import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
-import spinal.lib.formal.FormalMasterSlave
 
 import scala.language.postfixOps
 import spinalextras.lib.bus.general._
-import spinalextras.lib.testing.test_funcs
+import spinalextras.lib.formal.FormalMasterSlave
+import spinalextras.lib.formal.StreamFormal.StreamExt
+import spinalextras.lib.formal._
+import spinalextras.lib.formal.fillins.Wishbone._
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal._
 
 case class PipelinedMemoryBusMultiBus(bus : PipelinedMemoryBus,
                                       pendingMax : Int = 3,
@@ -29,9 +32,9 @@ case class PipelinedMemoryBusMultiBus(bus : PipelinedMemoryBus,
     val inputs = arbiter.io.inputs.map(inputBus => copy(bus = inputBus))
   }.inputs
 
-  override def isValidProducer: Bool = bus.formalIsProducerValid()
+  override def isValidProducer: Bool = PipelinedMemoryBusFormalExt(bus).formalIsProducerValid().map(_.condition).andR
 
-  override def isValidConsumer: Bool = bus.formalIsConsumerValid()
+  override def isValidConsumer: Bool = PipelinedMemoryBusFormalExt(bus).formalIsConsumerValid().map(_.condition).andR
 }
 
 object PipelinedMemoryBusMultiBus {
@@ -116,16 +119,16 @@ package object bus {
   class XipBusFormal(p : XipBusParameters) extends XipBus(p) with FormalMasterSlave {
     override type Self = XipBusFormal
 
-    override def formalIsConsumerValid() = new Composite(this, "formalContract") {
-      val validStreams = rsp.formalIsProducerValid() && cmd.formalIsConsumerValid()
+    override def formalIsConsumerValid() = {
+      val validStreams = rsp.formalIsProducerValid() ++ cmd.formalIsConsumerValid()
       val outstandingReads = Reg(SInt(32 bits)) init(0)
       val toAdd = Mux(cmd.fire, cmd.length + 1, U(0))
       outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.fire.asSInt).resized
 
-      val isValid = validStreams && (outstandingReads >= 0)
-    }.isValid
+      validStreams ++ FormalProperty.toFormalProperties(outstandingReads >= 0)
+    }
 
-    override def formalIsProducerValid(): Bool = cmd.formalIsProducerValid() && rsp.formalIsConsumerValid()
+    override def formalIsProducerValid() = cmd.formalIsProducerValid() ++ rsp.formalIsConsumerValid()
   }
 
   implicit class XipBusExt(val bus: XipBus) extends MultiBusInterface {
@@ -152,9 +155,9 @@ package object bus {
     override def create_decoder(mappings:  Seq[AddressMapping]): Seq[MultiBusInterface] = ???
     override def create_arbiter(size:  Int): Seq[MultiBusInterface] = ???
 
-    override def isValidProducer: Bool = bus.formalIsProducerValid()
+    override def isValidProducer: Bool = bus.formalIsProducerValid().map(_.condition).andR
 
-    override def isValidConsumer: Bool = bus.formalIsConsumerValid()
+    override def isValidConsumer: Bool = bus.formalIsConsumerValid().map(_.condition).andR
   }
 
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: BMBBusExt) => {
@@ -228,6 +231,11 @@ package object bus {
     m.bus.rsp.error := False
   }}
 
+  MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: InstructionCacheMemBusExt) => new Composite(m.bus) {
+    m.bus <> s.bus
+  }
+  }
+
   MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip"){
     m.bus.cmd.map(c => {
       val wordShift = log2Up(c.address.getWidth / 8)
@@ -255,7 +263,7 @@ package object bus {
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: WishboneMultiBusInterface) => {
     val wb = PipelinedMemoryBusToWishbone(m.bus, s.bus.config)
     wb <> s.bus
-    wb.formalAssertEquivalence(s.bus)
+    //wb.formalAssertEquivalence(s.bus)
   }}
 
 

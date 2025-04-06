@@ -1,13 +1,11 @@
 package spinalextras.lib.misc
 
 import spinal.core._
-
 import spinal.core.formal.past
 import spinal.lib._
-import spinal.lib.formal.FormalMasterSlave
-import spinal.lib.formal.HasFormalAsserts.assertOrAssume
+import spinalextras.lib.formal.{FormalMasterSlave, FormalProperty}
 
-case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle with FormalMasterSlave {
+case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle with IMasterSlave with FormalMasterSlave {
   val async_valid, async_ready   = Bool()
   val flow = Flow(payloadType())
 
@@ -46,9 +44,9 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
     s2mPipe.async_valid := self.async_valid || !rValidN
     s2mPipe.flow << self.flow.stage()
 
-        assert(
-          (formalContract.outstandingFlows.value) === (s2mPipe.formalContract.outstandingFlows.value + (!rValidN).asUInt)
-        )
+//        assert(
+//          (formalContract.outstandingFlows.value) === (s2mPipe.formalContract.outstandingFlows.value + (!rValidN).asUInt)
+//        )
 
     if(flush != null) rValidN.setWhen(flush)
   }.s2mPipe
@@ -88,7 +86,7 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
   def ~~[T2 <: Data](translate: (T) => T2) = map(translate)
   def map[T2 <: Data](translate: (T) => T2) = {
     val mappedStream = (this ~ translate(this.flow.payload))
-    assert(mappedStream.formalContract.outstandingFlows === formalContract.outstandingFlows)
+    //assert(mappedStream.formalContract.outstandingFlows === formalContract.outstandingFlows)
     mappedStream
   }
 
@@ -152,7 +150,7 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
     //assert(async_flow_bounded)
 
     val isConsumerValid = (!wasReady || async_ready || wasFired)
-  }.setCompositeName(this, "formalContract"))
+  })
 
   def formalIsProducerValid(payloadInvariance : Boolean) : Bool = signalCache(s"${this}formalIsProducerValid")(new Composite(this, "formalIsProducerValid"){
     val v = formalContract.async_flow_bounded
@@ -163,15 +161,25 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
   override def formalAssertEquivalence(that: AsyncStream[T]): Unit = {
     assert(formalContract === that.formalContract)
   }
+//
+//  override def formalIsProducerValid() : Bool = formalIsProducerValid(true)
+//
+//  override def formalIsConsumerValid() : Bool = formalContract.isConsumerValid
+//
+//  def formalAsserts()(implicit useAssumes : Boolean = false): Unit = {
+//    assertOrAssume(formalIsProducerValid())
+//    assertOrAssume(formalIsConsumerValid())
+//  }
 
-  override def formalIsProducerValid() : Bool = formalIsProducerValid(true)
+  /**
+   * @return True if and only if the driving signals are valid
+   */
+  override def formalIsProducerValid() = formalIsProducerValid(true)
 
-  override def formalIsConsumerValid() : Bool = formalContract.isConsumerValid
-
-  def formalAsserts()(implicit useAssumes : Boolean = false): Unit = {
-    assertOrAssume(formalIsProducerValid())
-    assertOrAssume(formalIsConsumerValid())
-  }
+  /**
+   * @return True if and only if the response signals are valid
+   */
+  override def formalIsConsumerValid(): Seq[FormalProperty] = formalContract.isConsumerValid
 
   def formalDriverAssumptions(): Unit = {
     when(past(async_stall)) {

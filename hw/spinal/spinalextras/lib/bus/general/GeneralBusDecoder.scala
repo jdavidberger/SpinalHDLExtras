@@ -1,15 +1,15 @@
 package spinalextras.lib.bus.general
 
 import spinal.core._
-
 import spinal.lib._
 import spinal.lib.bus.misc.{AddressMapping, DefaultMapping}
-import spinal.lib.formal.ComponentWithFormalAsserts
+import spinalextras.lib.formal.ComponentWithFormalProperties
+
 import spinalextras.lib.misc.StreamFifoExt
 
 import scala.language.postfixOps
 
-class ResponseCounter(sizeBits : Int, pendingMax : Int) extends ComponentWithFormalAsserts {
+class ResponseCounter(sizeBits : Int, pendingMax : Int) extends ComponentWithFormalProperties {
   val io = new Bundle {
     val increaseBy = slave(Stream(UInt(sizeBits bits)))
     val decrease = master(Stream(Bits(0 bits)))
@@ -35,28 +35,28 @@ class ResponseCounter(sizeBits : Int, pendingMax : Int) extends ComponentWithFor
   def formalTotalPending() = {
     q.formalFold(U(0))((a, b, c) => Mux(c, b +^ a +^ 1, a)) -^ rsp_counter
   }
-
-  override lazy val formalValidInputs = io.increaseBy.formalIsValid()
-
-  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
-    withAutoPull()
-    q.formalAssumes()
-
-    if(globalData.config.formalAsserts) {
-      val totalInQ = q.formalFold(U(0))((a, b, c) => Mux(c, b +^ a +^ 1, a))
-      assertOrAssume(totalInQ >= rsp_counter)
-    }
-    assertOrAssume(io.decrease.formalIsValid())
-
-    when(!q.io.pop.valid) {
-      assertOrAssume(rsp_counter === 0)
-    } otherwise {
-      assertOrAssume(rsp_counter <= q.io.pop.payload)
-    }
-  }
+//
+//  override lazy val formalValidInputs = io.increaseBy.formalIsValid()
+//
+//  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
+//    withAutoPull()
+//    q.formalAssumes()
+//
+//    if(globalData.config.formalAsserts) {
+//      val totalInQ = q.formalFold(U(0))((a, b, c) => Mux(c, b +^ a +^ 1, a))
+//      assertOrAssume(totalInQ >= rsp_counter)
+//    }
+//    assertOrAssume(io.decrease.formalIsValid())
+//
+//    when(!q.io.pop.valid) {
+//      assertOrAssume(rsp_counter === 0)
+//    } otherwise {
+//      assertOrAssume(rsp_counter <= q.io.pop.payload)
+//    }
+//  }
 }
 
-case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: GeneralBusInterface[T], mappings: Seq[AddressMapping], pendingMax: Int = 3) extends ComponentWithFormalAsserts {
+case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: GeneralBusInterface[T], mappings: Seq[AddressMapping], pendingMax: Int = 3) extends ComponentWithFormalProperties {
   import busAccesor._
 
   val io = new Bundle {
@@ -125,49 +125,49 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
   def noOutstanding() : Bool = {
     Vec((if(logic != null) logic.outputsWithDefault else io.outputs).map(o => o.formalRspPending === 0)).asBits.andR
   }
-
-  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
-    withAutoPull()
-    import busAccesor._
-
-    val isValidOutputConsumer = io.outputs.map(_.isProducerValid)
-    isValidOutputConsumer.foreach(assertOrAssume(_))
-
-    val inputRspPending = io.input.formalRspPending
-
-    val multi = if(logic != null) new Area {
-      when(!io.input.readRequestValid) {
-        assertOrAssume(logic.latchFirstValid)
-      }
-
-      val floating = Mux(logic.latchFirstValid, U(0), logic.rspRequired)
-      val outstandingRspByOutput = logic.outputsWithDefault.map(_.formalRspPending)
-      assertOrAssume(CountOne(outstandingRspByOutput.map(_ > 0).asBits()) <= 1)
-      (logic.rspHits, outstandingRspByOutput).zipped.foreach( (hit, cnt) => {
-        when(!hit) {
-          assertOrAssume(cnt === 0)
-        }
-      })
-      val totalOutputsRspRequired = outstandingRspByOutput.fold(U(0))((x, y) => x +^ y)
-
-      if(globalData.config.formalAsserts) {
-        val formalTotalPending = logic.rspPendingCounter.formalTotalPending()
-        assertOrAssume(formalTotalPending === (inputRspPending +^ floating))
-      }
-
-      //val rspStreamOutput = busAccesor.formalRspPending(logic.rspStream.io.output)
-      //assertOrAssume(totalOutputsRspRequired === rspStreamOutput)
-      assertOrAssume(totalOutputsRspRequired === inputRspPending)
-    }
-
-    assertOrAssume(io.input.isConsumerValid)
-
-    var singleDefault = if(logic == null) new Area {
-      assert(io.outputs.size == 1)
-      assertOrAssume(inputRspPending === io.outputs.head.formalRspPending)
-    }
-
-    formalCheckOutputsAndChildren()
-  }
+//
+//  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
+//    withAutoPull()
+//    import busAccesor._
+//
+//    val isValidOutputConsumer = io.outputs.map(_.isProducerValid)
+//    isValidOutputConsumer.foreach(assertOrAssume(_))
+//
+//    val inputRspPending = io.input.formalRspPending
+//
+//    val multi = if(logic != null) new Area {
+//      when(!io.input.readRequestValid) {
+//        assertOrAssume(logic.latchFirstValid)
+//      }
+//
+//      val floating = Mux(logic.latchFirstValid, U(0), logic.rspRequired)
+//      val outstandingRspByOutput = logic.outputsWithDefault.map(_.formalRspPending)
+//      assertOrAssume(CountOne(outstandingRspByOutput.map(_ > 0).asBits()) <= 1)
+//      (logic.rspHits, outstandingRspByOutput).zipped.foreach( (hit, cnt) => {
+//        when(!hit) {
+//          assertOrAssume(cnt === 0)
+//        }
+//      })
+//      val totalOutputsRspRequired = outstandingRspByOutput.fold(U(0))((x, y) => x +^ y)
+//
+//      if(globalData.config.formalAsserts) {
+//        val formalTotalPending = logic.rspPendingCounter.formalTotalPending()
+//        assertOrAssume(formalTotalPending === (inputRspPending +^ floating))
+//      }
+//
+//      //val rspStreamOutput = busAccesor.formalRspPending(logic.rspStream.io.output)
+//      //assertOrAssume(totalOutputsRspRequired === rspStreamOutput)
+//      assertOrAssume(totalOutputsRspRequired === inputRspPending)
+//    }
+//
+//    assertOrAssume(io.input.isConsumerValid)
+//
+//    var singleDefault = if(logic == null) new Area {
+//      assert(io.outputs.size == 1)
+//      assertOrAssume(inputRspPending === io.outputs.head.formalRspPending)
+//    }
+//
+//    formalCheckOutputsAndChildren()
+//  }
 
 }

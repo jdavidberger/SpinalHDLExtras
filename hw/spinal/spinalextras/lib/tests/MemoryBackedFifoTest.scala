@@ -5,14 +5,21 @@ import spinal.core.sim._
 import spinal.core.{BitVector, Bits, HardType, IntToBuilder, cover}
 import spinal.lib.sim._
 import spinalextras.lib.Config
+import spinalextras.lib.formal.HasFormalProperties
 import spinalextras.lib.memory.MemoryBackedFifo
 
 class MemoryBackedFifoTest extends AnyFunSuite {
   def doTest[T <: BitVector](dataType: HardType[T], depth: Int, throughputTest : Boolean = false): Unit = {
-    Config.sim.withFstWave.doSim(
-      new MemoryBackedFifo(dataType, depth, withAsserts = true)
-    ) { dut =>
+    Config.sim.withFstWave.doSim({
+      val dut = new MemoryBackedFifo(dataType, depth, withAsserts = true) {
+        formalAssertProperties()
+        HasFormalProperties.printFormalAssertsReport()
+      }
+      dut
+    } ) { dut =>
       SimTimeout(5000 us)
+
+      dut.formalAssertProperties()
 
       dut.io.push.valid #= false
       dut.io.pop.ready #= false

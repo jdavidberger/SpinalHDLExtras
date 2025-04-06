@@ -349,7 +349,7 @@ object test_funcs {
   }
 
   def assertPMBContract(pmb: PipelinedMemoryBus) = new Area {
-    pmb.formalContract
+    ???//pmb.formalContract
   }
 
   var fastClockDomain: Option[ClockDomain] = None

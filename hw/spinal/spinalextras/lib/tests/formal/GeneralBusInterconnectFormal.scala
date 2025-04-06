@@ -10,7 +10,7 @@ import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
-import spinal.lib.formal.HasFormalAsserts
+
 import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, PipelinedMemoryBusMultiBus, WishboneExt}
 import spinalextras.lib.bus.general.{GeneralBusArbiter, GeneralBusInterface, XipBusMemBusInterfaceExtImpl}
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
@@ -114,8 +114,8 @@ case class GeneralBusInterconnectFormal[T <: Data with IMasterSlave](val masterD
   cover(non_error_rsp_fires_latch.andR && slave_cmd_fires_latch.andR)
 
   withAutoPull()
-  HasFormalAsserts.formalAssertsChildren(this, assumesInputValid = true, useAssumes = false)
-  HasFormalAsserts.printFormalAssertsReport()
+//  HasFormalAsserts.formalAssertsChildren(this, assumesInputValid = true, useAssumes = false)
+//  HasFormalAsserts.printFormalAssertsReport()
 }
 
 

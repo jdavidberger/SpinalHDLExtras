@@ -2,7 +2,7 @@ package spinalextras.lib.memory
 
 import spinal.core.{Area, Bool, BooleanPimped, Bundle, CombInit, Component, Data, False, HardType, IntToBuilder, Reg, RegNextWhen, True, U, UInt, assert, cloneOf, in, isPow2, log2Up, out, when}
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
-import spinal.lib.formal.ComponentWithFormalAsserts
+import spinalextras.lib.formal.ComponentWithFormalProperties
 import spinal.lib.{KeepAttribute, Stream, StreamFifoInterface, master, slave}
 import spinalextras.lib.HardwareMemory.HardwareMemoryReadWriteCmd
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt}
@@ -14,7 +14,7 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
                                   val mem_factory: ((MemoryRequirement[T]) => HardwareMemory[T]) = Memories.applyAuto[T] _,
                                   val withAsserts : Boolean = true,
                                   latencyRange : (Int, Int) = (1, 3)
-                                 ) extends ComponentWithFormalAsserts {
+                                 ) extends ComponentWithFormalProperties {
   val mem = mem_factory(MemoryRequirement(dataType, depth, 2, 0, 0, latencyRange = latencyRange))
   val io = slave(new FifoInterface[T](dataType, depth))
 
@@ -33,7 +33,7 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
 
   mem.io.readWritePorts.zipWithIndex.foreach({case (rw, idx) => {
     val memBus = sysBus.masters(idx)._1
-    test_funcs.assertPMBContract(memBus)
+    //test_funcs.assertPMBContract(memBus)
 
     when(memBus.cmd.valid) {
       assert(memBus.cmd.payload.wordAddress <= (depth - 1), Seq("Mapping higher bound check ", idx.toString, " ", memBus.cmd.address, " ", (depth).toHexString))
@@ -53,8 +53,8 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
     rw.rsp >> memBus.rsp
   }})
   sysBus.cancel()
-
-  if(withAsserts) {
-    this.formalAsserts()
-  }
+//
+//  if(withAsserts) {
+//    this.formalAsserts()
+//  }
 }

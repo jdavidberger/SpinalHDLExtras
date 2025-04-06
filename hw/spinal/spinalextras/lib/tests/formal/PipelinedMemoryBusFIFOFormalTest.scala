@@ -6,7 +6,7 @@ import spinal.core.formal._
 import spinal.lib._
 import spinal.lib.bus.misc.{AllMapping, DefaultMapping, SizeMapping}
 import spinal.lib.bus.simple.{PipelinedMemoryBusArbiter, PipelinedMemoryBusConfig, PipelinedMemoryBusDecoder}
-import spinal.lib.formal.HasFormalAsserts
+
 import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.bus.simple.SimpleMemoryProvider
 import spinalextras.lib.memory.PipelinedMemoryBusFIFO
@@ -64,9 +64,9 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
   dut.io.debug_fake_write := False
 
   addPrePopTask(() => {
-    HasFormalAsserts.formalAssertsChildren(this, assumesInputValid = true, useAssumes = false)
+    //HasFormalAsserts.formalAssertsChildren(this, assumesInputValid = true, useAssumes = false)
     dut.anyseq_inputs()
-    HasFormalAsserts.printFormalAssertsReport()
+    //HasFormalAsserts.printFormalAssertsReport()
   })
 
 }

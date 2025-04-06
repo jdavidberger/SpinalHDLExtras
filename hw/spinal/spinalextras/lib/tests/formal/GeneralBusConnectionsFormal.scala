@@ -10,7 +10,7 @@ import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
-import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
+
 import spinalextras.lib.Config
 import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, MultiInterconnectConnectFactory, PipelinedMemoryBusMultiBus, WishboneExt}
 import spinalextras.lib.bus.general.{GeneralBusArbiter, GeneralBusInterface, XipBusMemBusInterfaceExtImpl}
@@ -18,12 +18,12 @@ import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus}
 import vexriscv.plugin.{DBusSimpleBus, IBusCachedPlugin, IBusSimpleBus}
 import spinalextras.lib.bus.bus._
-
 import spinalextras.lib.bus.bus.XipBusFormal
+import spinalextras.lib.formal.ComponentWithFormalProperties
 
 import scala.language.postfixOps
 
-case class GeneralBusConnectionComponent(val m : () => MultiBusInterface, val s : () => MultiBusInterface) extends ComponentWithFormalAsserts {
+case class GeneralBusConnectionComponent(val m : () => MultiBusInterface, val s : () => MultiBusInterface) extends ComponentWithFormalProperties {
   val mBus = m()
   val sBus = s()
   println(s"Created ${mBus} and ${sBus}")
@@ -42,7 +42,7 @@ case class GeneralBusConnectionFormal(val m : () => MultiBusInterface, val s : (
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.anyseq_inputs()
-  HasFormalAsserts.printFormalAssertsReport()
+  //HasFormalAsserts.printFormalAssertsReport()
 }
 
 

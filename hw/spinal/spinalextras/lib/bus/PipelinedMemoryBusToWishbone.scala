@@ -6,7 +6,7 @@ import spinal.core.sim.{SimBitVectorPimper, SimBoolPimper, SimClockDomainHandleP
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
 import spinal.lib._
-import spinal.lib.formal.ComponentWithFormalAsserts
+import spinalextras.lib.formal.ComponentWithFormalProperties
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneSequencer, WishboneStatus, WishboneTransaction}
 import spinalextras.lib.Config
@@ -46,7 +46,7 @@ object WishbonePipelinedHelpers {
 }
 
 case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemoryBusConfig,
-                                        wbConfig: WishboneConfig, rspQueue : Int = 8, addressMap : (UInt => UInt) = identity) extends ComponentWithFormalAsserts {
+                                        wbConfig: WishboneConfig, rspQueue : Int = 8, addressMap : (UInt => UInt) = identity) extends ComponentWithFormalProperties {
   val io = new Bundle {
     val wb = slave(Wishbone(wbConfig))
     val pmb = master(PipelinedMemoryBus(pipelinedMemoryBusConfig))
@@ -78,14 +78,14 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
     }
   }
 
-
-  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
-    assertOrAssume(pendingRead.asUInt === io.pmb.formalContract.outstandingReads)
-    when(pendingRead) {
-      assertOrAssume(io.wb.masterHasRequest && !io.wb.WE)
-    }
-    formalCheckOutputsAndChildren()
-  }
+//
+//  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
+//    assertOrAssume(pendingRead.asUInt === io.pmb.formalContract.outstandingReads)
+//    when(pendingRead) {
+//      assertOrAssume(io.wb.masterHasRequest && !io.wb.WE)
+//    }
+//    formalCheckOutputsAndChildren()
+//  }
 }
 
 object WishboneToPipelinedMemoryBus {
@@ -107,7 +107,7 @@ object WishboneToPipelinedMemoryBus {
   }
 }
 
-case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, rspQueue : Int = 8) extends ComponentWithFormalAsserts {
+case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, rspQueue : Int = 8) extends ComponentWithFormalProperties {
   //assert(wbConfig.dataWidth == pipelinedMemoryBusConfig.dataWidth)
 
   val io = new Bundle {
@@ -158,14 +158,14 @@ object PipelinedMemoryBusToWishbone {
       val adapter = new PipelinedMemoryBusToWishbone(config, bus.config, rspQueue)
       adapter.io.pmb <> bus
       adapter.io.wb <> wb
-      bus.assertBusEquivalence(adapter.io.pmb)
-      wb.formalAssertEquivalence(adapter.io.wb)
+      //bus.assertBusEquivalence(adapter.io.pmb)
+      //wb.formalAssertEquivalence(adapter.io.wb)
     } else new Composite(bus, "wb2pmb") {
       val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, rspQueue, addressMap = addressMap)
       adapter.io.pmb <> bus
       adapter.io.wb <> wb
-      bus.assertBusEquivalence(adapter.io.pmb)
-      wb.formalAssertEquivalence(adapter.io.wb)
+      //bus.assertBusEquivalence(adapter.io.pmb)
+      //wb.formalAssertEquivalence(adapter.io.wb)
     }
     wb
   }

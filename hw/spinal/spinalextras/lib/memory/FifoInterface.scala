@@ -1,8 +1,9 @@
 package spinalextras.lib.memory
 
 import spinal.core.{Bits, Bool, Bundle, Data, False, HardType, IntToBuilder, UInt, in, log2Up, out}
-import spinal.lib.formal.FormalMasterSlave
 import spinal.lib.{IMasterSlave, Stream, master, slave}
+import spinalextras.lib.formal.FormalMasterSlave
+import spinalextras.lib.formal.StreamFormal.StreamExt
 
 case class FifoInterface[T <: Data](dataType: HardType[T], depth: BigInt) extends Bundle with IMasterSlave with FormalMasterSlave {
   val push = Stream(dataType)
@@ -19,11 +20,6 @@ case class FifoInterface[T <: Data](dataType: HardType[T], depth: BigInt) extend
     out(flush)
   }
 
-  override def formalIsProducerValid(): Bool = {
-    push.formalIsProducerValid() && pop.formalIsConsumerValid()
-  }
-
-  override def formalIsConsumerValid() = {
-    push.formalIsConsumerValid() && pop.formalIsProducerValid()
-  }
+  override def formalIsProducerValid() = push.formalIsProducerValid() ++ pop.formalIsConsumerValid()
+  override def formalIsConsumerValid() = push.formalIsConsumerValid() ++ pop.formalIsProducerValid()
 }

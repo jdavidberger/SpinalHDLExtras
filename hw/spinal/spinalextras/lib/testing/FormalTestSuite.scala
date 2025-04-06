@@ -3,7 +3,7 @@ package spinalextras.lib.testing
 import spinal.core.formal._
 import spinal.core._
 import spinal.lib.{Counter, CounterFreeRun}
-import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
+import spinalextras.lib.formal.{ComponentWithFormalProperties, HasFormalProperties}
 
 import java.io.IOException
 import scala.reflect.runtime.universe._
@@ -33,13 +33,12 @@ object ReflectionUtils {
   }
 }
 
-case class GeneralFormalDut(f : () => ComponentWithFormalAsserts) extends Component {
+case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Component {
   val dut = FormalDut(f())
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.anyseq_inputs()
-  HasFormalAsserts.printFormalAssertsReport()
-  //println(ReflectionUtils.constructorArgs(dut))
+  HasFormalProperties.printFormalAssertsReport()
 
   val cycles = CounterFreeRun(5)
   cover(cycles.value > 3)
@@ -60,7 +59,7 @@ trait FormalTestSuite {
     .withConfig(config)
     .withEngies(Seq(SmtBmc(nopresat = false,
       //solver = SmtBmcSolver.Boolector,
-      progress = false, noincr = false,
+      progress = false, //noincr = false,
       //track_assumes = true, minimize_assumes = true
     )))
 

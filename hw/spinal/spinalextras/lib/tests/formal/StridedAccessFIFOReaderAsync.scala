@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.formal.{FormalDut, SpinalFormalConfig, anyconst, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
-import spinal.lib.formal.HasFormalAsserts
+
 import spinalextras.lib.memory.StridedAccessFIFOReaderAsync
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
@@ -30,7 +30,7 @@ case class StridedAccessFIFOReaderAsyncFormal[T <: Data](
 //    cover(cycles.value > 3)
 //  }
   dut.anyseq_inputs()
-  HasFormalAsserts.printFormalAssertsReport()
+  //HasFormalAsserts.printFormalAssertsReport()
 }
 
 class StridedAccessFIFOReaderAsyncFormalTest extends AnyFunSuite with FormalTestSuite {

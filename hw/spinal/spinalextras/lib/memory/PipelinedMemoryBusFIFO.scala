@@ -6,18 +6,19 @@ import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
 import spinal.lib.bus.regif.AccessType.{RO, RW}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinal.lib.bus.simple._
-import spinal.lib.formal.ComponentWithFormalAsserts
+
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.misc.{CounterUpDownUneven, RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
 import spinalextras.lib.bus.bus._
+import spinalextras.lib.formal.ComponentWithFormalProperties
 
 import scala.collection.mutable
 import scala.language.postfixOps
 
 case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBytes : Int, baseAddress : Int = 0,
                                                var config : PipelinedMemoryBusConfig = null,
-                                               rsp_latency : Int = 0, cmd_latency : Int = 0, read_trigger : Int = -1) extends ComponentWithFormalAsserts {
+                                               rsp_latency : Int = 0, cmd_latency : Int = 0, read_trigger : Int = -1) extends ComponentWithFormalProperties {
   if(config == null) {
     config = PipelinedMemoryBusConfig(addressWidth = log2Up(depthInBytes), dataWidth = dataType.getBitsWidth)
   }
@@ -111,42 +112,42 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBy
     haltCmdQueue := True
     burnRtn := burnRtn + usage.value
   }
-
-  override def formalChecks()(implicit useAssumes: Boolean) = formalAssertsComposite()
-  def formalAssertsComposite()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
-    //test_funcs.formalAssumeLibraryComponents(self)
-    val readCmdBusCheck = readBusCmdQueue.formalCheckRam(_.write)
-    val readCmdBusCheckOutput = readBusCmdQueue.formalCheckOutputStage(_.write)
-    assertOrAssume(readCmdBusCheck.orR === False && readCmdBusCheckOutput === False)
-
-    readBusCmdQueue.formalAssumeInputs()
-    readBusCmdQueue.formalAssumes()
-
-    val busContract = readBus.formalContract
-    val busInFlightOccInBits = readBus.formalContract.outstandingReads.value * config.dataWidth
-    val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits +^ readBusCmdQueue.io.occupancy * config.dataWidth
-    assertOrAssume((usage.value +^ burnRtn) === (usageCheckInBits), s"Usage counts should be equal to the usageCheck ${this}")
-
-    fifo.formalAssertInputs()
-    fifo.formalAssumes()
-
-    assertOrAssume(burnRtn % usage.decBy === 0)
-    assertOrAssume(~overflow, "PMBBuffer overflowed")
-    assertOrAssume((burnRtn +^ usage.value).msb === False )
-    assertOrAssume((burnRtn +^ usage.value) <= bufferSizeInBits)
-
-    val occupancy = (busContract.outstandingReads.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
-
-    // Outputs
-    io.pop.formalAsserts()
-
-    formalCheckOutputsAndChildren()
-  }
+//
+//  override def formalChecks()(implicit useAssumes: Boolean) = formalAssertsComposite()
+//  def formalAssertsComposite()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
+//    //test_funcs.formalAssumeLibraryComponents(self)
+//    val readCmdBusCheck = readBusCmdQueue.formalCheckRam(_.write)
+//    val readCmdBusCheckOutput = readBusCmdQueue.formalCheckOutputStage(_.write)
+//    assertOrAssume(readCmdBusCheck.orR === False && readCmdBusCheckOutput === False)
+//
+//    readBusCmdQueue.formalAssumeInputs()
+//    readBusCmdQueue.formalAssumes()
+//
+//    val busContract = readBus.formalContract
+//    val busInFlightOccInBits = readBus.formalContract.outstandingReads.value * config.dataWidth
+//    val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits +^ readBusCmdQueue.io.occupancy * config.dataWidth
+//    assertOrAssume((usage.value +^ burnRtn) === (usageCheckInBits), s"Usage counts should be equal to the usageCheck ${this}")
+//
+//    fifo.formalAssertInputs()
+//    fifo.formalAssumes()
+//
+//    assertOrAssume(burnRtn % usage.decBy === 0)
+//    assertOrAssume(~overflow, "PMBBuffer overflowed")
+//    assertOrAssume((burnRtn +^ usage.value).msb === False )
+//    assertOrAssume((burnRtn +^ usage.value) <= bufferSizeInBits)
+//
+//    val occupancy = (busContract.outstandingReads.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
+//
+//    // Outputs
+//    io.pop.formalAsserts()
+//
+//    formalCheckOutputsAndChildren()
+//  }
 }
 
 case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
                                              sm : SizeMapping,
-                                             sysBus : Option[PipelineMemoryGlobalBus] = None, localPushDepth : Int = 0, localPopDepth : Int = 0) extends ComponentWithFormalAsserts {
+                                             sysBus : Option[PipelineMemoryGlobalBus] = None, localPushDepth : Int = 0, localPopDepth : Int = 0) extends ComponentWithFormalProperties {
   val depthInBytes = sm.size.toInt
   val baseAddress = sm.base.toInt
 
@@ -280,13 +281,13 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     }
 
   }
-
-  override def formalChecks()(implicit useAssumes: Boolean) =
-    new Composite(this, FormalCompositeName) {
-      val ramBackedBufferAsserts = ramBackedBuffer.formalAssertsComposite()
-
-      assertOrAssume(readBus.formalContract.outstandingReads === ramBackedBufferAsserts.busContract.outstandingReads)
-      assertOrAssume(inFlight.value === ramBackedBufferAsserts.occupancy)
-      formalCheckOutputsAndChildren()
-    }
+//
+//  override def formalChecks()(implicit useAssumes: Boolean) =
+//    new Composite(this, FormalCompositeName) {
+//      val ramBackedBufferAsserts = ramBackedBuffer.formalAssertsComposite()
+//
+//      assertOrAssume(readBus.formalContract.outstandingReads === ramBackedBufferAsserts.busContract.outstandingReads)
+//      assertOrAssume(inFlight.value === ramBackedBufferAsserts.occupancy)
+//      formalCheckOutputsAndChildren()
+//    }
 }

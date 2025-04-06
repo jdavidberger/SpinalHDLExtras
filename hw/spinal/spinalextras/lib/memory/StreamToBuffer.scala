@@ -6,8 +6,9 @@ import spinal.core.formal.{FormalDut, anyconst}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
-import spinal.lib.formal.ComponentWithFormalAsserts
+
 import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
+import spinalextras.lib.formal.ComponentWithFormalProperties
 import spinalextras.lib.misc.{GlobalSignals, RegisterTools, StreamTools}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 
@@ -18,7 +19,7 @@ case class StreamToBuffer[T <: Data](
     depth: Int,
     baseAddress: BigInt,
     busConfig: PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32),
-) extends ComponentWithFormalAsserts {
+) extends ComponentWithFormalProperties {
   val depthInBusWords = depth * dataType.getBitsWidth / busConfig.dataWidth
   require((depth * dataType.getBitsWidth % busConfig.dataWidth) == 0)
   val counter = Counter(depthInBusWords)

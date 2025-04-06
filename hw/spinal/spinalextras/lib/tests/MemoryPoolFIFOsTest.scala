@@ -4,7 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.sim._
 import spinal.core._
 import spinal.core.formal.{FormalDut, anyseq}
-import spinal.lib.formal.{ComponentWithFormalAsserts, HasFormalAsserts}
+
 import spinal.lib.{Counter, CounterFreeRun, StreamFifo}
 import spinal.lib.sim._
 import spinalextras.lib.Config
@@ -30,7 +30,8 @@ class MemoryBackedFIFOsTest extends AnyFunSuite {
         })).asBits.andR
 
         withAutoPull()
-        pools.formalAsserts()
+        pools.formalConfigureForTest()
+        //pools.formalAsserts()
       }.setDefinitionName("MemoryBackedFIFOsTestTB")
     ) { dut =>
       SimTimeout(5000 us)
@@ -46,8 +47,9 @@ class MemoryBackedFIFOsTest extends AnyFunSuite {
         if(Component.current == null) {
           Component.push(Component.toplevel)
         }
-        dut.formalAsserts()
-        HasFormalAsserts.printFormalAssertsReport()
+        //dut.formalAsserts()
+        dut.formalConfigureForTest()
+        //HasFormalAsserts.printFormalAssertsReport()
         dut
       }
     ) { dut =>

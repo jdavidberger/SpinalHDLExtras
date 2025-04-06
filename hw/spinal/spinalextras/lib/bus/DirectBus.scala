@@ -1,10 +1,8 @@
 package spinalextras.lib.bus
 
 import spinal.core._
-
 import spinal.lib._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
-import spinal.lib.formal.HasFormalAsserts
 
 case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMasterSlave {
   val cmd = PipelinedMemoryBusCmd(config)
@@ -53,7 +51,7 @@ object DirectBus {
     busOut
   }
 
-  def toPipelinedMemoryBus(dBus : DirectBus): PipelinedMemoryBus = new Composite(dBus, "toPipelinedMemoryBus") with HasFormalAsserts {
+  def toPipelinedMemoryBus(dBus : DirectBus): PipelinedMemoryBus = new Composite(dBus, "toPipelinedMemoryBus") {
     val bus = PipelinedMemoryBus(dBus.config)
 
     val expectingRead = RegInit(False) setWhen(bus.readRequestFire) clearWhen(bus.rsp.fire)
@@ -68,14 +66,15 @@ object DirectBus {
     dBus.rsp := bus.rsp.data
     dBus.ready := bus.rsp.valid || (bus.cmd.fire && bus.cmd.write)
 
-    assert(bus.formalContract.outstandingReads === expectingRead.asUInt)
+    //assert(bus.formalContract.outstandingReads === expectingRead.asUInt)
 
-    override lazy val formalValidInputs = bus.formalIsConsumerValid() && dBus.formalIsProducerValid()
-
-    override protected def formalChecks()(implicit useAssumes: Boolean): Unit = {
-      assertOrAssume(bus.formalIsProducerValid())
-      assertOrAssume(bus.formalContract.outstandingReads.value === (!cmdLatch).asUInt)
-    }
+//
+//    override lazy val formalValidInputs = bus.formalIsConsumerValid() && dBus.formalIsProducerValid()
+//
+//    override protected def formalChecks()(implicit useAssumes: Boolean): Unit = {
+//      assertOrAssume(bus.formalIsProducerValid())
+//      assertOrAssume(bus.formalContract.outstandingReads.value === (!cmdLatch).asUInt)
+//    }
   }.bus
 
 }

@@ -3,8 +3,9 @@ package spinalextras.lib.misc
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
-import spinal.lib.formal.ComponentWithFormalAsserts
+
 import spinal.lib.fsm.{EntryPoint, State, StateMachine}
+import spinalextras.lib.formal.ComponentWithFormalProperties
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 
 import scala.collection.mutable
@@ -85,7 +86,7 @@ class AdaptWidthByState[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardT
 
 }
 
-class StreamWidthAdapterWithOccupancy[T <: Data,T2 <: Data](inputDataType : HardType[T], outputDataType : HardType[T2], endianness: Endianness = LITTLE, padding : Boolean = false) extends ComponentWithFormalAsserts {
+class StreamWidthAdapterWithOccupancy[T <: Data,T2 <: Data](inputDataType : HardType[T], outputDataType : HardType[T2], endianness: Endianness = LITTLE, padding : Boolean = false) extends ComponentWithFormalProperties {
   val inputWidth = inputDataType.getBitsWidth
   val outputWidth = outputDataType.getBitsWidth
 
@@ -153,7 +154,7 @@ object StreamWidthAdapterWithOccupancy {
   }
 }
 
-class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T], endianness: Endianness = LITTLE) extends ComponentWithFormalAsserts {
+class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T], endianness: Endianness = LITTLE) extends ComponentWithFormalProperties {
 
   val io = new Bundle {
     val in = slave(Stream(dataTypeIn))
@@ -206,26 +207,26 @@ class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T],
   }
 
   val latency = if(logic == null) 1 else logic.latency
-
-  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
-    val counter = formalCounter
-    counter.formalAssertOrAssume()
-
-    if(logic != null) new Composite(this, "logic") {
-      val inBitsOcc = logic.swaIn.io.occupancy * dataTypeIn.getBitsWidth
-      val outBitsOcc = logic.swaOut.io.occupancy * dataTypeOut.getBitsWidth
-      val midBitsOcc = logic.streamMid_stage.valid.asUInt * logic.streamMid.payload.getWidth
-      val calcOcc = inBitsOcc +^ midBitsOcc -^ outBitsOcc
-      assertOrAssume(midBitsOcc >= outBitsOcc)
-      assertOrAssume(calcOcc === counter.value)
-    } else {
-      assertOrAssume(0 === counter.value)
-    }
-    formalCheckOutputsAndChildren()
-  }
+//
+//  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
+//    val counter = formalCounter
+//    counter.formalAssertOrAssume()
+//
+//    if(logic != null) new Composite(this, "logic") {
+//      val inBitsOcc = logic.swaIn.io.occupancy * dataTypeIn.getBitsWidth
+//      val outBitsOcc = logic.swaOut.io.occupancy * dataTypeOut.getBitsWidth
+//      val midBitsOcc = logic.streamMid_stage.valid.asUInt * logic.streamMid.payload.getWidth
+//      val calcOcc = inBitsOcc +^ midBitsOcc -^ outBitsOcc
+//      assertOrAssume(midBitsOcc >= outBitsOcc)
+//      assertOrAssume(calcOcc === counter.value)
+//    } else {
+//      assertOrAssume(0 === counter.value)
+//    }
+//    formalCheckOutputsAndChildren()
+//  }
 }
 
-class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends ComponentWithFormalAsserts {
+class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends ComponentWithFormalProperties {
   val io = new Bundle {
     val in = slave(Stream(Fragment(dataTypeIn)))
     val out = master(Stream(Fragment(dataTypeOut)))

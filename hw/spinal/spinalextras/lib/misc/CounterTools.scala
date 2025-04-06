@@ -5,13 +5,14 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.regif.SymbolName
-import spinal.lib.formal.HasFormalAsserts
+
 import spinalextras.lib.Config
+import spinalextras.lib.formal.{FormalProperty, HasFormalProperties}
 import spinalextras.lib.misc.StreamTools.gcd
 
 import scala.language.postfixOps
 
-class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ImplicitArea[UInt] with HasFormalAsserts {
+class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ImplicitArea[UInt] with HasFormalProperties {
   val valueNext = UInt(log2Up(range + 1) bits)
   val value = RegNext(valueNext) init(0)
 
@@ -52,24 +53,31 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
 //  )
   val isMax = willOverflowIfInc
 
-  override lazy val formalValidInputs = new Composite(this, "formalValidInputs") {
-    val validIncrement = (!incrementIt || !willOverflowIfInc || (decrementIt && Bool(incBy <= decBy)))
-    val validDecrement = (!decrementIt || !willUnderflowIfDec || (incrementIt && Bool(incBy >= decBy)))
-    val valid = validDecrement && validIncrement
-  }.valid
-
-  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
-    assertOrAssume(value <= range, f"Usage overflow ${value} ${this}, max ${range}")
-    val inc_dec_gcd = gcd(incBy, decBy)
-    assertOrAssume((value % inc_dec_gcd) === 0)
-
-    val absDelta = delta.abs
-    when(delta < 0) {
-      assertOrAssume(value >= absDelta)
-    }
-  }
+//  override lazy val formalValidInputs = new Composite(this, "formalValidInputs") {
+//    val validIncrement = (!incrementIt || !willOverflowIfInc || (decrementIt && Bool(incBy <= decBy)))
+//    val validDecrement = (!decrementIt || !willUnderflowIfDec || (incrementIt && Bool(incBy >= decBy)))
+//    val valid = validDecrement && validIncrement
+//  }.valid
 
   override def implicitValue: UInt = value
+
+  /**
+   * @return The formal properties which should all be true if the formalInputProperties are true too. These are the main
+   *         assertions we are concerned with defining and verifying in formal testing
+   *
+   *         For complicated properties, consider using the helper class `FormalProperties`
+   */
+  override protected def formalProperties(): Seq[FormalProperty] = {
+//    assertOrAssume(value <= range, f"Usage overflow ${value} ${this}, max ${range}")
+//    val inc_dec_gcd = gcd(incBy, decBy)
+//    assertOrAssume((value % inc_dec_gcd) === 0)
+//
+//    val absDelta = delta.abs
+//    when(delta < 0) {
+//      assertOrAssume(value >= absDelta)
+//    }
+    Seq()
+  }
 }
 
 object CounterTools {

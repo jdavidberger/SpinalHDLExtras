@@ -69,7 +69,7 @@ trait GeneralBusInterface[BUS <: Data with IMasterSlave] {
   }
 
   def isProducerValid(bus: BUS): Bool = {
-    cmd(bus).formalIsValid()
+    ???//cmd(bus).formalIsValid()
   }
 
   def isConsumerValid(bus: BUS): Bool = formalContract(bus).canRspBeValid || !rsp_valid(bus)
