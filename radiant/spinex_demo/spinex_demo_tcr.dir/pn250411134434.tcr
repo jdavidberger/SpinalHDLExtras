@@ -1,0 +1,8 @@
+#Start recording tcl command: 4/10/2025 20:17:09
+#Project Location: /home/justin/source/cr/tinyclunx_dev/SpinalHDLExtras/radiant/spinex_demo; Project name: spinex_demo
+prj_create -name "spinex_demo" -impl "impl_1" -dev LIFCL-33U-8CTG104C -performance "8_High-Performance_1.0V" -synthesis "synplify"
+prj_save 
+prj_add_source "/home/justin/source/cr/tinyclunx_dev/hw/gen/Spinex.v"
+prj_remove_source "/home/justin/source/cr/tinyclunx_dev/hw/gen/Spinex.v"
+prj_add_source "/home/justin/source/cr/tinyclunx_dev/hw/gen/Spinex.ipx"
+#Stop recording: 4/11/2025 13:44:34

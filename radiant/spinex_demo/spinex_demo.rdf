@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadiantProject version="4.2" radiant="2023.2.1.288.0" title="spinex_demo" device="LIFCL-33U-8CTG104C" performance_grade="8_High-Performance_1.0V" default_implementation="impl_1">
+    <Options/>
+    <Implementation title="impl_1" dir="impl_1" description="impl_1" synthesis="synplify" default_strategy="Strategy1">
+        <Options def_top="Spinex"/>
+        <Source name="../../../hw/gen/Spinex.ipx" type="IPX_Module" type_short="IPX">
+            <Options top_module="Spinex"/>
+        </Source>
+    </Implementation>
+    <Strategy name="Strategy1" file="spinex_demo1.sty"/>
+</RadiantProject>
