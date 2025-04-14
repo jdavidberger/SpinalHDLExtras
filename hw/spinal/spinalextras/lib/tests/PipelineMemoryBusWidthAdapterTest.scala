@@ -2,7 +2,7 @@ package spinalextras.lib.tests
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
-import spinal.core.sim.{SimBitVectorPimper, SimBitsPimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout, simRandom}
+import spinal.core.sim._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder, StreamMonitor}

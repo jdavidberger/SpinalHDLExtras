@@ -53,7 +53,7 @@ case class PipelinedMemoryBusInterface(bus: PipelinedMemoryBus, sizeMap: SizeMap
 
   override def getModuleName = moduleName.name
 
-  //override  val busAddrWidth: Int = bus.config.addressWidth
-  override val readData: Bits = bus.rsp.data
-  override val readError: Bool = False
+  override  val busAddrWidth: Int = bus.config.addressWidth
+  override lazy val readData: Bits = bus.rsp.data
+  override lazy val readError: Bool = False
 }

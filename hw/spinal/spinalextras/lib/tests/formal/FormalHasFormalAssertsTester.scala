@@ -93,6 +93,8 @@ class FormalHasFormalTester extends AnyFunSuite {
       //track_assumes = true, minimize_assumes = true
     )))
 
+  implicit val className = "FormalHasFormalTester"
+
   test("Check child") {
     // Show that if prove has a long enough induction length, it does not need the helper assertions.
     formalConfig.withProve(15).doVerify(new FormalChildComponent(addHelperAssertion = false))
