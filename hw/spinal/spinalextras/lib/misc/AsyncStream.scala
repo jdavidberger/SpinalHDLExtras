@@ -5,6 +5,8 @@ import spinal.core.formal.past
 import spinal.lib._
 import spinalextras.lib.formal.{FormalMasterSlave, FormalProperty}
 
+import scala.collection.mutable
+
 case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle with IMasterSlave with FormalMasterSlave {
   val async_valid, async_ready   = Bool()
   val flow = Flow(payloadType())
@@ -149,8 +151,8 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
     async_flow_bounded := outstandingFlows > 0 || ~outstandingFlows.decrementIt
     //assert(async_flow_bounded)
 
-    val isConsumerValid = (!wasReady || async_ready || wasFired)
-  })
+    val isConsumerValid = (!wasReady || async_ready || wasFired) && (outstandingFlows.value > 0 || ~async_fire)
+  }.setWeakName(s"formalContract"))
 
   def formalIsProducerValid(payloadInvariance : Boolean) : Bool = signalCache(s"${this}formalIsProducerValid")(new Composite(this, "formalIsProducerValid"){
     val v = formalContract.async_flow_bounded

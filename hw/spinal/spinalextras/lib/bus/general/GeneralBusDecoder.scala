@@ -63,6 +63,7 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
     val input = slave(dataType())
     val outputs = Vec(master(dataType()), mappings.size)
   }
+
   val hasDefault = mappings.contains(DefaultMapping)
   val logic = if (hasDefault && mappings.size == 1) {
     io.outputs(0) <> io.input
@@ -88,10 +89,10 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
       slaveBus.cmd.payload := input_cmd.payload.resized
     }
 
-    val noHit = if (!hasDefault) !hits.orR else False
-    assert(!noHit)
+//    val noHit = if (!hasDefault) !hits.orR else False
+//    assert(!noHit)
 
-    io.input.cmd.ready := (hits, outputsWithDefault).zipped.map(_ && _.cmd.ready).orR || noHit
+    io.input.cmd.ready := (hits, outputsWithDefault).zipped.map(_ && _.cmd.ready).orR// || noHit
 
     val rspRequired = io.input.rspsRequired
     val rspPendingCounter = new ResponseCounter(rspRequired.getWidth, pendingMax + 1)
@@ -107,7 +108,7 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
     val output_rsp = Stream(io.input.rsp.payload)
     output_rsp.valid := outputsWithDefault.map(_.rsp.fire).orR
     output_rsp.payload := outputsWithDefault.map(_.rsp.payload).read(OHToUInt(rspHits))
-    busAccesor.map_rsp(io.input, output_rsp, False)
+    busAccesor.map_rsp(io.input, output_rsp)
 
     val cmdWait = (io.input.cmd.valid && rspPending && hits =/= rspHits) || (!rspPendingCounter.io.increaseBy.ready && latchFirstValid)
     when(cmdWait) {

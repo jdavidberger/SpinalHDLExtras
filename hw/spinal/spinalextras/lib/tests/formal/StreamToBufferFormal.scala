@@ -5,6 +5,7 @@ import spinal.core._
 import spinal.core.formal.{FormalDut, anyconst, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
+import spinalextras.lib.formal.HasFormalProperties
 import spinalextras.lib.memory.{StreamToBuffer, StridedAccessFIFOReaderAsync}
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
@@ -21,6 +22,7 @@ case class StreamToBufferFormal[T <: Data](
 
   anyconst(dut.io.debug_fake_write)
   dut.anyseq_inputs()
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 class StreamToBufferFormalTest extends AnyFunSuite with FormalTestSuite {

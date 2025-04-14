@@ -4,12 +4,14 @@ import spinal.core._
 import spinal.lib._
 
 import scala.collection.mutable
+import scala.reflect.runtime.universe.typeOf
+import scala.reflect.{ClassTag, classTag}
 
 object GeneralBusInterface {
   val outstandingRspRegisters = new mutable.WeakHashMap[Any, UInt]()
 }
 
-trait GeneralBusInterface[BUS <: Data with IMasterSlave] {
+trait GeneralBusInterface[BUS <: Data with IMasterSlave with Nameable] {
   type CMD <: Data
   type RSP <: Data
 
@@ -34,7 +36,7 @@ trait GeneralBusInterface[BUS <: Data with IMasterSlave] {
   def map_cmd(input: Stream[CMD], output : Stream[CMD], takeWhen : Bool):Stream[CMD] = input << output.takeWhen(takeWhen)
   def map_cmd(input: BUS, output : BUS, takeWhen : Bool) : Stream[CMD] = map_cmd(cmd(input), cmd(output), takeWhen)
 
-  def map_rsp(input : BUS, output : Stream[RSP], decodeNoHit : Bool)
+  def map_rsp(input : BUS, output : Stream[RSP])
   def map_rsp_read_error(input : BUS) : Unit
 
   def map_rsp(input : BUS, output : BUS)

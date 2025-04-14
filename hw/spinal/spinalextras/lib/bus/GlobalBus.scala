@@ -215,10 +215,10 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
   override def create_bus(): Wishbone = {
     val x = Wishbone(config)
     if (Component.current == Component.toplevel) {
-      if(x.ERR != null) {
-        x.ERR := False
-        x.ERR.allowOverride()
-      }
+//      if(x.ERR != null) {
+//        x.ERR := False
+//        x.ERR.allowOverride()
+//      }
     }
     x
   }

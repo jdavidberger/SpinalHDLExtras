@@ -57,6 +57,7 @@ package object bus {
     override def address_width = bus.p.addressWidth
     override def create_decoder(mappings: Seq[AddressMapping]): Seq[InstructionCacheMemBusExt] = new Composite(bus) {
       val decoder = new GeneralBusDecoder(InstructionCacheMemBusInterfaceExtImpl(bus), mappings)
+      decoder.setWeakName(s"${bus.name}_decoder")
       decoder.io.input <> bus
       val outputs = decoder.io.outputs.map(outputBus => InstructionCacheMemBusExt(bus = outputBus))
     }.outputs
@@ -79,6 +80,7 @@ package object bus {
     override def address_width = bus.cmd.address.getWidth
     override def create_decoder(mappings: Seq[AddressMapping]): Seq[DBusSimpleBusExt] = new Composite(bus) {
       val decoder = new GeneralBusDecoder(DSimpleBusInterfaceExtImpl(bus), mappings)
+      decoder.setWeakName(s"${bus.name}_decoder")
       decoder.io.input <> bus
       val outputs = decoder.io.outputs.map(outputBus => DBusSimpleBusExt(bus = outputBus))
     }.outputs
@@ -257,13 +259,12 @@ package object bus {
   }}
 
   MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: PipelinedMemoryBusMultiBus) => {
-    m.bus.toPipelinedMemoryBus() <> s.bus
+    m.bus.toPipelinedMemoryBus() >> s.bus
   }}
 
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: WishboneMultiBusInterface) => {
     val wb = PipelinedMemoryBusToWishbone(m.bus, s.bus.config)
     wb <> s.bus
-    //wb.formalAssertEquivalence(s.bus)
   }}
 
 

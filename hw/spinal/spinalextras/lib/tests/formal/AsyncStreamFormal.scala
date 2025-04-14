@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, HasFormalProperties}
 import spinalextras.lib.misc.AsyncStream
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
@@ -31,6 +31,8 @@ case class AsyncStreamFormal() extends Component {
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.anyseq_inputs()
+
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 

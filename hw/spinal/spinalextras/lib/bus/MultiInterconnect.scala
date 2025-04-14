@@ -138,20 +138,32 @@ class MultiInterconnect {
 class MultiInterconnectByTag extends MultiInterconnect {
   val tags = new mutable.HashMap[MultiBusInterface, mutable.Set[String]]()
 
+  override def addSlave(bus: MultiBusInterface, mapping: AddressMapping) : this.type = {
+    for((sbus, s) <- slaves) {
+      if(tags(sbus).intersect(tags(bus)).size > 0) {
+        assert(!s.mapping.hit(mapping.lowerBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
+        assert(!s.mapping.hit(mapping.highestBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
+      }
+    }
+
+    slaves(bus) = SlaveModel(mapping)
+    this
+  }
+
   def addTag(bus : MultiBusInterface, tag : String*) = {
     tags(bus) = tags.getOrElse(bus, mutable.Set()) ++ Set(tag:_*)
     this
   }
 
   def addMaster(bus : MultiBusInterface, tags : String*) : this.type = {
-    super.addMaster(bus)
     addTag(bus, tags:_*)
+    super.addMaster(bus)
     this
   }
 
   def addSlave(bus: MultiBusInterface, mapping: AddressMapping, tags : String*) : this.type = {
-    super.addSlave(bus, mapping = mapping)
     addTag(bus, tags:_*)
+    addSlave(bus, mapping = mapping)
     this
   }
 

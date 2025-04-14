@@ -178,7 +178,9 @@ object PipelinedMemoryBusToWishbone {
   def createDriver(bus : PipelinedMemoryBus, config : WishboneConfig): Wishbone = new Composite(bus, "wb2pmb"){
     val wb = Wishbone(config)
     val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, 0, addressMap = identity)
-    adapter.io.pmb <> bus
+    if(bus.name != null)
+      adapter.setWeakName(s"${wb}_adapter")
+    adapter.io.pmb.cmdM2sPipe().cmdS2mPipe().rspPipe() >> bus
     adapter.io.wb <> wb
     //bus.assertBusEquivalence(adapter.io.pmb)
     //wb.formalAssertEquivalence(adapter.io.wb)

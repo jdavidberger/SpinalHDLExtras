@@ -11,10 +11,10 @@ import spinal.core._
 import scala.collection.mutable
 
 object PipelinedMemoryBusFormal {
-  class PipelinedMemoryBusContract(bus: PipelinedMemoryBus) extends FormalProperties {
+  class PipelinedMemoryBusContract(bus: PipelinedMemoryBus) extends FormalProperties(bus) {
     val outstandingReads = CounterUpDown(0x100000000L, incWhen = bus.readRequestFire, decWhen = bus.rsp.valid)
     assume(!outstandingReads.willOverflow) // This is required for the inductive formal methods to work
-
+    bus.readRequestFire
     val willUnderflow = outstandingReads.value === 0 && outstandingReads.decrementIt
     addFormalProperty(!willUnderflow, s"${bus.name} should not have has more rsp than reads")
   }
@@ -27,8 +27,13 @@ object PipelinedMemoryBusFormal {
      * @return True if and only if the driving signals are valid
      */
     override def formalIsProducerValid(): Seq[FormalProperty] = {
-      contracts.getOrElseUpdate(bus, new PipelinedMemoryBusContract(bus)) ++ bus.cmd.formalIsProducerValid
+      bus.cmd.formalIsProducerValid()
     }
+
+    /**
+     * @return True if and only if the response signals are valid
+     */
+    override def formalIsConsumerValid(): Seq[FormalProperty] = contracts.getOrElseUpdate(bus, new PipelinedMemoryBusContract(bus))
 
     override def asIMasterSlave: IMasterSlave = bus
   }

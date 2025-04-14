@@ -23,11 +23,11 @@ package object general {
     override def cmd_requires_response(cmd:  CMD): Bool = !cmd.wr
     override def rsp_fire(bus:  DBusSimpleBus): Bool = bus.rsp.ready
     override def cmd(bus:  DBusSimpleBus): Stream[CMD] = bus.cmd
-    override def map_rsp(input:  DBusSimpleBus, output:  Stream[RSP], decoderMiss : Bool): Unit = {
+    override def map_rsp(input:  DBusSimpleBus, output:  Stream[RSP]): Unit = {
       output.ready := True
       input.rsp.ready := output.valid
-      input.rsp.error := decoderMiss
-      input.rsp.data := output.data
+      input.rsp.error := output.payload.error
+      input.rsp.data := output.payload.data
     }
 
     override def decodeMissTarget() = {
@@ -35,7 +35,7 @@ package object general {
       bus.cmd.ready := True
       bus.rsp.ready := RegNext(bus.cmd.valid && !bus.cmd.wr) init(False)
       bus.rsp.error := True
-      bus.rsp.data.assignDontCare()
+      bus.rsp.data := 0xDEADBEEFL
       bus
     }
 
@@ -69,7 +69,7 @@ package object general {
     override def cmd_requires_response(cmd:  CMD): Bool = True
     override def rsp_fire(bus:  InstructionCacheMemBus): Bool = bus.rsp.fire
     override def cmd(bus:  InstructionCacheMemBus): Stream[CMD] = bus.cmd
-    override def map_rsp(input:  InstructionCacheMemBus, output:  Stream[RSP], decoderMiss : Bool): Unit = {
+    override def map_rsp(input:  InstructionCacheMemBus, output:  Stream[RSP]): Unit = {
       output.ready := True
       input.rsp.valid := output.valid
       input.rsp.payload := output.payload
@@ -125,7 +125,7 @@ package object general {
 
     override def cmd(bus: BUS): Stream[CMD] = bus.cmd
 
-    override def map_rsp(input: BUS, output: Stream[RSP], decoderMiss : Bool): Unit = {
+    override def map_rsp(input: BUS, output: Stream[RSP]): Unit = {
       input.rsp << output
     }
 

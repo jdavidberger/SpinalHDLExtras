@@ -6,7 +6,7 @@ import spinal.lib.com.uart.{UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemory
 import vexriscv.ip.InstructionCacheConfig
 import vexriscv.{VexRiscv, plugin}
 import vexriscv.plugin.CsrAccess.WRITE_ONLY
-import vexriscv.plugin.{BranchPlugin, CsrPlugin, CsrPluginConfig, DBusSimplePlugin, DecoderSimplePlugin, ExternalInterruptArrayPlugin, HazardSimplePlugin, IBusCachedPlugin, IntAluPlugin, LightShifterPlugin, MulDivIterativePlugin, Plugin, RegFilePlugin, STATIC, SrcPlugin, StaticMemoryTranslatorPlugin, YamlPlugin}
+import vexriscv.plugin.{BranchPlugin, CsrPlugin, CsrPluginConfig, DBusSimplePlugin, DecoderSimplePlugin, ExternalInterruptArrayPlugin, HazardSimplePlugin, IBusCachedPlugin, IBusSimplePlugin, IntAluPlugin, LightShifterPlugin, MulDivIterativePlugin, Plugin, RegFilePlugin, STATIC, SrcPlugin, StaticMemoryTranslatorPlugin, YamlPlugin}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
@@ -23,7 +23,8 @@ case class SpinexConfig(coreFrequency : HertzNumber,
                         hardwareBreakpointCount : Int,
                         withNativeJtag      : Boolean,
                         cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
-                        externalInterrupts : Int
+                        externalInterrupts : Int,
+                        withWishboneBus : Boolean
                        ){
   require(pipelineApbBridge || pipelineMainBus, "At least pipelineMainBus or pipelineApbBridge should be enable to avoid wipe transactions")
   val genXip = xipConfig != null
@@ -81,19 +82,25 @@ object SpinexConfig{
           catchIllegalAccess = true,
           catchAccessFault = true,
           asyncTagMemory = false,
-          twoCycleRam = false,
+          twoCycleRam = true,
           twoCycleCache = true
         ),
         resetVector = resetVector,
         prediction = STATIC,
         compressedGen = false,
-        relaxedPcCalculation = false,
+        relaxedPcCalculation = true,
         memoryTranslatorPortConfig = null
       ),
+//      new IBusSimplePlugin(
+//        resetVector = resetVector, cmdForkOnSecondStage = false, cmdForkPersistence = false,
+//        catchAccessFault = true,
+//        prediction = STATIC,
+//        compressedGen = false,
+//      ),
       new DBusSimplePlugin(
         catchAddressMisaligned = true,
         catchAccessFault = true,
-        //earlyInjection = false,
+        earlyInjection = true,
         bigEndian = bigEndian
       ),
       //new CsrPlugin(CsrPluginConfig.small(mtvecInit = if(withXip) 0xE0040020l else 0x80000020l)),
@@ -110,12 +117,13 @@ object SpinexConfig{
       ),
       new RegFilePlugin(
         regFileReadyKind = plugin.SYNC,
-        zeroBoot = false
+        zeroBoot = true
       ),
       new IntAluPlugin,
       new SrcPlugin(
         separatedAddSub = false,
-        executeInsertion = false
+        executeInsertion = false,
+        decodeAddSub = true,
       ),
       new LightShifterPlugin,
       new HazardSimplePlugin(
@@ -159,7 +167,8 @@ object SpinexConfig{
       txFifoDepth = 16,
       rxFifoDepth = 16
     ),
-    externalInterrupts = 1
+    externalInterrupts = 1,
+    withWishboneBus = true
   )
 
   def fast = {

@@ -22,9 +22,7 @@ object Config {
     privateNamespace = false,
     inlineRom = true,
     romReuse = true,
-    //mode = SystemVerilog,
-    device = Device.LATTICE,
-
+    device = Device(vendor = "lattice", family = "lifcl"),
     //nameWhenByFile = true
   )//.addStandardMemBlackboxing(policy = blackboxAll)
 

@@ -12,12 +12,14 @@ import spinal.lib.com.spi.ddr._
 import spinal.lib.com.uart._
 import spinal.lib.cpu.riscv.debug._
 import spinalextras.lib.{Config, Memories, MemoryRequirement}
-import spinalextras.lib.blackbox.lattice.lifcl.{OSCD, OSCDConfig}
+import spinalextras.lib.blackbox.lattice.lifcl.{OSCD, OSCDConfig, PLL}
 import spinalextras.lib.blackbox.memories.W25Q128JVxIM_quad
 import spinalextras.lib.blackbox.opencores.i2c_master_top
-import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusExt, PipelinedMemoryBusMultiBus}
+import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusExt, PipelinedMemoryBusMultiBus, WishboneToPipelinedMemoryBus}
 import spinalextras.lib.io.TristateBuffer
+import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
+import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
 import spinalextras.lib.misc.ClockSpecification
 import spinalextras.lib.soc.peripherals.{SpinexApb3Timer, SpinexApb3UartCtrl}
 import vexriscv.demo.MuraxPipelinedMemoryBusRam
@@ -46,7 +48,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     val spiflash_cs_n = genXip generate out(Bool())
     val spiflash_dq = genXip generate inout(Analog(Bits(xipConfig.ctrl.spi.dataWidth bits)))
 
-    val wb = master(Wishbone(wbConfig))
+    val wb = config.withWishboneBus generate master(Wishbone(wbConfig))
     val externalInterrupts = Array.fill(config.externalInterrupts)(in(Bool()) default(False))
   }
   noIoPrefix()
@@ -81,8 +83,8 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     }
 
     //Create all reset used later in the design
-    val mainClkReset = RegNext(mainClkResetUnbuffered)
-    val systemReset  = RegNext(mainClkResetUnbuffered)
+    val mainClkReset = RegNext(mainClkResetUnbuffered, init = True)
+    val systemReset  = RegNext(mainClkResetUnbuffered, init = True)
   }
 
 
@@ -100,6 +102,11 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
   def add_master(bus: IBusSimpleBus): Unit = {
     interconnect.addMaster(bus, "iBus")
+
+    assert(!bus.cmd.valid.isUnknown, "Invalid ibus valid")
+    when(bus.cmd.valid) {
+      assert(!bus.cmd.payload.asBits.isUnknown, "Invalid sbus address")
+    }
 
     GlobalLogger(Set("iBus"),
       FlowLogger.streams(bus.cmd.setName("iBus_cmd")),
@@ -121,6 +128,15 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     dbusRspFlow.valid := bus.rsp.ready
     dbusRspFlow.payload := bus.rsp
 
+    assert(!bus.cmd.valid.isUnknown, "Invalid dbus valid")
+    when(bus.cmd.valid) {
+      assert(!bus.cmd.payload.address.asBits.isUnknown, "Invalid dbus address")
+      assert(!bus.cmd.payload.wr.isUnknown, "Invalid dbus wr")
+      when(bus.cmd.payload.wr) {
+        assert(!bus.cmd.payload.data.asBits.isUnknown, "Invalid dbus data")
+      }
+    }
+
     GlobalLogger(Set("dBus"),
       FlowLogger.streams(bus.cmd.setName("dBus")),
       FlowLogger.flows(dbusRspFlow.setName("dbusRspFlow"))
@@ -128,6 +144,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
   }
 
   def add_slave(bus: PipelinedMemoryBus, name : String, mapping : AddressMapping, tags : String*): Unit = {
+    bus.setWeakName(name)
     interconnect.addSlave(PipelinedMemoryBusMultiBus(bus), mapping = mapping, tags:_*)
   }
 
@@ -182,7 +199,9 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     val i2s_rx = 6
     val i2s_tx = 7
 
-    add_slave(io.wb, "wb0", SizeMapping(0xb0000000L, 0x10000000L), "dBus")
+    if(config.withWishboneBus) {
+      add_slave(io.wb, "wb0", SizeMapping(0xb0000000L, 0x10000000L), "dBus")
+    }
 
     for(plugin <- cpu.plugins) plugin match{
       case plugin : IBusCachedPlugin =>
@@ -190,7 +209,8 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       case plugin : IBusSimplePlugin =>
         add_master(plugin.iBus)
       case plugin : DBusSimplePlugin => {
-        add_master(plugin.dBus)
+        add_master(plugin.dBus.cmdM2sPipe().setName("dBus_staged"))
+        //add_master(plugin.dBus)
       }
       case plugin : CsrPlugin        => {
         plugin.timerInterrupt := timerInterrupt
@@ -223,10 +243,11 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 //      bigEndian = bigEndianDBus
 //    )
     val mem = Memories(MemoryRequirement(Bits(32 bits), onChipRamSize,
-      numReadWritePorts = 1,
+      numReadWritePorts = 2,
       needsMask = true))
     val mem_pmbs = mem.pmbs()
-    add_slave(mem_pmbs.head.resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "iBus", "dBus")
+    add_slave(mem_pmbs(1).resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "dBus")
+    add_slave(mem_pmbs(0).resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "iBus")
 //    mainBusMapping += ram.io.bus -> (0x80000000l, onChipRamSize)
 
     val apbBridge = new PipelinedMemoryBusToApbBridge(
@@ -255,7 +276,8 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
     val i2cCtrl = new i2c_master_top()
     i2cCtrl.attachi2c(io.i2c0_scl, io.i2c0_sda)
-    add_slave(i2cCtrl.io.wb, "i2c", SizeMapping(0xee000000L, 64 Bytes), "dBus")
+
+    add_slave(i2cCtrl.io.wb, "i2c", SizeMapping(0xee000000L, 32 Bytes), "dBus")
 
     val xip = ifGen(genXip)(new Area{
       val ctrl = Apb3SpiXdrMasterCtrl(xipConfig)
@@ -292,6 +314,41 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
 object Spinex{
   def main(args: Array[String]) {
-    Config.spinal.generateVerilog(Spinex())
+    val report = Config.spinal.generateVerilog(Spinex(SpinexConfig.default.copy(withWishboneBus = false)))
+    IPX.generate_ipx(report)
+  }
+}
+
+class SpinexWithClock extends Component {
+  val io = new Bundle {
+    val led = out(Bool())
+  }
+  noIoPrefix()
+
+  val ClockDomains = PLL(
+    ClockSpecification(80 MHz),
+  )
+
+
+  var connectionArea = new ClockingArea(clockDomain = ClockDomains.head) {
+    val som = Spinex(SpinexConfig.default.copy(withWishboneBus = false))
+
+    val counter = Timeout(1 sec)
+    val led = RegInit(False)
+    when(counter) {
+      counter.clear()
+      led := ~led
+    }
+  }
+
+  io.led := connectionArea.led
+  buildInterconnect(Seq(connectionArea.som), io)
+}
+
+object SpinexWithClock{
+  def main(args: Array[String]) {
+    val report = Config.spinal.generateVerilog(new SpinexWithClock())
+
+    IPX.generate_ipx(report)
   }
 }

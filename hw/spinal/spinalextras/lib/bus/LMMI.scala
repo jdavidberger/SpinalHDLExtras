@@ -42,7 +42,6 @@ class LMMI(config: LMMIConfig) extends Bundle with IMasterSlave {
 
   def toPipelinedMemoryBus() : PipelinedMemoryBus = {
     val pmb = PipelinedMemoryBus(PipelinedMemoryBusConfig(config.addressWidth + log2Up(config.dataWidth / 8), config.dataWidth))
-
     pmb.cmd.map( c => {
       val cmd = cloneOf(this.cmd.payload)
       cmd.offset := c.wordAddress
@@ -51,7 +50,8 @@ class LMMI(config: LMMIConfig) extends Bundle with IMasterSlave {
       cmd
     }) >> cmd
 
-    rsp.map(_.as(pmb.rsp.payload)) >> pmb.rsp
+    pmb.rsp.valid := rsp.valid
+    pmb.rsp.payload.data := rsp.payload
 
     pmb
   }

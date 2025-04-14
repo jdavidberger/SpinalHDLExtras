@@ -26,7 +26,7 @@ class DPSC512K(
     val ADA = in Bits(14 bits)
     val ADB = in Bits(14 bits) default(0)
     val CEA = in Bool() default(True)
-    val CEB = in Bool() default(False)
+    val CEB = in Bool() default(True)
     val WEA = in Bool()
     val WEB = in Bool() default(False)
     val CSA = in Bool() default(False)

@@ -422,7 +422,7 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
     mem_port.wdata.assignFromBits(port.cmd.data)
 
     var rspFlow = cloneOf(port.rsp).setName("rspFlowInit")
-    rspFlow.valid := RegNext(port.cmd.valid && !port.cmd.write) init(False)
+    rspFlow.valid := RegNext(port.cmd.valid && !port.cmd.write, init = False)
     rspFlow.data := mem_port.rdata.asBits
 
     port.rsp <> mapReadLatency(rspFlow, io.readWritePortsOutstanding(idx))
