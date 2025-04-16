@@ -1,16 +1,17 @@
 package spinalextras.lib.bus
 
 import spinal.core._
-
+import spinal.core.formal.past
 import spinal.core.sim.{SimBitVectorPimper, SimBoolPimper, SimClockDomainHandlePimper, SimPublic, SimTimeout, fork, simTime}
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
 import spinal.lib._
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinal.lib.wishbone.sim.{WishboneDriver, WishboneMonitor, WishboneSequencer, WishboneStatus, WishboneTransaction}
 import spinalextras.lib.Config
 import spinalextras.lib.bus._
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.testing.test_funcs
 
 import scala.collection.mutable
@@ -73,19 +74,14 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
   when(io.wb.masterHasRequest) {
     when(io.wb.WE) {
       io.wb.ACK := io.pmb.cmd.fire
-    } otherwise {
-      //pendingRead := io.pmb.cmd.fire && !io.pmb.rsp.valid
     }
   }
 
-//
-//  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
-//    assertOrAssume(pendingRead.asUInt === io.pmb.formalContract.outstandingReads)
-//    when(pendingRead) {
-//      assertOrAssume(io.wb.masterHasRequest && !io.wb.WE)
-//    }
-//    formalCheckOutputsAndChildren()
-//  }
+  override protected def formalProperties(): Seq[FormalProperty] =
+    super.formalProperties() ++ new FormalProperties {
+      addFormalProperty(!pendingRead || (!io.wb.WE && io.wb.masterHasRequest))
+      addFormalProperty(io.pmb.contract.outstandingReads === (pendingRead.asUInt), "PMB when mapped to WB doesnt support pipelined")
+    }.formalProperties
 }
 
 object WishboneToPipelinedMemoryBus {

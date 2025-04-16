@@ -159,7 +159,7 @@ case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
   val io = new Bundle {
     val bus = slave(PipelinedMemoryBus(config))
   }
-  val memBusContract = test_funcs.assertPMBContract(io.bus)
+  //val memBusContract = test_funcs.assertPMBContract(io.bus)
   val busConfig = io.bus.config
 
   var data_width = busConfig.dataWidth

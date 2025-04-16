@@ -6,12 +6,14 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinal.lib.bus.wishbone.{AddressGranularity, WishboneConfig}
 import spinalextras.lib.bus.WishboneToPipelinedMemoryBus
+import spinalextras.lib.formal.{ComponentWithFormalProperties, HasFormalProperties}
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
 class WishboneToPipelinedMemoryBusFormal[T <: Data](pipelinedMemoryBusConfig : PipelinedMemoryBusConfig,
                                                     wbConfig: WishboneConfig, rspQueue : Int = 8, addressMap : (UInt => UInt) = identity) extends Component {
   val dut = FormalDut(new WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig, wbConfig, rspQueue = rspQueue, addressMap = addressMap))
   assumeInitial(ClockDomain.current.isResetActive)
+  dut.formalConfigureForTest()
 
   assume((dut.io.wb.byteAddress() & (dut.io.wb.config.wordAddressInc() - 1)) === 0)
 
@@ -22,6 +24,7 @@ class WishboneToPipelinedMemoryBusFormal[T <: Data](pipelinedMemoryBusConfig : P
   }
   anyseq(dut.io.pmb.cmd.ready)
   anyseq(dut.io.pmb.rsp)
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 class WishboneToPipelinedMemoryBusTestFormal extends AnyFunSuite with FormalTestSuite {

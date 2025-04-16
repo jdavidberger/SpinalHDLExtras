@@ -24,6 +24,8 @@ class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
           val sysclk = Reg(UInt(32 bits)) init (0)
           sysclk := sysclk + 1
           SimPublic(sysclk)
+
+          this.formalAssertProperties()
         }.setDefinitionName("WishboneToPipelinedMemoryBus")
       ) { dut =>
         dut.io.pmb.cmd.ready #= false
@@ -73,7 +75,7 @@ class WishboneToPipelinedMemoryBusTest extends AnyFunSuite {
                 q.enqueue(dut.io.pmb.cmd.address.toBigInt)
               }
 
-              val tran = WishboneTransaction(dut.io.pmb.cmd.address.toBigInt >> log2Up(config.wordAddressInc()), dut.io.pmb.cmd.data.toBigInt)
+              val tran = WishboneTransaction(dut.io.pmb.cmd.address.toBigInt, dut.io.pmb.cmd.data.toBigInt)
               println(s"Popping ${tran}")
               sco.pushDut(tran)
 

@@ -6,8 +6,8 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinal.lib.bus.wishbone.{AddressGranularity, WishboneConfig}
-
 import spinalextras.lib.bus.PipelinedMemoryBusToWishbone
+import spinalextras.lib.formal.{ComponentWithFormalProperties, HasFormalProperties}
 import spinalextras.lib.memory.{StreamToBuffer, StridedAccessFIFOReaderAsync}
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
@@ -22,7 +22,7 @@ case class PipelinedMemoryBusToWishboneFormal(wbConfig: WishboneConfig, pipeline
   cover(dut.io.pmb.rsp.valid && dut.io.pmb.rsp.data === 0xfafabeeeL)
   //cover(dut.io.pmb.formalContract.outstandingReads === 1)
   assume((dut.io.wb.byteAddress() & (dut.io.wb.config.wordAddressInc() - 1)) === 0)
-  //HasFormalAsserts.printFormalAssertsReport()
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 
