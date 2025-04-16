@@ -26,14 +26,14 @@ void spi_read_write(uint32_t reg, const uint8_t* write, uint32_t write_size, uin
   for(int i = 0;i < read_size;i++) {
     read[i] = spi_read(reg);
   }
-  spi_diselect(reg, 0);
+  spi_deselect(reg, 0);
 
   int status = 1;
   while(status & 1) {
     spi_select(reg, 0);
     spi_write(reg, 5);
     status = spi_read(reg);
-    spi_diselect(reg, 0);      
+    spi_deselect(reg, 0);
   }
   
   irq_unlock(lock_key);

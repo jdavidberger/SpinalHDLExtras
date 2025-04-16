@@ -101,7 +101,7 @@ static void spi_select(uint32_t reg, uint32_t slaveId){
     write_u32(slaveId | 0x80 | SPI_CMD_SS, reg + SPI_DATA);
 }
 
-static void spi_diselect(uint32_t reg, uint32_t slaveId){
+static void spi_deselect(uint32_t reg, uint32_t slaveId){
     while(spi_cmdAvailability(reg) == 0);
     write_u32(slaveId | 0x00 | SPI_CMD_SS, reg + SPI_DATA);
 }
