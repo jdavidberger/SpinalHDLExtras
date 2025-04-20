@@ -14,7 +14,7 @@ import scala.reflect.ClassTag
 object PipelinedMemoryBusFormal {
   def pmb_cmd_equivalence(a : PipelinedMemoryBusCmd, b : PipelinedMemoryBusCmd) = {
     def effective_tuple(a : PipelinedMemoryBusCmd) = {
-      TupleBundle(Mux(a.write, a.data, B(0)), a.write, a.address, a.mask)
+      TupleBundle(Mux(a.write, a.data ## a.mask, B(0)), a.write, a.address)
     }
 
     effective_tuple(a) === effective_tuple(b)
@@ -36,7 +36,6 @@ object PipelinedMemoryBusFormal {
      * @return True if and only if the driving signals are valid
      */
     override def formalIsProducerValid(): Seq[FormalProperty] = {
-      bus.cmd.formalIsProducerValid()
       StreamFormal.formalIsProducerValid(bus.cmd, equivalence_check = pmb_cmd_equivalence)
     }
 

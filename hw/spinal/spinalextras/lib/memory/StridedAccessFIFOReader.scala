@@ -5,7 +5,8 @@ import spinal.lib.bus.regif.BusIf
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.{Counter, Flow, Fragment, StreamFifo, StreamJoin, master}
 import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.logging.PipelinedMemoryBusLogger
 import spinalextras.lib.misc._
 import spinalextras.lib.testing.test_funcs
@@ -199,75 +200,73 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
       }
     }
   }
+
+  override protected def formalProperties(): Seq[FormalProperty] = super.formalProperties() ++ new FormalProperties(this) {
+    val busBitsOutstanding = io.bus.config.dataWidth * io.bus.contract.outstandingReads.value
+    val outBitsOutstanding = outDatatype.getBitsWidth * io.pop.formalContract.outstandingFlows.value
+    val adapterBits = CombInit(adapter.formalCounter.value)
+    addFormalProperty((busBitsOutstanding +^ adapterBits) >= outBitsOutstanding)
+
+    val busReadsLeftInCnt = (chunk_cmd.cnt.end + 1 - chunk_cmd.cnt.value)
+    val signal_valid_remaining_lut = ({
+      val lst = new ArrayBuffer[Int]()
+      lst += signal_valid.last.toInt // 0 0 3
+      // 3
+      for (i <- 1 until signal_valid.size) {
+        lst += lst.last + signal_valid(signal_valid.size - i - 1).toInt
+      }
+      lst.reverse.map(U(_))
+    })
+
+    val validFiresLeftInCnt = UInt(signal_valid_remaining_lut.map(_.getBitsWidth).max bits)
+    validFiresLeftInCnt.assignDontCare()
+    signal_valid_remaining_lut.zipWithIndex.foreach(v => {
+      when(chunk_cmd.cnt === v._2) {
+        validFiresLeftInCnt := v._1.resized
+      }
+    })
+    val validFiresBitsLeftInCnt = validFiresLeftInCnt * outDatatype.getBitsWidth
+    addFormalProperty((busBitsOutstanding +^ adapterBits +^ busReadsLeftInCnt * busConfig.dataWidth) ===
+      (outBitsOutstanding +^ validFiresBitsLeftInCnt), s"Oustanding reads math failed to resolve for ${this}")
+    addFormalProperty(validFiresLeftInCnt =/= 0)
+
+//    val total_req, total_res = Counter(32 bits)
+//    assume(!total_req.willOverflow)
+//    assume(!total_res.willOverflow)
 //
-//  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
-//    adapter.formalAssumes()
+//    when(chunk_cmd.cnt.willIncrement) { total_req.increment() }
+//    when(chunk_rsp.cnt.willIncrement) { total_res.increment() }
 //
-//    val busBitsOutstanding = io.bus.config.dataWidth * io.bus.formalContract.outstandingReads.value
-//    val outBitsOutstanding = outDatatype.getBitsWidth * io.pop.formalContract.outstandingFlows.value
-//    val adapterBits = CombInit(adapter.formalCounter.value)
-//    assertOrAssume((busBitsOutstanding +^ adapterBits) >= outBitsOutstanding)
+//    assertOrAssume(total_req.value % (chunk_cmd.cnt.end + 1) === chunk_cmd.cnt.value)
+//    assertOrAssume(((total_req.value / (chunk_cmd.cnt.end + 1)) % (roundrobin_idx_cmd.end + 1)) === roundrobin_idx_cmd.value)
+//    assertOrAssume(((total_req.value / ((chunk_cmd.cnt.end + 1) * (roundrobin_idx_cmd.end + 1))) % (chunk_cmd.chunk_idx.end + 1)) === chunk_cmd.chunk_idx.value)
 //
-//    val busReadsLeftInCnt = (chunk_cmd.cnt.end + 1 - chunk_cmd.cnt.value)
-//    val signal_valid_remaining_lut = ({
-//      val lst = new ArrayBuffer[Int]()
-//      lst += signal_valid.last.toInt // 0 0 3
-//      // 3
-//      for (i <- 1 until signal_valid.size) {
-//        lst += lst.last + signal_valid(signal_valid.size - i - 1).toInt
-//      }
-//      lst.reverse.map(U(_))
-//    })
+//    assertOrAssume(total_res.value % (chunk_rsp.cnt.end + 1) === chunk_rsp.cnt.value)
+//    assertOrAssume((total_res.value / (chunk_rsp.cnt.end + 1)) % (roundrobin_idx_rsp.end + 1) === roundrobin_idx_rsp.value)
+//    assertOrAssume(total_res.value % (popCounter.end + 1) === popCounter.value)
+
+    //assertOrAssume(total_res +^ io.bus.formalContract.outstandingReads === total_req)
+    val req_size = io.bus.config.dataWidth
+    val res_size = outDatatype.getBitsWidth
+    //assertOrAssume(total_req * req_size >= total_res * res_size)
+
+    import chunk_cmd._
+    val reads_made = (chunk_idx.value * bufferSizeInBusWords * outCnt) +^
+      (roundrobin_idx_cmd.value * bufferSizeInBusWords) +^
+      cnt.value
+    when(armRead) {
+      //assertOrAssume(reads_made >= io.bus.formalContract.outstandingReads.value)
+    } otherwise {
+      addFormalProperty(cnt.value === 0)
+      addFormalProperty(roundrobin_idx_cmd.value === 0)
+      addFormalProperty(chunk_idx.value === 0)
+    }
+//    val popsRemaining = CombInit((popCounter.maxValue + 1) - popCounter.value)
+//    val popsOutstanding = CombInit(io.pop.formalContract.outstandingFlows.value)
 //
-//    val validFiresLeftInCnt = UInt(signal_valid_remaining_lut.map(_.getBitsWidth).max bits)
-//    validFiresLeftInCnt.assignDontCare()
-//    signal_valid_remaining_lut.zipWithIndex.foreach(v => {
-//      when(chunk_cmd.cnt === v._2) {
-//        validFiresLeftInCnt := v._1.resized
-//      }
-//    })
-//    val validFiresBitsLeftInCnt = validFiresLeftInCnt * outDatatype.getBitsWidth
-//    assertOrAssume((busBitsOutstanding +^ adapterBits +^ busReadsLeftInCnt * busConfig.dataWidth) ===
-//      (outBitsOutstanding +^ validFiresBitsLeftInCnt), s"Oustanding reads math failed to resolve for ${this}")
-//    assert(validFiresLeftInCnt =/= 0)
-//
-////    val total_req, total_res = Counter(32 bits)
-////    assume(!total_req.willOverflow)
-////    assume(!total_res.willOverflow)
-////
-////    when(chunk_cmd.cnt.willIncrement) { total_req.increment() }
-////    when(chunk_rsp.cnt.willIncrement) { total_res.increment() }
-////
-////    assertOrAssume(total_req.value % (chunk_cmd.cnt.end + 1) === chunk_cmd.cnt.value)
-////    assertOrAssume(((total_req.value / (chunk_cmd.cnt.end + 1)) % (roundrobin_idx_cmd.end + 1)) === roundrobin_idx_cmd.value)
-////    assertOrAssume(((total_req.value / ((chunk_cmd.cnt.end + 1) * (roundrobin_idx_cmd.end + 1))) % (chunk_cmd.chunk_idx.end + 1)) === chunk_cmd.chunk_idx.value)
-////
-////    assertOrAssume(total_res.value % (chunk_rsp.cnt.end + 1) === chunk_rsp.cnt.value)
-////    assertOrAssume((total_res.value / (chunk_rsp.cnt.end + 1)) % (roundrobin_idx_rsp.end + 1) === roundrobin_idx_rsp.value)
-////    assertOrAssume(total_res.value % (popCounter.end + 1) === popCounter.value)
-//
-//    //assertOrAssume(total_res +^ io.bus.formalContract.outstandingReads === total_req)
-//    val req_size = io.bus.config.dataWidth
-//    val res_size = outDatatype.getBitsWidth
-//    //assertOrAssume(total_req * req_size >= total_res * res_size)
-//
-//    import chunk_cmd._
-//    val reads_made = (chunk_idx.value * bufferSizeInBusWords * outCnt) +^
-//      (roundrobin_idx_cmd.value * bufferSizeInBusWords) +^
-//      cnt.value
-//    when(armRead) {
-//      //assertOrAssume(reads_made >= io.bus.formalContract.outstandingReads.value)
-//    } otherwise {
-//      assertOrAssume(cnt.value === 0)
-//      assertOrAssume(roundrobin_idx_cmd.value === 0)
-//      assertOrAssume(chunk_idx.value === 0)
-//    }
-////    val popsRemaining = CombInit((popCounter.maxValue + 1) - popCounter.value)
-////    val popsOutstanding = CombInit(io.pop.formalContract.outstandingFlows.value)
-////
-////    assertOrAssume(popsRemaining >= popsOutstanding)
-//    formalCheckOutputsAndChildren()
-//  }
+//    assertOrAssume(popsRemaining >= popsOutstanding)
+    //formalCheckOutputsAndChildren()
+  }.formalProperties
 
   def attach_bus(busSlaveFactory: BusIf): Unit = {
     PipelinedMemoryBusLogger.attach_debug_registers(busSlaveFactory, io.bus.setName("strided_reader_bus"))

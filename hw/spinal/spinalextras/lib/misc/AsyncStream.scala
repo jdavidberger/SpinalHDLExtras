@@ -8,6 +8,38 @@ import spinalextras.lib.formal.{FormalDataWithEquivalnce, FormalMasterSlave, For
 import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
 
+class AsyncStreamContract[T <: Data](stream : AsyncStream[T]) extends Composite(stream, "contract") {
+  import stream._
+  val wasValid = RegNext(async_valid) init (False)
+  val wasReady = RegNext(async_ready) init (False)
+  val wasFired = RegNext(async_fire) init (False)
+
+  val invalidReadyChange = wasReady && !async_ready && !wasFired
+  invalidReadyChange.setWeakName(name + "_invalidReadyChange")
+
+  val outstandingFlows = CounterUpDown(1L << 32, async_fire, flow.valid)
+  val outstandingFlows_value = CombInit(outstandingFlows.value)
+  assume(~outstandingFlows.willOverflow)
+
+  val async_flow_bounded = Bool()
+  async_flow_bounded := outstandingFlows > 0 || ~outstandingFlows.decrementIt
+  //assert(async_flow_bounded)
+
+  val isProducerValid = Seq(
+    FormalProperty(async_flow_bounded, "Async flow bounded"),
+    FormalProperty(!invalidReadyChange, s"${this} deasserted async_ready before a async_valid")
+  )
+
+  val isConsumerValid = Seq(
+    FormalProperty((!wasReady || async_ready || wasFired), "Improper ready for async"),
+    FormalProperty(outstandingFlows.value > 0 || ~async_fire, "Unblanaced fire")
+  )
+}
+
+object AsyncStream {
+  val contracts = new mutable.WeakHashMap[AsyncStream[_], AsyncStreamContract[_]]()
+}
+
 case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle with IMasterSlave with FormalMasterSlave with FormalDataWithEquivalnce[AsyncStream[T]] {
   val async_valid, async_ready   = Bool()
   val flow = Flow(payloadType())
@@ -137,34 +169,43 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
     }
   }
 
-  def formalContract = signalCache(s"${this}_formalContract")(new Bundle {//new Composite(this, "formalContract") {
-    val wasValid = RegNext(async_valid) init (False)
-    val wasReady = RegNext(async_ready) init (False)
-    val wasFired = RegNext(async_fire) init (False)
+  def formalContract = AsyncStream.contracts.getOrElseUpdate(this, new AsyncStreamContract[T](this))
+//
+//  def formalContract = signalCache(s"${this}_formalContract")(new Composite(this, "formalContract") { val contract = new Bundle {
+//    val wasValid = RegNext(async_valid) init (False)
+//    val wasReady = RegNext(async_ready) init (False)
+//    val wasFired = RegNext(async_fire) init (False)
+//
+//    val invalidReadyChange = wasReady && !async_ready && !wasFired
+//    invalidReadyChange.setWeakName(name + "_invalidReadyChange")
+//
+//    val outstandingFlows = CounterUpDown(1L << 32, async_fire, flow.valid)
+//    val outstandingFlows_value = CombInit(outstandingFlows.value)
+//    assume(~outstandingFlows.willOverflow)
+//
+//    val async_flow_bounded = Bool()
+//    async_flow_bounded := outstandingFlows > 0 || ~outstandingFlows.decrementIt
+//    //assert(async_flow_bounded)
+//
+//    val isProducerValid = Seq(
+//      FormalProperty(async_flow_bounded, "Async flow bounded"),
+//      FormalProperty(!invalidReadyChange, s"${this} deasserted async_ready before a async_valid")
+//    )
+//
+//    val isConsumerValid = Seq(
+//      FormalProperty((!wasReady || async_ready || wasFired), "Improper ready for async"),
+//      FormalProperty(outstandingFlows.value > 0 || ~async_fire, "Unblanaced fire")
+//    )
+//  }}.contract)
 
-    val invalidReadyChange = wasReady && !async_ready && !wasFired
-    invalidReadyChange.setWeakName(name + "_invalidReadyChange")
-    assert(!invalidReadyChange, s"${this} deasserted async_ready before a async_valid")
-
-    val outstandingFlows = CounterUpDown(1L << 32, async_fire, flow.valid)
-    val outstandingFlows_value = CombInit(outstandingFlows.value)
-    assume(~outstandingFlows.willOverflow)
-
-    val async_flow_bounded = Bool()
-    async_flow_bounded := outstandingFlows > 0 || ~outstandingFlows.decrementIt
-    //assert(async_flow_bounded)
-
-    val isConsumerValid = (!wasReady || async_ready || wasFired) && (outstandingFlows.value > 0 || ~async_fire)
-  }.setWeakName(s"formalContract"))
-
-  def formalIsProducerValid(payloadInvariance : Boolean) : Bool = signalCache(s"${this}formalIsProducerValid")(new Composite(this, "formalIsProducerValid"){
-    val v = formalContract.async_flow_bounded
-  }.v)
+//  def formalIsProducerValid(payloadInvariance : Boolean) : Bool = signalCache(s"${this}formalIsProducerValid")(new Composite(this, "formalIsProducerValid"){
+//    val v = formalContract.async_flow_bounded
+//  }.v)
 
   override type Self = AsyncStream[T]
 
   override def formalAssertEquivalence(that: AsyncStream[T]): Unit = {
-    assert(formalContract === that.formalContract)
+    assert(formalContract.outstandingFlows === that.formalContract.outstandingFlows)
   }
 //
 //  override def formalIsProducerValid() : Bool = formalIsProducerValid(true)
@@ -179,7 +220,7 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
   /**
    * @return True if and only if the driving signals are valid
    */
-  override def formalIsProducerValid() = formalIsProducerValid(true)
+  override def formalIsProducerValid() = formalContract.isProducerValid
 
   /**
    * @return True if and only if the response signals are valid

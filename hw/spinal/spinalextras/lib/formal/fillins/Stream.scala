@@ -16,10 +16,13 @@ package object StreamFormal {
     addFormalProperty(checkValidHandshake, f"Dropped valid before saw ready")
 
     val priorValidPayload = RegNextWhen(stream.payload, stream.valid)
-    val checkValidPayloadInvariance = Mux(wasStall && Bool(payloadInvariance),
-      equivalence_check(priorValidPayload, stream.payload),
-      True)
-    addFormalProperty(checkValidPayloadInvariance, "Payload should not change while transfer is stalled")
+    if(payloadInvariance) {
+      val checkValidPayloadInvariance = Mux(wasStall,
+        equivalence_check(priorValidPayload, stream.payload),
+        True)
+      addFormalProperty(checkValidPayloadInvariance, s"Payload should not change while transfer is stalled ${equivalence_check}")
+    }
+
   }
 
   implicit class StreamExt[T <: Data](stream: Stream[T]) extends FormalMasterSlave {

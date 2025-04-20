@@ -56,6 +56,7 @@ object FormalProperty {
    */
   implicit def toFormalProperty(cond: (Bool, Any))(implicit loc: Location): FormalProperty = new FormalProperty(cond._1, Seq(cond._2))(loc)
 
+  def apply(cond: Bool, msg: String)(implicit loc: Location) = toFormalProperty(cond, msg)
   /**
    * Enables the syntax
    *
