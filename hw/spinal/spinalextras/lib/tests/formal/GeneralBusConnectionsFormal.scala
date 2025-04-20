@@ -10,7 +10,6 @@ import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
-
 import spinalextras.lib.Config
 import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, MultiInterconnectConnectFactory, PipelinedMemoryBusMultiBus, WishboneExt}
 import spinalextras.lib.bus.general.{GeneralBusArbiter, GeneralBusInterface, XipBusMemBusInterfaceExtImpl}
@@ -19,7 +18,7 @@ import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus}
 import vexriscv.plugin.{DBusSimpleBus, IBusCachedPlugin, IBusSimpleBus}
 import spinalextras.lib.bus.bus._
 import spinalextras.lib.bus.bus.XipBusFormal
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, HasFormalProperties}
 
 import scala.language.postfixOps
 
@@ -42,7 +41,7 @@ case class GeneralBusConnectionFormal(val m : () => MultiBusInterface, val s : (
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.anyseq_inputs()
-  //HasFormalAsserts.printFormalAssertsReport()
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 
@@ -73,7 +72,7 @@ class GeneralBusConnectionFormalTest extends AnyFunSuite with FormalTestSuite {
   lazy val busConfigurations : Seq[(String, () => MultiBusInterface)] = Seq(
     ("IBus", () => new InstructionCacheMemBus(cacheConfig)),
     ("DBus", () => new DBusSimpleBus()),
-    ("XipBus", () => new XipBusFormal(XipBusParameters(32, 5))),
+    ("XipBus", () => new XipBus(XipBusParameters(32, 5))),
     ("PMB", () => PipelinedMemoryBusMultiBus(new PipelinedMemoryBus(PipelinedMemoryBusConfig(32, 32)))),
     ("WB_byte", () => new Wishbone(i2cConfig)),
     ("WB_word", () => new Wishbone(wbConfig))

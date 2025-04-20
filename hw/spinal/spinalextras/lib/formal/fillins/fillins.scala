@@ -18,10 +18,17 @@ package object fillins {
     this
   }
 
+  private var fillinInstances : mutable.WeakHashMap[Data, Any] = mutable.WeakHashMap.empty
   def findFillin(data : Data): Any = {
+    if (fillinInstances.contains(data)) {
+      return fillinInstances(data)
+    }
+
     for (handler <- handlers) {
       val factoryFunc = handler.lift(data)
       if (factoryFunc.nonEmpty) {
+        println(s"Turning ${data} -> ${factoryFunc.get}")
+        fillinInstances(data) = factoryFunc.get
         return factoryFunc.get
       }
     }

@@ -3,10 +3,12 @@ package spinalextras.lib.formal.fillins
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.wishbone.Wishbone
-import spinalextras.lib.formal.{FormalMasterSlave, FormalProperties, FormalProperty, fillins}
+import spinalextras.lib.formal.{FormalDataWithEquivalnce, FormalMasterSlave, FormalProperties, FormalProperty, fillins}
+
+import scala.reflect.{ClassTag, classTag}
 
 object Wishbone {
-  implicit class WishboneFormalExt(val bus : Wishbone) extends FormalMasterSlave {
+  implicit class WishboneFormalExt(val bus : Wishbone) extends FormalMasterSlave with FormalDataWithEquivalnce[WishboneFormalExt] {
 
     /**
      * @return True if and only if the driving signals are valid
@@ -16,9 +18,9 @@ object Wishbone {
       import bus._
 
       private val slaveRequestAck = if (config.isPipelined) !STALL else ACK
-
+      private val slackRequestErr = if (config.useERR) ERR else False
       private val masterHasRequest = isCycle && STB
-      private val isRequestStalled = masterHasRequest && !slaveRequestAck
+      private val isRequestStalled = masterHasRequest && !slaveRequestAck && !slackRequestErr
 
       private val wasStalledRequest = past(isRequestStalled) init (False)
       private val invalidRequestDrop = wasStalledRequest && !masterHasRequest
@@ -44,6 +46,7 @@ object Wishbone {
       //    } else True
     }
 
+    lazy val alwaysAck = new Composite(bus, "alwaysAck") { val v = RegInit(True) clearWhen(!bus.ACK) }.v
     /**
      * @return True if and only if the response signals are valid
      */
@@ -54,7 +57,7 @@ object Wishbone {
         ???
       }
       // Slaves are allowed to keep ACK high forever; rule 3.55. We track this and allow exemptions to other rules for it.
-      val alwaysAck = RegInit(True) clearWhen(!ACK)
+      //val alwaysAck = RegInit(True) clearWhen(!ACK)
 
       val masterHasRequest = isCycle && STB
       val ackStateIsValid = ACK === False || masterHasRequest || alwaysAck
@@ -82,5 +85,12 @@ object Wishbone {
     }
 
     override def asIMasterSlave: IMasterSlave = bus
+
+    override def selfClassTag: ClassTag[WishboneFormalExt] = classTag[WishboneFormalExt]
+
+    type Self = WishboneFormalExt
+    override def formalAssertEquivalence(that: Self): Unit = {
+      assert(this.alwaysAck === that.alwaysAck)
+    }
   }
 }

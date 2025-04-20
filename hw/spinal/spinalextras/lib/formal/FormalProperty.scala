@@ -1,7 +1,7 @@
 package spinalextras.lib.formal
 
 import spinal.core.internals.{AssertStatement, AssertStatementKind}
-import spinal.core.{Bool, ImplicitArea, Nameable, ScopeProperty, True, assert}
+import spinal.core.{Bool, Data, ImplicitArea, Nameable, ScopeProperty, True, assert}
 import spinal.idslplugin.Location
 
 import scala.collection.mutable
@@ -94,21 +94,22 @@ object FormalProperty {
  */
 class FormalProperties(val self : Nameable = null, val postfix : String = "formalProperties") extends ImplicitArea[Seq[FormalProperty]] {
 
-  if(self != null) {
+  val prefix = if(self != null) {
     if (postfix == null) {
       setCompositeName(self, weak = true)
     } else {
       setCompositeName(self, postfix, weak = true)
     }
-  }
+    Seq(self.toString())
+  } else Seq()
 
   lazy val formalProperties = new mutable.ArrayBuffer[FormalProperty]()
 
   def addFormalProperty(cond: Bool, msg: String)(implicit loc: Location): Unit =
-    formalProperties += new FormalProperty(cond, Seq(msg))(loc)
+    formalProperties += new FormalProperty(cond, prefix ++ Seq(msg))(loc)
 
   def addFormalProperty(cond: Bool, msg: Seq[Any] = Seq())(implicit loc: Location): Unit =
-    formalProperties += new FormalProperty(cond, msg)(loc)
+    formalProperties += new FormalProperty(cond, prefix ++ msg)(loc)
 
   def addFormalProperties(properties: Seq[FormalProperty]): Unit =
     formalProperties ++= properties

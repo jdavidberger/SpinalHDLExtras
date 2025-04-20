@@ -16,6 +16,9 @@ import spinalextras.lib.formal._
 import spinalextras.lib.formal.fillins.Wishbone._
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal._
 
+import scala.collection.mutable
+import scala.reflect.{ClassTag, classTag}
+
 case class PipelinedMemoryBusMultiBus(bus : PipelinedMemoryBus,
                                       pendingMax : Int = 3,
                                       pendingRspMax : Int = 1, rspRouteQueue : Boolean = false, transactionLock : Boolean = true) extends MultiBusInterface {
@@ -96,6 +99,30 @@ package object bus {
     override def isValidConsumer: Bool = DSimpleBusInterfaceExtImpl(bus).isConsumerValid(bus)
   }
 
+  val dbusSimpleContracts = new mutable.WeakHashMap[DBusSimpleBus, DBusSimpleContract]()
+
+  class DBusSimpleContract(bus : DBusSimpleBus) extends FormalProperties(bus) {
+    import bus._
+
+    val outstandingReads = Reg(SInt(32 bits)) init(0)
+
+    val toAdd = Mux(cmd.fire, U(1), U(0))
+    outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.ready.asUInt.intoSInt).resized
+
+    addFormalProperty(outstandingReads > 0 || !rsp.ready)
+    addFormalProperties(cmd.formalIsConsumerValid())
+    addFormalProperty(outstandingReads >= 0, "XIP outstanding reads should be above 0")
+  }
+
+  class DBusSimpleFormal(val bus : DBusSimpleBus) extends FormalMasterSlave {
+    def contract = dbusSimpleContracts.getOrElseUpdate(bus, new DBusSimpleContract(bus))
+    override def asIMasterSlave = bus
+    override def formalIsProducerValid(): Seq[FormalProperty] = bus.cmd.formalIsProducerValid()
+    override def formalIsConsumerValid(): Seq[FormalProperty] = contract
+  }
+  fillins.AddHandler { case bus: DBusSimpleBus => new DBusSimpleFormal(bus) }
+
+
   implicit class BMBBusExt(val bus: Bmb) extends MultiBusInterface {
     override def address_width = bus.p.access.addressWidth
     override def create_decoder(mappings: Seq[AddressMapping]): Seq[BMBBusExt]   = new Composite(bus) {
@@ -118,20 +145,42 @@ package object bus {
 
   def xipParam(bus: XipBus) = BmbParameter(24, 8, 1, 1, 2)
 
-  class XipBusFormal(p : XipBusParameters) extends XipBus(p) with FormalMasterSlave {
+  val xipContracts = new mutable.WeakHashMap[XipBus, XipBusContract]()
+
+  class XipBusContract(bus : XipBus) extends FormalProperties(bus) {
+    import bus._
+
+    val outstandingReads = Reg(SInt(32 bits)) init(0)
+
+    val toAdd = Mux(cmd.fire, cmd.length + 1, U(0))
+    outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.fire.asUInt.intoSInt).resized
+
+    addFormalProperty(outstandingReads > 0 || !rsp.fire)
+    addFormalProperties(rsp.formalIsProducerValid())
+    addFormalProperties(cmd.formalIsConsumerValid())
+    addFormalProperty(outstandingReads >= 0, "XIP outstanding reads should be above 0")
+  }
+
+  class XipBusFormal(bus : XipBus) extends FormalMasterSlave with FormalDataWithEquivalnce[XipBusFormal] {
     override type Self = XipBusFormal
 
-    override def formalIsConsumerValid() = {
-      val validStreams = rsp.formalIsProducerValid() ++ cmd.formalIsConsumerValid()
-      val outstandingReads = Reg(SInt(32 bits)) init(0)
-      val toAdd = Mux(cmd.fire, cmd.length + 1, U(0))
-      outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.fire.asSInt).resized
+    override def clone(): Bundle = new XipBus(bus.p)
 
-      validStreams ++ FormalProperty.toFormalProperties(outstandingReads >= 0)
+    def contract = xipContracts.getOrElseUpdate(bus, new XipBusContract(bus))
+
+    override def formalIsConsumerValid(): Seq[FormalProperty] = contract
+
+    override def formalIsProducerValid(): Seq[FormalProperty] = bus.cmd.formalIsProducerValid() ++ bus.rsp.formalIsConsumerValid()
+
+    override def asIMasterSlave: XipBus = bus
+
+    override def selfClassTag: ClassTag[XipBusFormal] = classTag[XipBusFormal]
+
+    def formalAssertEquivalence(that: XipBusFormal): Unit = {
+      ???
     }
-
-    override def formalIsProducerValid() = cmd.formalIsProducerValid() ++ rsp.formalIsConsumerValid()
   }
+  fillins.AddHandler { case bus: XipBus => new XipBusFormal(bus) }
 
   implicit class XipBusExt(val bus: XipBus) extends MultiBusInterface {
     override def toString = bus.toString()
@@ -196,7 +245,7 @@ package object bus {
     }).toFlow >> pmb.rsp
   }}
 
-  MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: XipBusExt) => new Composite(m.bus, "to_xip") {
+  MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: XipBusExt) => new Composite(m.bus, "to_xip") with HasFormalProperties {
     m.bus.cmd.map(c => {
       val cmd = cloneOf(s.bus.cmd.payload)
       cmd.address := c.address.resized//(c.address << log2Up(m.bus.config.dataWidth / 8)).resized
@@ -212,6 +261,17 @@ package object bus {
       rsp.data := r.fragment
       rsp
     }).toFlow >> m.bus.rsp
+
+    /**
+     * @return The formal properties which should all be true if the formalInputProperties are true too. These are the main
+     *         assertions we are concerned with defining and verifying in formal testing
+     *
+     *         For complicated properties, consider using the helper class `FormalProperties`
+     */
+    override protected def formalProperties(): Seq[FormalProperty] = {
+      FormalProperty.toFormalProperties(PipelinedMemoryBusFormalExt(m.bus).contract.outstandingReads.value.asSInt ===
+        new XipBusFormal(s.bus).contract.outstandingReads)
+    }
   }}
 
 
@@ -268,16 +328,20 @@ package object bus {
   }}
 
 
-  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: WishboneMultiBusInterface) => new Composite(m.bus, "dbus_to_wb") {
+  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: WishboneMultiBusInterface) => new Composite(m.bus, "dbus_to_wb") with HasFormalProperties {
     val dbus_as_wb = m.bus.toWishbone()
     dbus_as_wb.connectToGranularity(s.bus, allowAddressResize = true, allowDataResize = true)
     if(dbus_as_wb.ERR != null && s.bus.ERR == null) {
       dbus_as_wb.ERR := False
     }
+
+    override protected def formalProperties(): Seq[FormalProperty] = new DBusSimpleFormal(m.bus).contract.outstandingReads === 0
   }}
 
-  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: PipelinedMemoryBusMultiBus) => new Composite(m.bus, "dbus_to_pmb") {
+  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: PipelinedMemoryBusMultiBus) => new Composite(m.bus, "dbus_to_pmb") with HasFormalProperties {
     m.bus.toPipelinedMemoryBus() >> s.bus
     m.bus.rsp.error := False
+
+    override protected def formalProperties(): Seq[FormalProperty] = new DBusSimpleFormal(m.bus).contract.outstandingReads === s.bus.contract.outstandingReads.value.intoSInt
   }}
 }

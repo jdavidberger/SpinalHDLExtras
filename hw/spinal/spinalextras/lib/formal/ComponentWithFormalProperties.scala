@@ -21,7 +21,7 @@ object ComponentWithFormalProperties {
         else if (io.asIMasterSlave.isSlaveInterface) addFormalProperties(io.formalIsProducerValid())
         else if (io.underlyingData.isInput) addFormalProperties(io.formalIsStateValid())
       case io: FormalData => if (io.underlyingData.isInput) addFormalProperties(io.formalIsStateValid())
-      case _ => {}
+      case io: Any => {}
     })
   }
 

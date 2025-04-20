@@ -3,13 +3,16 @@ package spinalextras.lib.misc
 import spinal.core._
 import spinal.core.formal.past
 import spinal.lib._
-import spinalextras.lib.formal.{FormalMasterSlave, FormalProperty}
+import spinalextras.lib.formal.{FormalDataWithEquivalnce, FormalMasterSlave, FormalProperty}
 
 import scala.collection.mutable
+import scala.reflect.{ClassTag, classTag}
 
-case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle with IMasterSlave with FormalMasterSlave {
+case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle with IMasterSlave with FormalMasterSlave with FormalDataWithEquivalnce[AsyncStream[T]] {
   val async_valid, async_ready   = Bool()
   val flow = Flow(payloadType())
+
+  override def selfClassTag: ClassTag[AsyncStream[T]] = classTag[AsyncStream[T]]
 
   override def asMaster(): Unit = {
     out(async_valid)
