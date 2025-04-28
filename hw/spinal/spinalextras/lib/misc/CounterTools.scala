@@ -5,9 +5,8 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.regif.SymbolName
-
 import spinalextras.lib.Config
-import spinalextras.lib.formal.{FormalProperty, HasFormalProperties}
+import spinalextras.lib.formal.{FormalProperties, FormalProperty, HasFormalProperties}
 import spinalextras.lib.misc.StreamTools.gcd
 
 import scala.language.postfixOps
@@ -67,16 +66,15 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
    *
    *         For complicated properties, consider using the helper class `FormalProperties`
    */
-  override protected def formalProperties(): Seq[FormalProperty] = {
-//    assertOrAssume(value <= range, f"Usage overflow ${value} ${this}, max ${range}")
-//    val inc_dec_gcd = gcd(incBy, decBy)
-//    assertOrAssume((value % inc_dec_gcd) === 0)
-//
-//    val absDelta = delta.abs
-//    when(delta < 0) {
-//      assertOrAssume(value >= absDelta)
-//    }
-    Seq()
+  override protected def formalProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    addFormalProperty(value <= range, f"Usage overflow ${value} ${this}, max ${range}")
+    val inc_dec_gcd = gcd(incBy, decBy)
+    addFormalProperty((value % inc_dec_gcd) === 0)
+
+    val absDelta = delta.abs
+    when(delta < 0) {
+      addFormalProperty(value >= absDelta)
+    }
   }
 }
 

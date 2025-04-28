@@ -6,6 +6,7 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib.Counter
 import spinalextras.lib.{Memories, MemoryRequirement}
 import spinal.core.formal._
+import spinalextras.lib.formal.HasFormalProperties
 import spinalextras.lib.testing.FormalTestSuite
 
 import java.io.IOException
@@ -25,6 +26,8 @@ class MemoriesFormal[T <: Data](reqs : MemoryRequirement[T], technologyKind: Mem
   dut.io.readWritePorts.foreach(p => {
     anyseq(p.cmd)
   })
+
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 

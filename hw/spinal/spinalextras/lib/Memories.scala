@@ -9,6 +9,7 @@ import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, Pipelin
 import spinalextras.lib.HardwareMemory._
 import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, PDPSC16K_Mem, PDPSC512K_Mem}
 import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.misc.ComponentWithKnownLatency
 import spinalextras.lib.testing.test_funcs
@@ -109,7 +110,7 @@ class MemoryRequirementBits(dataWidth : Int, num_elements : BigInt, numReadWrite
     s"${dataWidth}bits_${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
 }
 
-abstract class HardwareMemory[T <: Data]() extends Component {
+abstract class HardwareMemory[T <: Data]() extends ComponentWithFormalProperties {
   def requirements : MemoryRequirement[T] = ???
   lazy val latency : Int = 1
   lazy val cmd_latency : Int = 0
@@ -412,11 +413,6 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
       mem_port.mask := port.cmd.mask
     mem_port.address := port.cmd.address
 
-    val invalid_address = port.cmd.address.resize(log2Up(num_elements + 1) bits) < num_elements
-    when(~invalid_address) {
-      assert(~invalid_address, "address overrun")
-      report(Seq(s"Invalid access in range 0x${num_elements.toString(16)} ", port.cmd.address.resize(log2Up(num_elements + 1) bits)))
-    }
     mem_port.enable := port.cmd.valid
     mem_port.write := port.cmd.write
     mem_port.wdata.assignFromBits(port.cmd.data)
@@ -449,6 +445,26 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
       mask = port.cmd.mask
     )
   })
+
+  override protected def formalInputProperties() = new FormalProperties(this) {
+    io.readWritePorts.zipWithIndex.foreach(port_idx => new Area {
+      val (port, idx) = port_idx
+
+      val valid_address = port.cmd.address.resize(log2Up(num_elements + 1) bits) < num_elements
+      when(port.cmd.valid) {
+        addFormalProperty(valid_address, Seq(s"Validate access ${idx} in range 0x${num_elements.toString(16)} ", port.cmd.address.resize(log2Up(num_elements + 1) bits)))
+      }
+    })
+
+
+    io.readPorts.zipWithIndex.foreach(port_idx => new Area {
+      val (port, idx) = port_idx
+      val valid_address = port.cmd.payload.resize(log2Up(num_elements + 1) bits) < num_elements
+      when(port.cmd.valid) {
+        addFormalProperty(valid_address, Seq(s"Validate access ${idx} in range 0x${num_elements.toString(16)} ", port.cmd.payload.resize(log2Up(num_elements + 1) bits)))
+      }
+    })
+  }
 }
 //
 //case class lram(numReadWritePorts : Int, numReadPorts : Int, numWritePorts : Int) extends

@@ -1,7 +1,7 @@
 package spinalextras.lib.formal
 
-import spinal.core.internals.{AssertStatement, AssertStatementKind}
-import spinal.core.{Bool, Data, ImplicitArea, Nameable, ScopeProperty, True, assert}
+import spinal.core.internals.{AssertStatement, AssertStatementKind, ScopeStatement, WhenStatement}
+import spinal.core.{Bool, Component, Data, DslScopeStack, ImplicitArea, Nameable, ScopeProperty, True, assert, when}
 import spinal.idslplugin.Location
 
 import scala.collection.mutable
@@ -16,6 +16,7 @@ import scala.language.implicitConversions
  * @param loc  The location to reference for the property. Typically emitted / captured in the case of assertion failure.
  */
 class FormalProperty(cond: Bool, val msg: Seq[Any])(implicit val loc: Location) {
+  msg.foreach(x => assert(x != null))
   // Create and associate an assert with this property. Note that the kind -- ASSERT or ASSUME -- can be modified later.
   // This prevents us from creating a bunch of asserts unintentionally.
   //lazy val assertStatement = assert(condition, msg)(loc = loc)
@@ -28,20 +29,52 @@ class FormalProperty(cond: Bool, val msg: Seq[Any])(implicit val loc: Location) 
     }
   }
 
+  def gatherScope(dslScopeStack: ScopeStatement = DslScopeStack.get): Seq[Bool] = {
+    if(dslScopeStack.parentStatement == null) { return Seq() }
+    val thisPredicate = dslScopeStack.parentStatement match {
+      case t : WhenStatement => {
+        if(dslScopeStack == t.whenTrue) {
+          Seq(t.cond.asInstanceOf[Bool])
+        } else {
+          Seq(!t.cond.asInstanceOf[Bool])
+        }
+      }
+      //case _ => Seq()
+    }
+
+    gatherScope(dslScopeStack.parentStatement.parentScope) ++ thisPredicate
+  }
+
   // If the FormalProperty has a scope, it's important we capture and incorporate it into the various tests. This allows
   // the correct behavior when a formal property is created in a `when` scope.
   private val _context = ScopeProperty.capture()
+  private val _component = Component.current
   val condition = {
-    val c = Bool().allowOverride()
-    val oldContext = ScopeProperty.captureNoClone()
-    _context.restoreCloned()
-    c := cond
-    oldContext.restore()
+    //val restoreComponent = Component.push(_component)
+    val c = Bool()
+
+    //val oldContext = ScopeProperty.captureNoClone()
+    //_context.restoreCloned()
+    //_context.restore()
+    val scope = gatherScope()
+    if(scope.isEmpty) {
+      c := cond
+    } else {
+      c := True
+      when(scope.reduce(_ & _)){
+        c := cond
+      }
+    }
+
+    //oldContext.restore()
     def sanitize(seq: Seq[Any]) = {
       seq.map(_.toString).foldLeft("")(_+_)
         .replaceAll("[^A-Za-z0-9]", "_")
+        .replaceAll("_+", "_")
     }
     c.setWeakName(sanitize(msg))
+    //restoreComponent.restore()
+
     c
   }
 }
@@ -101,7 +134,7 @@ class FormalProperties(val self : Nameable = null, val postfix : String = "forma
     } else {
       setCompositeName(self, postfix, weak = true)
     }
-    Seq(self.toString())
+    Seq(self.toString()).filter(_ != null)
   } else Seq()
 
   lazy val formalProperties = new mutable.ArrayBuffer[FormalProperty]()

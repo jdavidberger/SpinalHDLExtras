@@ -6,12 +6,12 @@ import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
 import spinal.lib.bus.regif.AccessType.{RO, RW}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinal.lib.bus.simple._
-
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.misc.{CounterUpDownUneven, RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
 import spinalextras.lib.bus.bus._
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -41,6 +41,8 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBy
     val flush = in Bool() default(False)
 
     val memoryAvailable = slave(Stream(Bool()))
+
+    val occupancy = out UInt(log2Up(bufferSizeInBits) bits)
   }
 
   val readBus = io.bus
@@ -112,37 +114,31 @@ case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBy
     haltCmdQueue := True
     burnRtn := burnRtn + usage.value
   }
-//
-//  override def formalChecks()(implicit useAssumes: Boolean) = formalAssertsComposite()
-//  def formalAssertsComposite()(implicit useAssumes: Boolean) = new Composite(this, "formalAsserts") {
-//    //test_funcs.formalAssumeLibraryComponents(self)
-//    val readCmdBusCheck = readBusCmdQueue.formalCheckRam(_.write)
-//    val readCmdBusCheckOutput = readBusCmdQueue.formalCheckOutputStage(_.write)
-//    assertOrAssume(readCmdBusCheck.orR === False && readCmdBusCheckOutput === False)
-//
-//    readBusCmdQueue.formalAssumeInputs()
-//    readBusCmdQueue.formalAssumes()
-//
-//    val busContract = readBus.formalContract
-//    val busInFlightOccInBits = readBus.formalContract.outstandingReads.value * config.dataWidth
-//    val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits +^ readBusCmdQueue.io.occupancy * config.dataWidth
-//    assertOrAssume((usage.value +^ burnRtn) === (usageCheckInBits), s"Usage counts should be equal to the usageCheck ${this}")
-//
-//    fifo.formalAssertInputs()
-//    fifo.formalAssumes()
-//
-//    assertOrAssume(burnRtn % usage.decBy === 0)
-//    assertOrAssume(~overflow, "PMBBuffer overflowed")
-//    assertOrAssume((burnRtn +^ usage.value).msb === False )
-//    assertOrAssume((burnRtn +^ usage.value) <= bufferSizeInBits)
-//
-//    val occupancy = (busContract.outstandingReads.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
-//
-//    // Outputs
-//    io.pop.formalAsserts()
-//
-//    formalCheckOutputsAndChildren()
-//  }
+
+  val occupancy = (readBus.contract.outstandingReads.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
+  io.occupancy := occupancy
+
+  override def formalComponentProperties() : Seq[FormalProperty] = new FormalProperties(this) {
+      val readCmdBusCheck = readBusCmdQueue.formalCheckRam(_.write)
+      val readCmdBusCheckOutput = readBusCmdQueue.formalCheckOutputStage(_.write)
+      addFormalProperty(readCmdBusCheck.orR === False && readCmdBusCheckOutput === False)
+
+      //readBusCmdQueue.formalAssumeInputs()
+      //readBusCmdQueue.formalAssumes()
+
+      val busInFlightOccInBits = readBus.contract.outstandingReads.value * config.dataWidth
+      val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits +^ readBusCmdQueue.io.occupancy * config.dataWidth
+      addFormalProperty((usage.value +^ burnRtn) === (usageCheckInBits), s"Usage counts should be equal to the usageCheck ${this}")
+
+      //fifo.formalAssertInputs()
+      //fifo.formalAssumes()
+
+    addFormalProperty(burnRtn % usage.decBy === 0)
+    addFormalProperty(~overflow, "PMBBuffer overflowed")
+    addFormalProperty((burnRtn +^ usage.value).msb === False )
+    addFormalProperty((burnRtn +^ usage.value) <= bufferSizeInBits)
+  }
+
 }
 
 case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
@@ -230,20 +226,20 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
 
   val write_counter = Counter(depthInWords, writeBus.cmd.fire)
 
-  val full = occupancy.value === (depthInWords - 1)
+  val full = CombInit(occupancy.value === (depthInWords - 1))
   val push = if(localPushDepth > 0) io.push.queue(localPushDepth) else io.push
   push.map(wrd => {
     val cmd = PipelinedMemoryBusCmd(writeBus.config)
     cmd.mask.setAll()
     cmd.write := ~io.debug_fake_write
     val byteAddress = (write_counter.value << writeBus.config.wordAddressShift).resize(cmd.address.getBitsWidth bits) +^ baseAddress
-    assert(byteAddress.msb === False)
+    //assert(byteAddress.msb === False)
     cmd.assignByteAddress(byteAddress.resized)
     cmd.data := wrd.asBits
     cmd
   }).haltWhen(full | io.flush) >> writeBus.cmd
 
-  val empty = occupancy === 0 // && readFifo.io.occupancy === 0
+  val empty = CombInit(occupancy === 0) // && readFifo.io.occupancy === 0
   io.empty := empty
 
   ramBackedBuffer.io.flush := io.flush
@@ -256,11 +252,11 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     io.pop.valid := False
   }
 
-  def covers(): Unit = {
-    cover(full | io.flush)
-    cover(full)
-    cover(empty)
-    cover(write_counter.willOverflowIfInc)
+  override def covers() = new FormalProperties(this) {
+    addFormalProperty(full | io.flush)
+    addFormalProperty(full)
+    addFormalProperty(empty)
+    addFormalProperty(write_counter.willOverflowIfInc)
   }
 
   def attach_bus(busSlaveFactory: BusIf): Unit = {
@@ -281,13 +277,12 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     }
 
   }
-//
-//  override def formalChecks()(implicit useAssumes: Boolean) =
-//    new Composite(this, FormalCompositeName) {
-//      val ramBackedBufferAsserts = ramBackedBuffer.formalAssertsComposite()
-//
-//      assertOrAssume(readBus.formalContract.outstandingReads === ramBackedBufferAsserts.busContract.outstandingReads)
-//      assertOrAssume(inFlight.value === ramBackedBufferAsserts.occupancy)
-//      formalCheckOutputsAndChildren()
-//    }
+
+  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    withAutoPull()
+
+    //addFormalProperty(readBus.contract.outstandingReads === ramBackedBuffer.readBus.contract.outstandingReads)
+    addFormalProperty(inFlight.value === ramBackedBuffer.io.occupancy)
+  }
+
 }

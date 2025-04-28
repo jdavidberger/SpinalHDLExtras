@@ -5,10 +5,10 @@ import spinal.lib.bus.misc.{DefaultMapping, MaskMapping, SizeMapping}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
-
 import spinalextras.lib.HardwareMemory.{HardwareMemoryReadWriteCmd, HardwareMemoryWriteCmd}
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.memory.MemoryPoolFIFOs.splitReadWrite
 import spinalextras.lib.testing.test_funcs
 import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
@@ -94,8 +94,6 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
       rtn
     }).toFlow <> rw.cmd
 
-    //assert(memBus.formalContract.outstandingReads.value === mem.io.readWritePortsOutstanding(idx))
-
     rw.rsp >> memBus.rsp
   }})
 
@@ -103,5 +101,12 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
 
   def attach_bus(busSlaveFactory: BusIf): Unit = {
     fifos.foreach(_.attach_bus(busSlaveFactory))
+  }
+
+  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    mem.io.readWritePorts.zipWithIndex.foreach({case (rw, idx) => {
+      val memBus = arbitratedBusses(idx)
+      addFormalProperty(memBus.contract.outstandingReads.value === mem.io.readWritePortsOutstanding(idx), s"Match read port outstanding counts ${idx}")
+    }})
   }
 }

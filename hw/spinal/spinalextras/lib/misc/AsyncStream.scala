@@ -207,15 +207,6 @@ case class AsyncStream[T <: Data](val payloadType :  HardType[T]) extends Bundle
   override def formalAssertEquivalence(that: AsyncStream[T]): Unit = {
     assert(formalContract.outstandingFlows === that.formalContract.outstandingFlows)
   }
-//
-//  override def formalIsProducerValid() : Bool = formalIsProducerValid(true)
-//
-//  override def formalIsConsumerValid() : Bool = formalContract.isConsumerValid
-//
-//  def formalAsserts()(implicit useAssumes : Boolean = false): Unit = {
-//    assertOrAssume(formalIsProducerValid())
-//    assertOrAssume(formalIsConsumerValid())
-//  }
 
   /**
    * @return True if and only if the driving signals are valid

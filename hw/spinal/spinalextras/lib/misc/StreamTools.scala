@@ -3,9 +3,8 @@ package spinalextras.lib.misc
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
-
 import spinal.lib.fsm.{EntryPoint, State, StateMachine}
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 
 import scala.collection.mutable
@@ -86,73 +85,9 @@ class AdaptWidthByState[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardT
 
 }
 
-class StreamWidthAdapterWithOccupancy[T <: Data,T2 <: Data](inputDataType : HardType[T], outputDataType : HardType[T2], endianness: Endianness = LITTLE, padding : Boolean = false) extends ComponentWithFormalProperties {
-  val inputWidth = inputDataType.getBitsWidth
-  val outputWidth = outputDataType.getBitsWidth
 
-  val factor = {
-    if(inputWidth == outputWidth) {
-      0
-    } else if(inputWidth > outputWidth) {
-      (inputWidth + outputWidth - 1) / outputWidth
-    } else {
-      (outputWidth + inputWidth - 1) / inputWidth
-    }
-  }
 
-  val io = new Bundle {
-    val input = slave(Stream(inputDataType))
-    val output = master(Stream(outputDataType))
 
-    val occupancy = out(UInt(log2Up(factor) bits))
-  }
-  val input = io.input
-  val output = io.output
-
-  if(inputWidth == outputWidth){
-    output.arbitrationFrom(input)
-    output.payload.assignFromBits(input.payload.asBits)
-    io.occupancy := 0
-
-  } else if(inputWidth > outputWidth){
-    require(inputWidth % outputWidth == 0 || padding)
-    val factor = (inputWidth + outputWidth - 1) / outputWidth
-    val paddedInputWidth = factor * outputWidth
-    val counter = Counter(factor,inc = output.fire)
-    io.occupancy := counter.value
-    output.valid := input.valid
-    endianness match {
-      case `LITTLE` => output.payload.assignFromBits(input.payload.asBits.resize(paddedInputWidth).subdivideIn(factor slices).read(counter))
-      case `BIG`    => output.payload.assignFromBits(input.payload.asBits.resize(paddedInputWidth).subdivideIn(factor slices).reverse.read(counter))
-    }
-    input.ready := output.ready && counter.willOverflowIfInc
-  } else{
-    require(outputWidth % inputWidth == 0 || padding)
-    val factor  = (outputWidth + inputWidth - 1) / inputWidth
-    val paddedOutputWidth = factor * inputWidth
-    val counter = Counter(factor,inc = input.fire)
-    io.occupancy := counter.value
-    val buffer  = Reg(Bits(paddedOutputWidth - inputWidth bits))
-    when(input.fire){
-      buffer := input.payload ## (buffer >> inputWidth)
-    }
-    output.valid := input.valid && counter.willOverflowIfInc
-    endianness match {
-      case `LITTLE` => output.payload.assignFromBits((input.payload ## buffer).resize(outputWidth))
-      case `BIG`    => output.payload.assignFromBits((input.payload ## buffer).subdivideIn(factor slices).reverse.asBits().resize(outputWidth))
-    }
-    input.ready := !(!output.ready && counter.willOverflowIfInc)
-  }
-}
-
-object StreamWidthAdapterWithOccupancy {
-  def apply[T <: Data, T2 <: Data](input: Stream[T], output: Stream[T2], endianness: Endianness = LITTLE, padding: Boolean = false): StreamWidthAdapterWithOccupancy[T, T2] = {
-    val dut = new StreamWidthAdapterWithOccupancy(input.payload, output.payload, endianness, padding = padding)
-    dut.io.input <> input
-    dut.io.output <> output
-    dut
-  }
-}
 
 class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T], endianness: Endianness = LITTLE) extends ComponentWithFormalProperties {
 
@@ -207,23 +142,32 @@ class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T],
   }
 
   val latency = if(logic == null) 1 else logic.latency
-//
-//  override protected def formalChecks()(implicit useAssumes: Boolean): Unit = new Composite(this, FormalCompositeName) {
-//    val counter = formalCounter
-//    counter.formalAssertOrAssume()
-//
-//    if(logic != null) new Composite(this, "logic") {
-//      val inBitsOcc = logic.swaIn.io.occupancy * dataTypeIn.getBitsWidth
-//      val outBitsOcc = logic.swaOut.io.occupancy * dataTypeOut.getBitsWidth
-//      val midBitsOcc = logic.streamMid_stage.valid.asUInt * logic.streamMid.payload.getWidth
-//      val calcOcc = inBitsOcc +^ midBitsOcc -^ outBitsOcc
-//      assertOrAssume(midBitsOcc >= outBitsOcc)
-//      assertOrAssume(calcOcc === counter.value)
-//    } else {
-//      assertOrAssume(0 === counter.value)
-//    }
-//    formalCheckOutputsAndChildren()
-//  }
+
+  override def covers() = new FormalProperties(this) {
+    addFormalProperty(io.in.fire)
+    addFormalProperty(io.output.fire)
+    addFormalProperty(io.isEmpty)
+
+    if(logic != null) {
+      addFormalProperty(io.occupancy(0))
+    }
+  }
+
+  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    val counter = formalCounter
+    if(logic != null) new Composite(this, "logic") {
+      val inBitsOcc = logic.swaIn.io.occupancy * dataTypeIn.getBitsWidth
+      val midBitsOcc = logic.streamMid_stage.valid.asUInt * logic.streamMid.payload.getWidth
+      val outBitsOcc = logic.swaOut.io.processed * dataTypeOut.getBitsWidth
+
+      val calcOcc = inBitsOcc +^ midBitsOcc -^ outBitsOcc
+      addFormalProperty(midBitsOcc >= outBitsOcc)
+      addFormalProperty(calcOcc === counter.value, "Counter value should match calculated occ")
+    } else {
+      addFormalProperty(0 === counter.value)
+    }
+  }
+
 }
 
 class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T]) extends ComponentWithFormalProperties {

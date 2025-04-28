@@ -36,7 +36,7 @@ object PipelinedMemoryBusFormal {
      * @return True if and only if the driving signals are valid
      */
     override def formalIsProducerValid(): Seq[FormalProperty] = {
-      StreamFormal.formalIsProducerValid(bus.cmd, equivalence_check = pmb_cmd_equivalence)
+      StreamFormal.formalIsProducerValid(bus.cmd)//, equivalence_check = pmb_cmd_equivalence)
     }
 
     def contract = contracts.getOrElseUpdate(bus, new PipelinedMemoryBusContract(bus))
@@ -51,5 +51,6 @@ object PipelinedMemoryBusFormal {
       assert(this.contract.outstandingReads === that.contract.outstandingReads)
     }
 
+    EquivalenceRegistry.AddEquivalenceHandler { case (a : PipelinedMemoryBusCmd, b : PipelinedMemoryBusCmd) => pmb_cmd_equivalence(a, b) }
   }
 }

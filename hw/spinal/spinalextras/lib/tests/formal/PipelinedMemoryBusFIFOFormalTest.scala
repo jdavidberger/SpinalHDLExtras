@@ -6,9 +6,9 @@ import spinal.core.formal._
 import spinal.lib._
 import spinal.lib.bus.misc.{AllMapping, DefaultMapping, SizeMapping}
 import spinal.lib.bus.simple.{PipelinedMemoryBusArbiter, PipelinedMemoryBusConfig, PipelinedMemoryBusDecoder}
-
 import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.bus.simple.SimpleMemoryProvider
+import spinalextras.lib.formal.HasFormalProperties
 import spinalextras.lib.memory.PipelinedMemoryBusFIFO
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
@@ -26,7 +26,7 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
     localPushDepth, localPopDepth))
   assumeInitial(ClockDomain.current.isResetActive)
 
-  dut.covers()
+  dut.covers().foreach(x => cover(x.condition))
 
   if(check_flush) {
     anyseq(dut.io.flush)
@@ -63,12 +63,16 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
   //anyconst(dut.io.debug_fake_write)
   dut.io.debug_fake_write := False
 
+  cover(dut.io.push.fire)
+  cover(dut.io.push.valid)
+  cover(busSlave.rsp.valid)
+  cover(busSlave.cmd.fire)
+  cover(busSlave.cmd.valid)
   addPrePopTask(() => {
-    //HasFormalAsserts.formalAssertsChildren(this, assumesInputValid = true, useAssumes = false)
     dut.anyseq_inputs()
-    //HasFormalAsserts.printFormalAssertsReport()
   })
 
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 
@@ -78,9 +82,10 @@ class PipelinedMemoryBusFIFOFormalTest extends AnyFunSuite with FormalTestSuite 
 
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def defaultDepth() = 10
+  override def defaultDepth() = 5
 
-  override def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(20)
+  //override def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(20)
+  override def CoverConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withCover(10).withDebug
 
   override def generateRtlBMC() = Seq(("check_response", () => create_formal(true)))
   override def generateRtlCover() = Seq(("check_response", () => create_formal(false)))

@@ -1,7 +1,8 @@
 package spinalextras.lib.formal
 
 import spinal.core.internals.{AssertStatement, AssertStatementKind}
-import spinal.core.{Bool, Component, SpinalTag, True, when}
+import spinal.core.{Bool, Component, DslScopeStack, ScopeProperty, SpinalTag, True, in, when}
+import spinalextras.lib.formal.ComponentWithFormalProperties.DefaultProperties
 
 import scala.collection.mutable
 
@@ -39,6 +40,9 @@ trait HasFormalProperties { self =>
     formalSetMinimumAssertionKind(AssertStatementKind.ASSERT, AssertStatementKind.ASSUME)
   }
 
+  val parentComponent = Component.current
+
+  def covers(): Seq[FormalProperty] = Seq()
   /**
    * Set the assertion kinds used for both body properties and input properties. Notably, this function will latch any
    * assertion level that was set to ASSUME even if called again with ASSESRTION. This follows system verilog logic
@@ -79,6 +83,7 @@ trait HasFormalProperties { self =>
   protected def formalProperties() : Seq[FormalProperty]
 
   if (!this.isInstanceOf[Component]) {
+    println(s"Adding ${this} to component ${Component.current}@${Component.current.getInstanceCounter}")
     Component.current.addTag(new HasFormalAssertsTag(this))
   }
 
@@ -96,18 +101,12 @@ trait HasFormalProperties { self =>
   def CurrentAssertionKind_=(kind: AssertStatementKind): Unit ={
     val actualKind = if(HasFormalProperties.alwaysAssert) AssertStatementKind.ASSERT else kind
     _CurrentAssertionKind = Some(actualKind)
-//    if(actualKind == AssertStatementKind.ASSUME) {
-//      formalAssertStatements.foreach(assert => spinal.core.assume(assert.cond.asInstanceOf[Bool])(loc = assert.loc))
-//    }
   }
 
   private var _CurrentInputsAssertionKind : Option[AssertStatementKind] = None
   def CurrentInputsAssertionKind = _CurrentInputsAssertionKind
   def CurrentInputsAssertionKind_=(kind: AssertStatementKind): Unit ={
     _CurrentInputsAssertionKind = Some(kind)
-//    if(kind == AssertStatementKind.ASSUME) {
-//      formalAssertInputStatements.foreach(assert => spinal.core.assume(assert.cond.asInstanceOf[Bool])(loc = assert.loc))
-//    }
   }
 
   final lazy val formalInputStateIsValid: Bool = {
@@ -127,22 +126,20 @@ trait HasFormalProperties { self =>
    * Gather all the formal properties and turn them into assert statements. These statements can be upgraded to assumptions
    * later if required.
    */
-//  private lazy val formalAssertStatements = {
-//    var asserts : Seq[AssertStatement] = null
-//
-//    when(formalInputStateIsValid) {
-//      asserts = formalPropertiesEval.map(_.assertStatement)
-//    }
-//    asserts
-//  }
-//
-//  private lazy val formalAssertInputStatements = {
-//    formalInputPropertiesEval.map(_.assertStatement)
-//  }
 
   // We use private lazy vals here to only call formalProperties / formalInputProperties once.
   private lazy val formalPropertiesEval = formalProperties()
   private lazy val formalInputPropertiesEval = formalInputProperties()
+
+  def formalAssumeChildrensInputs(): Unit = {
+    parentComponent.withAutoPull()
+
+    when(formalInputStateIsValid) {
+      formalChildren().foreach(child => {
+        child.formalInputProperties().foreach(prop => spinal.core.assume(prop.condition))
+      })
+    }
+  }
 
   Component.toplevel.addPrePopTask(() => {
     // For assumptions, it is a hard requirement that we predicate the assumption on the inputs being valid. It is also
@@ -154,8 +151,12 @@ trait HasFormalProperties { self =>
       }
     })
 
+    if(CurrentAssertionKind.contains(AssertStatementKind.ASSUME)) {
+      formalAssumeChildrensInputs()
+    }
+
     CurrentInputsAssertionKind.foreach(kind => {
-      formalInputPropertiesEval.foreach(_(kind))
+        formalInputPropertiesEval.foreach(_(kind))
     })
   })
 }
@@ -202,6 +203,23 @@ object HasFormalProperties {
     def formalAssertDesc(c : HasFormalProperties): String = {
       s"Inputs: ${toString(c.CurrentInputsAssertionKind)} (${c.formalInputProperties().size}) Body: ${toString(c.CurrentAssertionKind)} Properties: ${c.formalProperties().size}"
     }
+
+    def stringify(msg : Seq[Any]): String = {
+      msg.foldLeft("")(_+ " " + _)
+    }
+
+    def printBody(c : Any, prefix : String): Unit = {
+      c match {
+        case c: HasFormalProperties => {
+          println(s"\t$prefix Inputs: ${toString(c.CurrentInputsAssertionKind)} ")
+          c.formalInputProperties().foreach(c => println(s"\t\t$prefix - ${stringify(c.msg)} (${c.loc.file}.scala:${c.loc.line})"))
+          println(s"\t$prefix Body: ${toString(c.CurrentAssertionKind)} ")
+          c.formalProperties().foreach(c => println(s"\t\t$prefix - ${stringify(c.msg)} (${c.loc.file}.scala:${c.loc.line})"))
+        }
+        case _ => {}
+      }
+    }
+
     def printTree(c : Component, tabs : Int = 0): Unit = {
       val desc =
         c match {
@@ -210,28 +228,24 @@ object HasFormalProperties {
         }
 
       val prefix = "\t" * tabs
-      println(s"$prefix ${c.getClass.getSimpleName} ${c.name} ${desc}")
 
-      def stringify(msg : Seq[Any]): String = {
-        msg.foldLeft("")(_+ " " + _)
-      }
-      c match {
-        case c: HasFormalProperties => {
-          println(s"\t$prefix Inputs: ${toString(c.CurrentInputsAssertionKind)} ")
-          c.formalInputProperties().foreach(c => println(s"\t$prefix - ${stringify(c.msg)} (${c.loc.file}.scala:${c.loc.line})"))
-          println(s"\t$prefix Body: ${toString(c.CurrentAssertionKind)} ")
-          c.formalProperties().foreach(c => println(s"\t$prefix - ${stringify(c.msg)} (${c.loc.file}.scala:${c.loc.line})"))
-        }
-        case _ => {}
-      }
+      println(s"$prefix ${c.getClass.getSimpleName} ${c.name} ${desc}")
+      printBody(c, prefix)
 
       c.getTagsOf[HasFormalAssertsTag]().map(_.formalAsserts).foreach(c => {
         println(s"\t$prefix ${c.getClass.getSimpleName} $c ${formalAssertDesc(c)}")
+        printBody(c, f"\t$prefix")
       })
-      c.children.foreach(printTree(_, tabs = tabs + 1))
+
+      if(c.children.nonEmpty) {
+        println(f"\t$prefix Children:")
+        c.children.foreach(printTree(_, tabs = tabs + 2))
+      }
     }
 
-    printTree(Component.toplevel)
+    Component.toplevel.addPrePopTask(() => {
+      printTree(Component.toplevel)
+    })
   }
 
 }

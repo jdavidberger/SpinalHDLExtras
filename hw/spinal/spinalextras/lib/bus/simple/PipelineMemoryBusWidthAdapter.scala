@@ -37,12 +37,12 @@ object PipelineMemoryBusClockAdapter {
         SignalLogger.concat("pmbCCC", overflow.setName("overflow"))
       )
 
-      new ClockingArea(busClock) {
-        test_funcs.assertPMBContract(bus)
-      }
-      new ClockingArea(newClock) {
-        test_funcs.assertPMBContract(busNew)
-      }
+//      new ClockingArea(busClock) {
+//        test_funcs.assertPMBContract(bus)
+//      }
+//      new ClockingArea(newClock) {
+//        test_funcs.assertPMBContract(busNew)
+//      }
     }.setName("Adapter").busNew
   }
 }

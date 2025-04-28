@@ -1,6 +1,6 @@
 package spinalextras.lib.formal
 
-import spinal.core.{BaseType, Bundle, Component, Data, MultiData, SpinalLog, UInt, cloneOf}
+import spinal.core.{BaseType, Bundle, Component, Data, MultiData, SpinalLog, UInt, allowFloating, cloneOf}
 import spinal.lib.IMasterSlave
 
 import scala.annotation.tailrec
@@ -42,8 +42,8 @@ object FormalData {
             outs ++= c_outs
           }
         }
-
-        cloned.assignDontCare()
+        cloned.setWeakName("clonedExemplar")
+        cloned.addTag(allowFloating)
 
         if(typeString.isDefined) {
           input_sets += ((typeString.get, (ins.toSet, outs.toSet)))
@@ -193,7 +193,7 @@ trait FormalDataWithEquivalnce[T <: FormalData] extends FormalData {
       }
     }
 
-    println(s"Looking for single source for ${this.underlyingData}")
+    //println(s"Looking for single source for ${this.underlyingData}")
     val singleSource = getAssignmentBundle(this.underlyingData)
     if(singleSource.nonEmpty) {
       println(s"Associating ${singleSource.get.underlyingData} with ${this.underlyingData}")

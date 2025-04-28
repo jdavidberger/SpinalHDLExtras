@@ -3,8 +3,8 @@ package spinalextras.lib.tests.formal
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.formal.{FormalDut, anyseq}
 import spinal.core._
-
 import spinal.lib.{Counter, StreamFifo}
+import spinalextras.lib.formal.HasFormalProperties
 import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 import spinalextras.lib.memory.MemoryPoolFIFOs
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
@@ -35,10 +35,14 @@ class MemoryPoolFIFOsFormal[T <: Data](config : MemoryPoolFIFOConfig[T]) extends
   dut.io.fifos.foreach(f => {
     anyseq(f.pop.ready)
 
+
     if(check_flush) {
       anyseq(f.flush)
     } else {
       f.flush := False
+
+//      cover(f.push.fire)
+//      cover(f.pop.fire)
     }
 
     anyseq(f.push.valid)
@@ -58,13 +62,13 @@ class MemoryPoolFIFOsFormal[T <: Data](config : MemoryPoolFIFOConfig[T]) extends
     }
   }
   )
-  //HasFormalAsserts.printFormalAssertsReport()
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 class MemoryBackedFIFOsTestFormal extends AnyFunSuite with FormalTestSuite {
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def defaultDepth() = 5
+  override def defaultDepth() = 15
 
   lazy val testConfigs = Seq(
     MemoryPoolFIFOConfig(UInt(8 bits), Seq(10, 50)),

@@ -37,6 +37,7 @@ case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Com
   val dut = FormalDut(f())
   assumeInitial(ClockDomain.current.isResetActive)
 
+  dut.covers().foreach(x => cover(x.condition)(x.loc))
   dut.anyseq_inputs()
   HasFormalProperties.printFormalAssertsReport()
 
