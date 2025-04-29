@@ -22,7 +22,7 @@ package object fillins {
     val rtn = new mutable.HashSet[HasFormalProperties]()
     c.dslBody.walkStatements {
       case d: Data => {
-        val t = findFillin(d.refOwner)
+        val t = findFillin(d.refOwner, null)
         if (t != null && t.isInstanceOf[HasFormalProperties]) {
           rtn += t.asInstanceOf[HasFormalProperties]
         }
@@ -34,7 +34,7 @@ package object fillins {
   }
 
   private var fillinInstances : mutable.WeakHashMap[Any, Any] = mutable.WeakHashMap.empty
-  def findFillin(data : Any): Any = {
+  def findFillin(data : Any, orElse : Any): Any = {
     if (fillinInstances.contains(data)) {
       return fillinInstances(data)
     }
@@ -48,8 +48,10 @@ package object fillins {
       }
     }
 
-    data
+    orElse
   }
+
+  def findFillin(data : Any) : Any = findFillin(data, data)
 
   fillins.AddHandler { case bus: Wishbone => Wishbone.WishboneFormalExt(bus) }
   fillins.AddHandler { case stream: Stream[Data] => StreamFormal.StreamExt(stream) }

@@ -10,6 +10,7 @@ import spinal.lib.bus.regif.BusIf
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder}
 import spinalextras.lib.Config
 import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, PipelinedMemoryBusLogger, SignalLogger}
 import spinalextras.lib.testing.test_funcs
 
@@ -155,7 +156,7 @@ object PipelineMemoryBusWidthAdapter {
 
 case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
                                 mapping : AddressMapping = SizeMapping(0, 65535),
-                                config : PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32)) extends Component {
+                                config : PipelinedMemoryBusConfig = PipelinedMemoryBusConfig(32, 32)) extends ComponentWithFormalProperties {
   val io = new Bundle {
     val bus = slave(PipelinedMemoryBus(config))
   }
@@ -197,5 +198,9 @@ case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
   val read = RegNext(io.bus.cmd.fire && !io.bus.cmd.write) init(False)
   io.bus.rsp.data := port.rdata
   io.bus.rsp.valid := read
+
+  override def formalComponentProperties() = new FormalProperties(this) {
+
+  }
 }
 

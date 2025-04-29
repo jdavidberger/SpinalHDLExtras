@@ -474,7 +474,7 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
 
 object LatticeMemories {
   var lram_available_maps = new mutable.HashMap[Component, Int]()
-  def lram_available = lram_available_maps.getOrElse(Component.toplevel, 4)
+  def lram_available = lram_available_maps.getOrElse(Component.toplevel, 5)
 
   def find_lram[T <: Data](requirements : MemoryRequirement[T]): Option[()=>HardwareMemory[Bits]] = {
     if(requirements.numPorts > 2)
@@ -482,11 +482,13 @@ object LatticeMemories {
 
     Some(
       () => {
-        if(lram_available <= 0)
+        if(lram_available <= 0) {
+          SpinalWarning(s"Out of LRAM for ${requirements}")
           MemBackedHardwardMemory(requirements.copy(dataType = Bits(32 bits)))
-        else {
+        } else {
           lram_available_maps(Component.toplevel) = lram_available - 1
           val latency = requirements.latencyRange._2.min(2)
+          SpinalInfo(s"Using LRAM for ${requirements}, ${lram_available} lrams remaining")
           (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
             case (1, 1, 0) => new PDPSC512K_Mem(target_latency = latency)
             case (0, 0, 1) => new DPSC512K_Mem(target_latency = latency, read_write_ports = 1)
@@ -510,7 +512,7 @@ object LatticeMemories {
   def apply[T <: Data](memKind : MemTechnologyKind)(requirements : MemoryRequirement[T]): HardwareMemory[T] = {
     val allocationSize = (requirements.dataType.getBitsWidth.min(32) * requirements.num_elements) / 8
 
-    val shouldUseLRam = lram_available > 0 && (memKind.technologyKind.toLowerCase == "lram" || allocationSize > (6 KiB))
+    val shouldUseLRam = (memKind.technologyKind.toLowerCase == "lram" || allocationSize > (10 KiB))
     val lram_factory = find_lram(requirements)
 
     if(shouldUseLRam && lram_factory.isDefined) {
