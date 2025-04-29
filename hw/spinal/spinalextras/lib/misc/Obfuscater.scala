@@ -2,7 +2,7 @@ package spinalextras.lib.misc
 
 import spinal.core.internals.ExpressionContainer
 import spinal.core.native.RefOwnerType
-import spinal.core.{BlackBox, Bundle, ClockDomain, Component, Data, GlobalData, HardType, HertzNumber, Nameable, SpinalEnum, SpinalEnumCraft, out}
+import spinal.core.{BitVector, BlackBox, Bundle, ClockDomain, Component, Data, GlobalData, HardType, HertzNumber, Nameable, SpinalEnum, SpinalEnumCraft, SpinalInfo, SpinalWarning, out}
 import spinal.lib.fsm.StateMachineTask
 
 import java.io.PrintWriter
@@ -116,8 +116,7 @@ class Obfuscater() {
         s.context.mutableMap.foreach(x => apply(x._2))
       }
       case _ => {
-        println(s"Unknown component ${component} ${component.getClass}")
-        return
+        //SpinalInfo(s"Unknown component ${component} ${component.getClass}")
       }
     }
   }

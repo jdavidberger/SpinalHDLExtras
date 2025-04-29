@@ -209,7 +209,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       case plugin : IBusSimplePlugin =>
         add_master(plugin.iBus)
       case plugin : DBusSimplePlugin => {
-        add_master(plugin.dBus.cmdM2sPipe().setName("dBus_staged"))
+        add_master(plugin.dBus.cmdHalfPipe().setName("dBus_staged"))
         //add_master(plugin.dBus)
       }
       case plugin : CsrPlugin        => {
