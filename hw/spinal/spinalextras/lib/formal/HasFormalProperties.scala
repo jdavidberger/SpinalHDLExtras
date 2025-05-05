@@ -1,7 +1,7 @@
 package spinalextras.lib.formal
 
 import spinal.core.internals.{AssertStatement, AssertStatementKind}
-import spinal.core.{Bool, Component, DslScopeStack, ScopeProperty, SpinalTag, True, in, when}
+import spinal.core.{Bool, Component, DslScopeStack, ScopeProperty, SpinalTag, True, cover, in, when}
 import spinalextras.lib.formal.ComponentWithFormalProperties.DefaultProperties
 
 import scala.collection.mutable
@@ -43,6 +43,9 @@ trait HasFormalProperties { self =>
   val parentComponent = Component.current
 
   def covers(): Seq[FormalProperty] = Seq()
+  def formalCovers(): Unit = {
+    covers().foreach(p => cover(p.condition)(loc=p.loc))
+  }
   /**
    * Set the assertion kinds used for both body properties and input properties. Notably, this function will latch any
    * assertion level that was set to ASSUME even if called again with ASSESRTION. This follows system verilog logic

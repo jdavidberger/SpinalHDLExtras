@@ -160,13 +160,15 @@ case class SimpleMemoryProvider(init :  Seq[BigInt] = Seq.empty,
   val io = new Bundle {
     val bus = slave(PipelinedMemoryBus(config))
   }
-  //val memBusContract = test_funcs.assertPMBContract(io.bus)
+
   val busConfig = io.bus.config
 
   var data_width = busConfig.dataWidth
   var addr_width = busConfig.addressWidth
 
   val mem = Mem(Bits(data_width bits), if(init.nonEmpty) init.size.toBigInt else mapping.highestBound - mapping.lowerBound)
+  mem.simPublic()
+
   if (init.nonEmpty) {
     val paddedInit = init ++ Seq.fill(mem.wordCount - init.length)(BigInt(0xFA))
     mem.init(paddedInit.map(B(_)))

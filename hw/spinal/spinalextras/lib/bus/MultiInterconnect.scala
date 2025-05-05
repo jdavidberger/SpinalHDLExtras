@@ -92,7 +92,8 @@ class MultiInterconnect {
   def to_mask_mapping(bus: MultiBusInterface)(mapping: AddressMapping): AddressMapping = {
     mapping match {
       case SizeMapping(base, size) => {
-        if ((base & (size - 1)) == 0) {
+        val is_pow_2 = ((size & -size) == size) // ie, bound is a power of 2
+          if (is_pow_2 && (base & (size - 1)) == 0) {
           MaskMapping(base, ((1L << bus.address_width) - 1) & ~(size - 1))
         } else {
           mapping

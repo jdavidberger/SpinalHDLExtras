@@ -520,7 +520,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
       }
     }
 
-    val file = new PrintWriter(s"${output_path}/${getName()}.h")
+    val file = new PrintWriter(s"${output_path}/event_logger_defs.h")
     def emit(s : String): Unit = {
       file.write(s)
       file.write("\n");
@@ -540,24 +540,15 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
                |#include "stdbool.h"
                |#include "stdio.h"
                |
+               |#include "event_logger.h"
+               |
                |/****
                |${comments.mkString("\n\n")}
                |**/
                |
-               |#define ${this.name}_INDEX_BITS ${index_size}
-               |#define ${this.name}_SIGNATURE 0x${signature.toHexString}
-               |#define ${getName()}_EVENT_COUNT ${flows().size}
-               |typedef struct ${getName()}_info_t {
-               |   uint32_t ctrl;
-               |   uint32_t captured_events;
-               |   uint32_t checksum;
-               |   uint32_t sysclk_lsb;
-               |   uint32_t fifo_occupancy;
-               |   uint32_t inactive_mask;
-               |   uint32_t signature;
-               |   uint32_t dropped_events;
-               |   uint32_t event_counter[${flows().size}];
-               |} ${getName()}_info_t;
+               |uint32_t ${this.name}_INDEX_BITS = ${index_size};
+               |uint32_t ${this.name}_SIGNATURE = 0x${signature.toHexString};
+               |uint32_t ${getName()}_EVENT_COUNT = ${flows().size};
                |
                |static ${getName()}_info_t ${getName()}_info_get(volatile uint32_t* base) {
                |  ${getName()}_info_t rtn = (${getName()}_info_t) {
@@ -594,7 +585,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
                |} ${getName()}_transaction;
                |
                |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask);
-               |static bool ${getName()}_poll(${getName()}_ctx* ctx, volatile uint32_t* ip_location, uint32_t mask) {
+               |bool ${getName()}_poll(${getName()}_ctx* ctx, volatile uint32_t* ip_location, uint32_t mask) {
                |  GlobalLogger_enable_memory_dump(ctx, ip_location, 1);
                |  struct ${getName()}_transaction tx = {0};
                |  tx.l[0] = ip_location[2 + 0];

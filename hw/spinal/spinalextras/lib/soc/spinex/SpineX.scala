@@ -258,7 +258,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       pipelineBridge = pipelineApbBridge,
       pipelinedMemoryBusConfig = pipelinedMemoryBusConfig
     )
-    add_slave(apbBridge.io.pipelinedMemoryBus, "apbBridge", SizeMapping(0xe0000000L, 1 MiB), "dBus")
+    add_slave(apbBridge.io.pipelinedMemoryBus, "apbBridge", SizeMapping(0xe0000000L, 0x5000), "dBus")
 
 
     //******** APB peripherals *********
@@ -277,12 +277,12 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     val i2cCtrl = new i2c_master_top()
     i2cCtrl.attachi2c(io.i2c0_scl, io.i2c0_sda)
 
-    add_slave(i2cCtrl.io.wb, "i2c", SizeMapping(0xee000000L, 32 Bytes), "dBus")
+    add_slave(i2cCtrl.io.wb, "i2c", SizeMapping(0xe0005000L, 32 Bytes), "dBus")
 
     val xip = ifGen(genXip)(new Area{
       val ctrl = Apb3SpiXdrMasterCtrl(xipConfig)
 
-      apbMapping += ctrl.io.apb     -> (0x1F000, 1 kB)
+      apbMapping += ctrl.io.apb     -> (0x0, 1 kB)
 
       add_slave(ctrl.io.xip, "xip", SizeMapping(0x20000000L, 0x01000000), "iBus", "dBus")
 
@@ -300,6 +300,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       io.spiflash_cs_n := ctrl.io.spi.ss(0)
     })
 
+    print(apbMapping.toSeq)
     //******** Memory mappings *********
     val apbDecoder = Apb3Decoder(
       master = apbBridge.io.apb,
