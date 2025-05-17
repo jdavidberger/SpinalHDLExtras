@@ -45,8 +45,16 @@ case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMas
 
 object DirectBus {
   def apply(bus : PipelinedMemoryBus): DirectBus = {
-    val busOut = Stream(new DirectBus(bus.config))
+    val busOut = new DirectBus(bus.config)
 
+    bus.cmd.valid := busOut.valid
+    bus.cmd.address := busOut.cmd.address
+    bus.cmd.write := busOut.cmd.write
+    bus.cmd.data := busOut.cmd.data
+    bus.cmd.mask := busOut.cmd.mask
+
+    busOut.rsp := bus.rsp.payload.asBits
+    busOut.ready := bus.rsp.valid || (bus.cmd.write && bus.cmd.fire)
 
     busOut
   }

@@ -43,9 +43,7 @@ case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Com
 
   val cycles = CounterFreeRun(5)
   cover(cycles.value > 3)
-
 }
-
 
 trait FormalTestSuite {
   val config = FormalConfig._spinalConfig.copy(defaultConfigForClockDomains = ClockDomainConfig(

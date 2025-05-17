@@ -137,6 +137,7 @@ package object bus {
 
   implicit class PipelinedMemoryBusExt(bus: PipelinedMemoryBus) {
     def readRequestFire = bus.cmd.fire && !bus.cmd.write
+    def writeRequestFire = bus.cmd.fire && bus.cmd.write
 
     def resizeAddress(addr : Int) : PipelinedMemoryBus = {
       val pmb = PipelinedMemoryBus(addr, bus.config.dataWidth)

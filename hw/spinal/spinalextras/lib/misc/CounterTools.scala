@@ -11,6 +11,30 @@ import spinalextras.lib.misc.StreamTools.gcd
 
 import scala.language.postfixOps
 
+class CounterVariableChange(val rangeBits : Int) extends ImplicitArea [SInt] {
+  val value = Reg(SInt(rangeBits + 1 bits)) init(0)
+
+  val increment = UInt(rangeBits bits)
+  increment := 0
+  def increment_by(v : UInt): Unit = {
+    increment := v
+  }
+
+  val decrement = UInt(rangeBits bits)
+  decrement := 0
+  def decrement_by(v : UInt): Unit = {
+    decrement := v
+  }
+
+  val delta = increment.asSInt - decrement.asSInt
+  value := value + delta
+
+  val willOverflow = (delta +^ value) > (value + delta)
+  val willUnderflow = (value + delta) < 0
+
+  override def implicitValue: SInt = value
+}
+
 class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ImplicitArea[UInt] with HasFormalProperties {
   val valueNext = UInt(log2Up(range + 1) bits)
   val value = RegNext(valueNext) init(0)

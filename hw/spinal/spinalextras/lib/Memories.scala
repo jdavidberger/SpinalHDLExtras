@@ -167,7 +167,7 @@ abstract class HardwareMemory[T <: Data]() extends ComponentWithFormalProperties
     io.writePorts.foreach(_.setIdle())
   }
 
-  def pmbs(): Seq[PipelinedMemoryBus] = {
+  private lazy val _pmbs = {
     io.readPorts.zip(io.writePorts).map(read_write => {
       val (read, write) = read_write
       val pmb = PipelinedMemoryBus(config)
@@ -204,6 +204,8 @@ abstract class HardwareMemory[T <: Data]() extends ComponentWithFormalProperties
         pmb
       })
   }
+
+  def pmbs(): Seq[PipelinedMemoryBus] = _pmbs
 }
 
 class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory: () => HardwareMemory[Bits]) extends HardwareMemory[T]() {

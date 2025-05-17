@@ -3,7 +3,7 @@ package spinalextras.lib.formal
 import spinal.core.formal.anyseq
 import spinal.core.internals.AssertStatementKind
 import spinal.core.{Area, Component, Data, MultiData, True}
-import spinal.lib.IMasterSlave
+import spinal.lib.{IMasterSlave, StreamFifo}
 import spinalextras.lib.formal.fillins._
 
 import scala.collection.mutable
@@ -117,9 +117,9 @@ object ComponentWithFormalProperties {
       restore.restore()
       defaultProperties
     }
-
-    StreamFifoFormalProperties
   }
+
+  ComponentWithFormalProperties.AddHandler { case fifo: StreamFifo[Data] => new StreamFifoFormalProperties[Data](fifo) }
 }
 
 /**
