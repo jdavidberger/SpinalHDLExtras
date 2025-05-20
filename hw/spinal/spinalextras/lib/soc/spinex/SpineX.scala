@@ -242,7 +242,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 //      pipelinedMemoryBusConfig = pipelinedMemoryBusConfig,
 //      bigEndian = bigEndianDBus
 //    )
-    val mem = Memories(MemoryRequirement(Bits(32 bits), onChipRamSize,
+    val mem = Memories(MemoryRequirement(Bits(32 bits), onChipRamSize / 4,
       numReadWritePorts = 2,
       needsMask = true))
     val mem_pmbs = mem.pmbs()

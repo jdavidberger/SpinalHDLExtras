@@ -11,6 +11,7 @@ import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, PDPSC16K_Mem, PDPS
 import spinalextras.lib.bus.{PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.impl.ImplementationSpecificFactory
+import spinalextras.lib.memory.MemBackedHardwardMemory
 import spinalextras.lib.misc.ComponentWithKnownLatency
 import spinalextras.lib.testing.test_funcs
 
@@ -112,6 +113,10 @@ class MemoryRequirementBits(dataWidth : Int, num_elements : BigInt, numReadWrite
 
 abstract class HardwareMemory[T <: Data]() extends ComponentWithFormalProperties {
   def requirements : MemoryRequirement[T] = ???
+  def summary(depth : Int = 0) : Unit = {
+    println(("\t" * depth) + s"memory_${getClass.getSimpleName}_${requirements.num_elements}x${requirements.dataType.getBitsWidth}")
+  }
+
   lazy val latency : Int = 1
   lazy val cmd_latency : Int = 0
 
@@ -211,8 +216,14 @@ abstract class HardwareMemory[T <: Data]() extends ComponentWithFormalProperties
 class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory: () => HardwareMemory[Bits]) extends HardwareMemory[T]() {
   val prototype = direct_factory()
 
+  override def summary(depth : Int) : Unit = {
+    super.summary(depth)
+    memories.foreach(m => m.summary(depth+1))
+  }
+
   override lazy val latency : Int = prototype.latency
-  override def requirements = reqs
+
+  override def requirements: MemoryRequirement[T] = reqs.copy(num_elements = prototype.num_elements)
 
   val mod_width = (dataType.getBitsWidth) % prototype.bitsWidth
   val needed_cols = dataType.getBitsWidth/ prototype.bitsWidth
@@ -301,9 +312,14 @@ class WideHardwareMemory[T <: Data] (reqs : MemoryRequirement[T], direct_factory
 }
 
 class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_factory: () => HardwareMemory[Bits]) extends HardwareMemory[T]() {
-  override def requirements = reqs
+  override def requirements: MemoryRequirement[T] = reqs
   val wide_factory = () => new WideHardwareMemory(requirements, direct_factory)
   val prototype = wide_factory()
+
+  override def summary(depth : Int) : Unit = {
+    super.summary(depth)
+    memories.foreach(m => m.summary(depth+1))
+  }
 
   override lazy val latency : Int = prototype.latency
   require(prototype.bitsWidth == dataType.getBitsWidth)
@@ -361,6 +377,8 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
     val mem_readWritePorts = Vec(memories.map(_.io.readWritePorts(idx)))
 
     mem_readWritePorts(hit_idx).cmd.valid := port.cmd.valid
+    assert(mem_readWritePorts(hit_idx).cmd.payload.address.getBitsWidth == addr.getBitsWidth)
+
     mem_readWritePorts(hit_idx).cmd.payload.address := addr
     mem_readWritePorts(hit_idx).cmd.payload.data := port.cmd.data
     mem_readWritePorts(hit_idx).cmd.payload.write := port.cmd.write
@@ -381,98 +399,6 @@ class StackedHardwareMemory[T <: Data](reqs : MemoryRequirement[T], direct_facto
 
   })
 }
-
-case class MemBackedHardwardMemory[T <: Data](override val requirements : MemoryRequirement[T]) extends
-  HardwareMemory[T]() {
-  val mem = Mem[T](dataType, num_elements)
-
-  override lazy val latency = requirements.latencyRange._2
-  val extra_latency = latency - 1
-
-  if (globalData.config.flags.contains(GenerationFlags.simulation)) {
-    //mem.randBoot()
-    //mem.init((0 until num_elements.toInt).map(idx => B(0).as(dataType) ))
-  }
-
-  def mapReadLatency(immediateRspFlow : Flow[PipelinedMemoryBusRsp], outstanding : UInt): Flow[PipelinedMemoryBusRsp] = {
-    var rspFlow = immediateRspFlow
-    var inPipeline = UInt(0 bits)
-    for(i <- 0 until extra_latency) {
-      inPipeline = inPipeline +^ rspFlow.valid.asUInt
-      rspFlow = rspFlow.stage().setName(s"rspFlowStage_${i}")
-    }
-    inPipeline = inPipeline +^ rspFlow.valid.asUInt
-    assert(inPipeline === outstanding)
-    //inPipeline.setName(s"${outstanding.name}_inPipeline")
-    rspFlow
-  }
-
-  val readWritePortArea = io.readWritePorts.zipWithIndex.map(port_idx => new Area {
-    val (port, idx) = port_idx
-    val mask_width = if(port.cmd.mask != null) port.cmd.mask.getWidth else -1
-    val mem_port = mem.readWriteSyncPort(maskWidth = mask_width)
-    if(port.cmd.mask != null)
-      mem_port.mask := port.cmd.mask
-    mem_port.address := port.cmd.address
-
-    mem_port.enable := port.cmd.valid
-    mem_port.write := port.cmd.write
-    mem_port.wdata.assignFromBits(port.cmd.data)
-
-    var rspFlow = cloneOf(port.rsp).setName("rspFlowInit")
-    rspFlow.valid := RegNext(port.cmd.valid && !port.cmd.write, init = False)
-    rspFlow.data := mem_port.rdata.asBits
-
-    port.rsp <> mapReadLatency(rspFlow, io.readWritePortsOutstanding(idx))
-  })
-
-  val readPortArea = io.readPorts.zipWithIndex.map(port_idx => new Area {
-    val (port, idx) = port_idx
-    var rspFlow = cloneOf(port.rsp)
-    //assert(port.cmd.payload < num_elements)
-    rspFlow.data := mem.readSync(
-      address = port.cmd.payload,
-      enable = port.cmd.valid,
-    ).asBits
-    rspFlow.valid := RegNext(port.cmd.valid) init(False)
-
-    port.rsp <> mapReadLatency(rspFlow, io.readPortsOutstanding(idx))
-  })
-
-  io.writePorts.foreach(port => {
-//    assert(port.cmd.address < num_elements)
-    mem.write(address = port.cmd.address,
-      data = port.cmd.data.as(dataType),
-      enable = port.cmd.valid,
-      mask = port.cmd.mask
-    )
-  })
-
-  override protected def formalInputProperties() = new FormalProperties(this) {
-    io.readWritePorts.zipWithIndex.foreach(port_idx => new Area {
-      val (port, idx) = port_idx
-
-      val valid_address = port.cmd.address.resize(log2Up(num_elements + 1) bits) < num_elements
-      when(port.cmd.valid) {
-        addFormalProperty(valid_address, Seq(s"Validate access ${idx} in range 0x${num_elements.toString(16)} ", port.cmd.address.resize(log2Up(num_elements + 1) bits)))
-      }
-    })
-
-
-    io.readPorts.zipWithIndex.foreach(port_idx => new Area {
-      val (port, idx) = port_idx
-      val valid_address = port.cmd.payload.resize(log2Up(num_elements + 1) bits) < num_elements
-      when(port.cmd.valid) {
-        addFormalProperty(valid_address, Seq(s"Validate access ${idx} in range 0x${num_elements.toString(16)} ", port.cmd.payload.resize(log2Up(num_elements + 1) bits)))
-      }
-    })
-  }
-}
-//
-//case class lram(numReadWritePorts : Int, numReadPorts : Int, numWritePorts : Int) extends
-//  HardwareMemory[Bits](Bits(32 bits), 128000, numReadWritePorts, numReadPorts, numWritePorts) {
-//
-//}
 
 object LatticeMemories {
   var lram_available_maps = new mutable.HashMap[Component, Int]()

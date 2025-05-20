@@ -419,7 +419,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
       f"""
          |#include "stdlib.h"
          |#include "sqlite3.h"
-         |#include "${getName()}.h"
+         |#include "event_logger_defs.h"
 
          |#define ${getName()}_COLUMN_DEF(f)  ", " #f " INTEGER"
          |#define ${getName()}_COLUMN_VIEW(f)  ", '" #f "'," #f
@@ -516,6 +516,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
         case b : Bits => s"uint${pow2}_t"
         case e : SpinalEnum => s"uint${pow2}_t"
         case e : SpinalEnumCraft[_] => s"uint${pow2}_t"
+        case b : Bundle => getCType(b.asBits)
         case _ => assert(false); ""
       }
     }
@@ -677,7 +678,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
       }
     }
 
-    emit(s"static const char* ${getName()}_get_id_name(int id) {")
+    emit(s"const char* ${getName()}_get_id_name(int id) {")
     emit(s"   switch(id) {")
     for ((flow, idx) <- flows()) {
       emit(s"   case ${idx}: return ${'"' + flow.getName() + '"'};")
