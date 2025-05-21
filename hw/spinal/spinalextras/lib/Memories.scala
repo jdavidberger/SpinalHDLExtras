@@ -90,7 +90,9 @@ case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : B
                                         numReadPorts : Int = 0, numWritePorts : Int = 0,
                                         needsMask : Boolean = false,
                                         latencyRange : (Int, Int) = (1, 3)) {
-  lazy val allocationSize = dataType.getBitsWidth * num_elements
+  lazy val allocationSizeInBits = dataType.getBitsWidth * num_elements
+  lazy val allocationSizeInBytes = dataType.getBitsWidth * num_elements / 8
+
   lazy val numPorts = numReadWritePorts + numReadPorts + numWritePorts
 
   override def toString: String = {
