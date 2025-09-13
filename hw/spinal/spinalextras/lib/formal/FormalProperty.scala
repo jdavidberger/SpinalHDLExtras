@@ -145,8 +145,10 @@ class FormalProperties(val self : Nameable = null, val postfix : String = "forma
   def addFormalProperty(cond: Bool, msg: Seq[Any] = Seq())(implicit loc: Location): Unit =
     formalProperties += new FormalProperty(cond, prefix ++ msg)(loc)
 
-  def addFormalProperties(properties: Seq[FormalProperty]): Unit =
+  def addFormalProperties(properties: Seq[FormalProperty]) = {
     formalProperties ++= properties
+    this
+  }
 
   implicit override def implicitValue: Seq[FormalProperty] = formalProperties.toSeq
 }
