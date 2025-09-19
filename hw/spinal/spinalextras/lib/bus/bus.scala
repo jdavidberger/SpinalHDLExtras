@@ -118,6 +118,7 @@ package object bus {
 
   implicit class PipelinedMemoryBusConfigExt(config : PipelinedMemoryBusConfig) {
     def wordAddressShift = log2Up((config.dataWidth / 8.0).ceil.toInt)
+    def wordAddressWidth = config.addressWidth - wordAddressShift
   }
 
   implicit class PipelinedMemoryBusCmdExt(cmd: PipelinedMemoryBusCmd) {

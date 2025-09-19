@@ -85,9 +85,22 @@ class AdaptWidthByState[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardT
 
 }
 
+abstract trait StreamMapComponent[T1 <: Data, T2 <: Data] extends ComponentWithKnownLatency {
+  def InputStream() : Stream[T1]
+  def OutputStream() : Stream[T2]
 
+  def apply[T3 <: Data](prior : Stream[T3])(map_fn : (T3) => T1) : Stream[TupleBundle2[T2, T3]] = {
+    val (componentInput, mergeInput) = StreamFork2(prior, synchronous = false)
+    componentInput.map(map_fn) <> InputStream()
+    StreamJoin(OutputStream(), mergeInput.queue(this.latency(), latency = 0))
+  }
 
-
+  //  def apply(prior : Stream[T1]) = {
+//    val (componentInput, mergeInput) = StreamFork2(prior, synchronous = false)
+//    componentInput <> InputStream()
+//    StreamJoin(OutputStream(), mergeInput)
+//  }
+}
 
 class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T], endianness: Endianness = LITTLE) extends ComponentWithFormalProperties {
 

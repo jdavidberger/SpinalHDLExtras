@@ -4,10 +4,17 @@ import spinal.core._
 import spinal.lib.bus.simple.{PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinal.lib.fsm._
 import spinal.lib.{CounterUpDown, Flow, master, slave}
+import spinalextras.lib.Config
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 
+object DefaultCompare {
+
+  def apply[T <: Data](a: T, b: T, or_equal : Boolean = false) = if(or_equal) a.asBits.asUInt <= b.asBits.asUInt else a.asBits.asUInt < b.asBits.asUInt
+}
+
 abstract class PriorityQueue[T <: Data](dataType : HardType[T],
-                                    maxElements : Int) extends ComponentWithFormalProperties {
+                                        maxElements : Int,
+                                        compare_fn : (T, T, Boolean) => Bool = (DefaultCompare[T] _)) extends ComponentWithFormalProperties {
 
   val size = CounterUpDown(maxElements + 1)
 
@@ -24,7 +31,7 @@ abstract class PriorityQueue[T <: Data](dataType : HardType[T],
   val formal_check_word = Reg(Bits(io.push.payload.getBitsWidth bits)) init(0)
 
   // Min heap is a < b; top is smallest
-  def compare(a: T, b: T, or_equal : Boolean = false) = if(or_equal) a.asBits.asUInt <= b.asBits.asUInt else a.asBits.asUInt < b.asBits.asUInt
+  def compare(a: T, b: T, or_equal : Boolean = false) = compare_fn(a, b, or_equal)
 
   val idx, minimum_idx = Reg(UInt(size.getBitsWidth bits)) init(0)
   val idxNext = cloneOf(idx)
@@ -236,7 +243,7 @@ abstract class PriorityQueue[T <: Data](dataType : HardType[T],
 }
 
 class PriorityQueueLocalMemory[T <: Data](dataType : HardType[T],
-                                          maxElements : Int) extends PriorityQueue[T](dataType, maxElements) {
+                                          maxElements : Int, compare_fn : (T, T, Boolean) => Bool = (DefaultCompare[T] _)) extends PriorityQueue[T](dataType, maxElements, compare_fn) {
 
   lazy val mem = Mem(dataType, maxElements)
   val value = Reg(dataType())
@@ -275,3 +282,4 @@ class PriorityQueueLocalMemory[T <: Data](dataType : HardType[T],
     }
   }.addFormalProperties(super.formalComponentProperties())
 }
+

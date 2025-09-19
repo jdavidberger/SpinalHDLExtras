@@ -3,6 +3,7 @@ package spinalextras.lib.testing
 import spinal.core.formal._
 import spinal.core._
 import spinal.lib.{Counter, CounterFreeRun}
+import spinalextras.lib.formal.ComponentWithFormalProperties.DefaultProperties
 import spinalextras.lib.formal.{ComponentWithFormalProperties, HasFormalProperties}
 
 import java.io.IOException
@@ -34,7 +35,10 @@ object ReflectionUtils {
 }
 
 case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Component {
-  val dut = FormalDut(f())
+  val top = f()
+  val dut = FormalDut(top)
+  setName("GeneralFormalDut" + top.getClass.getSimpleName)
+
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.covers().foreach(x => cover(x.condition)(x.loc))
@@ -45,12 +49,36 @@ case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Com
   cover(cycles.value > 3)
 }
 
+class DefaultFormalDut(f : () => Component) extends Component {
+  val top = f()
+  val dut = FormalDut(top)
+  setName("DefaultFormalDut" + top.getClass.getSimpleName)
+
+  assumeInitial(ClockDomain.current.isResetActive)
+
+  val defaultProperties = DefaultProperties(dut)
+  defaultProperties.formalConfigureForTest()
+  dut.getAllIo.filter(_.isInput).filter(_.dlcIsEmpty).foreach(anyseq)
+
+  HasFormalProperties.printFormalAssertsReport()
+
+  val cycles = CounterFreeRun(5)
+  cover(cycles.value > 3)
+}
+
+object GeneralFormalDut {
+  def apply(f : () => ComponentWithFormalProperties) = new GeneralFormalDut(f)
+  def apply(f : () => Component) = new DefaultFormalDut(f)
+}
+
+
 trait FormalTestSuite {
   val config = FormalConfig._spinalConfig.copy(defaultConfigForClockDomains = ClockDomainConfig(
     resetActiveLevel = HIGH,
     resetKind = SYNC,
   ),
     mergeAsyncProcess = true,
+    removePruned = false,
     defaultClockDomainFrequency = FixedFrequency(100 MHz))
 
   val formalConfig = FormalConfig
@@ -70,7 +98,7 @@ trait FormalTestSuite {
 
   def generateRtlProve(): Seq[(String, () => Component)]  = generateRtl()
 
-  def defaultDepth() = 100
+  def defaultDepth() = 20
 
   def BMCConfig(): SpinalFormalConfig = formalConfig.withBMC(defaultDepth())
 
