@@ -167,7 +167,7 @@ object SpinexConfig{
       txFifoDepth = 16,
       rxFifoDepth = 16
     ),
-    externalInterrupts = 1,
+    externalInterrupts = 8,
     withWishboneBus = true
   )
 

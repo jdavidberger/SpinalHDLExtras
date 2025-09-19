@@ -49,7 +49,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     val spiflash_dq = genXip generate inout(Analog(Bits(xipConfig.ctrl.spi.dataWidth bits)))
 
     val wb = config.withWishboneBus generate master(Wishbone(wbConfig))
-    val externalInterrupts = Array.fill(config.externalInterrupts)(in(Bool()) default(False))
+    val externalInterrupts = in(Bits(config.externalInterrupts bits)) default(0)
   }
   noIoPrefix()
 
@@ -188,9 +188,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     val externalInterrupts = Bits(32 bits)
     externalInterrupts := 0
 
-    for(i <- 0 until config.externalInterrupts) {
-      externalInterrupts(i) := io.externalInterrupts(i)
-    }
+    externalInterrupts(0, config.externalInterrupts bits) := io.externalInterrupts
 
     val usb32_irq_loc = 0
     val timer0_irq_loc = 1
@@ -315,7 +313,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
 object Spinex{
   def main(args: Array[String]) {
-    val report = Config.spinal.generateVerilog(Spinex(SpinexConfig.default.copy(withWishboneBus = false)))
+    val report = Config.spinal.generateVerilog(Spinex(SpinexConfig.default.copy(withWishboneBus = true)))
     IPX.generate_ipx(report)
   }
 }
