@@ -23,6 +23,9 @@ package object StreamFormal {
       addFormalProperty(checkValidPayloadInvariance, s"Payload should not change while transfer is stalled")
     }
 
+    when(stream.valid) {
+      addFormalProperties(FormalData.formalIsStateValid(stream.payload))
+    }
   }
 
   implicit class StreamExt[T <: Data](stream: Stream[T]) extends FormalMasterSlave {

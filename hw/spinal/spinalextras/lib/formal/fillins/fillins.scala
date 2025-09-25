@@ -2,7 +2,7 @@ package spinalextras.lib.formal
 
 import spinal.core.{Area, Component, Data}
 import spinal.lib.bus.amba4.axi.Axi4
-import spinal.lib.{Counter, Stream}
+import spinal.lib.{Counter, Fragment, Stream}
 import spinal.lib.bus.simple.PipelinedMemoryBus
 import spinal.lib.bus.wishbone.Wishbone
 
@@ -56,6 +56,7 @@ package object fillins {
 
   fillins.AddHandler { case bus: Wishbone => Wishbone.WishboneFormalExt(bus) }
   fillins.AddHandler { case stream: Stream[Data] => StreamFormal.StreamExt(stream) }
+  fillins.AddHandler { case fragment: Fragment[Data] => FragmentFormal.FragmentExt(fragment) }
   fillins.AddHandler { case bus: PipelinedMemoryBus => PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt(bus) }
   fillins.AddHandler { case counter: Counter => CounterFormalExt(counter) }
   fillins.AddHandler { case bus: Axi4 => Axi4Formal.Axi4FormalExt(bus) }

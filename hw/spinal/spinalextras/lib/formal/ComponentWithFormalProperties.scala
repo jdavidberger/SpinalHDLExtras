@@ -155,13 +155,21 @@ class ComponentWithFormalProperties extends Component with HasFormalProperties {
 
   def formalComponentProperties() : Seq[FormalProperty] = Seq.empty
 
+  lazy val contained_elements = new mutable.ArrayBuffer[Data]()
+  override def valCallbackRec(ref: Any, name: String): Unit = {
+    if(ref.isInstanceOf[Data]) {
+      contained_elements.append(ref.asInstanceOf[Data])
+    }
+    super.valCallbackRec(ref, name)
+  }
+
   override protected def formalProperties() = {
     // By default we assume all children of this component are valid so we are only testing the logic around the
     // given component itself. Override to change this behavior. In particular when the component uses library components
     // which are tested directly, this tends to save a lot of time
     formalChildren().foreach(_.formalSetMinimumAssertionKind(assertionKind = AssertStatementKind.ASSUME))
 
-    ComponentWithFormalProperties.formalCheckOutputs(this) ++ formalComponentProperties()
+    ComponentWithFormalProperties.formalCheckOutputs(this) ++ formalComponentProperties() ++ contained_elements.flatMap(FormalData.formalIsStateValid)
   }
 
 }

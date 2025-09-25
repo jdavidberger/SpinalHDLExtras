@@ -67,6 +67,13 @@ object FormalData {
     }
   }
 
+  def formalIsStateValid[T](data : T): Seq[FormalProperty] = {
+    val fillin = fillins.findFillin(data)
+    fillin match {
+      case d : FormalData => d.formalIsStateValid()
+      case _ => Seq()
+    }
+  }
 }
 /**
  * This trait can be use by custom bundle classes to add logic on what is a valid state for that bundle.

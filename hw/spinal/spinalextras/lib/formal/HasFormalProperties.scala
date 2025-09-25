@@ -144,7 +144,7 @@ trait HasFormalProperties { self =>
     }
   }
 
-  Component.toplevel.addPrePopTask(() => {
+  def applyFormalProperties(): this.type = {
     // For assumptions, it is a hard requirement that we predicate the assumption on the inputs being valid. It is also
     // useful with assertions -- the fewer assertions that fire off at once when testing the better since that makes it
     // easier to figure out where the flaw in the logic is.
@@ -159,9 +159,17 @@ trait HasFormalProperties { self =>
     }
 
     CurrentInputsAssertionKind.foreach(kind => {
-        formalInputPropertiesEval.foreach(_(kind))
+      formalInputPropertiesEval.foreach(_(kind))
     })
-  })
+
+    this
+  }
+
+  if(Component.toplevel != this) {
+    Component.toplevel.addPrePopTask(() => {
+      applyFormalProperties()
+    })
+  }
 }
 
 object HasFormalProperties {

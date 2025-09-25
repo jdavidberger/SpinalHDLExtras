@@ -95,11 +95,10 @@ abstract trait StreamMapComponent[T1 <: Data, T2 <: Data] extends ComponentWithK
     StreamJoin(OutputStream(), mergeInput.queue(this.latency(), latency = 0))
   }
 
-  //  def apply(prior : Stream[T1]) = {
-//    val (componentInput, mergeInput) = StreamFork2(prior, synchronous = false)
-//    componentInput <> InputStream()
-//    StreamJoin(OutputStream(), mergeInput)
-//  }
+  def apply(prior : Stream[T1]) = {
+    InputStream() <> prior
+    OutputStream()
+  }
 }
 
 class AdaptWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : HardType[T], endianness: Endianness = LITTLE) extends ComponentWithFormalProperties {
@@ -199,7 +198,104 @@ class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : Hard
   StreamFragmentWidthAdapter(streamMid.stage(), out, endianness = LITTLE, earlyLast = true)
 }
 
+class StreamGather[T <: Data](dataType : HardType[T], gatherCount : Int) extends ComponentWithFormalProperties {
+  val io = new Bundle {
+    val input = slave Stream(dataType)
+    val output = master Stream(TupleBundle(Vec(new Optional(dataType), gatherCount), dataType()))
+  }
+
+  val registers = Array.fill(gatherCount)(RegInit(Optional.Empty(dataType)))
+  for(i <- 0 until gatherCount) {
+    when(io.input.fire) {
+      if(i > 0) {
+        registers(i - 1) := registers(i)
+      }
+    }
+  }
+
+  when(io.input.fire) {
+    registers(gatherCount - 1).value := io.input.payload
+    registers(gatherCount - 1).valid := True
+  }
+
+  io.output.payload._2 := registers(0).value
+
+  for(i <- 0 until gatherCount - 1) {
+    io.output.payload._1(i).value := registers(i + 1).value
+    io.output.payload._1(i).valid := registers(i + 1).valid
+  }
+  io.output.payload._1(gatherCount - 1).value := io.input.payload
+  io.output.payload._1(gatherCount - 1).valid := True
+
+  io.output.valid := (io.input.valid && registers(0).valid)
+  io.input.ready := (io.output.ready || !registers(0).valid)
+
+  //io.output.payload.assignDontCareToUnasigned()
+}
+
+class StreamFragmentGather[T <: Data](dataType : HardType[T], gatherCount : Int) extends ComponentWithFormalProperties {
+  val io = new Bundle {
+    val input = slave Stream(Fragment(dataType))
+    val output = master Stream(Fragment(TupleBundle(Vec(new Optional(dataType), gatherCount), dataType())))
+  }
+
+  val output = cloneOf(io.output)
+
+  val flush = RegInit(False) setWhen(io.input.lastFire) clearWhen(output.lastFire)
+  val registers = Array.fill(gatherCount)(RegInit(Optional.Empty(dataType)))
+  for(i <- 0 until gatherCount) {
+    when(io.input.fire || (flush && output.fire)) {
+      if(i > 0) {
+        registers(i - 1) := registers(i)
+      }
+    }
+  }
+
+  when(io.input.fire) {
+    registers(gatherCount - 1).value := io.input.payload
+    registers(gatherCount - 1).valid := True
+  } elsewhen(flush && output.fire) {
+    registers(gatherCount - 1).value.assignDontCare()
+    registers(gatherCount - 1).valid := False
+  }
+
+  output.payload._2 := registers(0).value
+
+  for(i <- 0 until gatherCount - 1) {
+    output.payload._1(i).value := registers(i + 1).value
+    output.payload._1(i).valid := registers(i + 1).valid
+  }
+  output.payload._1(gatherCount - 1).value := io.input.payload
+  output.payload._1(gatherCount - 1).valid := !flush
+
+  output.valid := (io.input.valid && registers(0).valid) || flush
+  io.input.ready := (output.ready || !registers(0).valid)
+
+  output.last := flush && !registers(1).valid
+
+  io.output <> output.discardWhen(!registers(0).valid)
+}
+
 object StreamTools {
+  def CreateFragment[T <: Data](v : T, last : Bool) = {
+    val rtn = Fragment(cloneOf(v))
+    rtn.fragment := v
+    rtn.last := last
+    rtn
+  }
+
+  def gather[T <: Data](stream : Stream[T], gatherCount : Int) = {
+    val gatherer = new StreamGather(cloneOf(stream.payload), gatherCount)
+    gatherer.io.input <> stream
+    gatherer.io.output
+  }
+
+  def gatherFragment[ T <: Data](stream : Stream[Fragment[T]], gatherCount : Int) = {
+    val gatherer = new StreamFragmentGather(cloneOf(stream.fragment), gatherCount)
+    gatherer.io.input <> stream
+    gatherer.io.output
+  }
+
   def gcd(a: Int, b: Int): Int = {
     if (b == 0) 0
     else gcd(b, a % b);
@@ -246,5 +342,75 @@ object StreamTools {
 
     AdaptWidth(in.toStream(overflow).map(_.asBits), streamOut)
   }
+
+  def insertFooter[T <: Data](stream : Stream[Fragment[T]], footer: Vec[T]): Stream[Fragment[T]] = {
+    val ret = cloneOf(stream)
+    val counter = Counter(footer.size)
+
+    ret.setIdle()
+    stream.setBlocked()
+
+    val fsm = new StateMachine {
+      val content : State = new State with EntryPoint {
+        whenIsActive {
+          stream.replaceFragmentLast(False) >> ret
+          when(stream.lastFire) {
+            goto(addFooter)
+          }
+        }
+      }
+
+      val addFooter : State = new State {
+        whenIsActive {
+          ret.valid := True
+          ret.payload.fragment := footer(counter.value)
+          ret.payload.last := counter.willOverflowIfInc
+
+          when(ret.fire) {
+            counter.increment()
+          }
+
+          when(ret.lastFire) {
+            goto(content)
+          }
+        }
+      }
+    }
+
+    ret
+  }
+}
+
+class StreamPipelinedMux[T1 <: Data, T2 <: Data](val dataType : HardType[T1],
+                                                 val dataTypeOut : HardType[T2], n : Int, latency : Int = 8)
+  extends ComponentWithFormalProperties with StreamMapComponent[TupleBundle2[UInt, T1], T2] {
+  val selectType = UInt(log2Up(n) bits)
+  val io = new Bundle {
+    val input = slave Stream(TupleBundle(selectType, dataType()))
+    val splitOutputs = Vec(master Stream(dataType), n)
+
+    val splitInputs = Vec(slave Stream(dataTypeOut), n)
+    val output = master Stream(dataTypeOut)
+  }
+
+  val rspFifo = StreamFifo(selectType, latency, latency = 0)
+
+  val (outputStream, selectStream) = StreamFork2(io.input)
+
+  val outputStreams = StreamDemux(outputStream, outputStream.payload._1, n)
+  io.splitOutputs.zip(outputStreams).foreach(x => {
+    x._1 <> x._2.map(_._2)
+  })
+
+  rspFifo.io.push <> selectStream.map(x => x._1)
+
+  rspFifo.io.pop.ready := io.output.fire
+  io.output <> StreamMux(rspFifo.io.pop.payload, io.splitInputs)
+
+  override def InputStream() = io.input
+
+  override def OutputStream(): Stream[T2] = io.output
+
+  override def latency(): Int = latency
 }
 
