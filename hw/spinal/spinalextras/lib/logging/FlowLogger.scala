@@ -785,7 +785,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int,
                          outputStream : Option[Stream[Bits]] = None): Unit = {
     //val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
-    val loggerFifo = new MemoryBackedFifo(cloneOf(io.log.payload), depth)
+    val loggerFifo = new MemoryBackedFifo(cloneOf(io.log.payload), depth, memory_label = "logger_buffer")
     loggerFifo.setName(s"loggerFifo_${depth}")
     loggerFifo.io.push <> io.log
 

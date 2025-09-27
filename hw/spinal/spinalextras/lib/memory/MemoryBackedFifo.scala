@@ -13,9 +13,10 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
                                   val depth: Int,
                                   val mem_factory: ((MemoryRequirement[T]) => HardwareMemory[T]) = Memories.applyAuto[T] _,
                                   val withAsserts : Boolean = true,
-                                  latencyRange : (Int, Int) = (1, 3)
+                                  latencyRange : (Int, Int) = (1, 3),
+                                  val memory_label : String = ""
                                  ) extends ComponentWithFormalProperties {
-  val mem = mem_factory(MemoryRequirement(dataType, depth, 2, 0, 0, latencyRange = latencyRange))
+  val mem = mem_factory(MemoryRequirement(dataType, depth, 2, 0, 0, latencyRange = latencyRange, label=memory_label))
   val io = slave(new FifoInterface[T](dataType, depth))
 
   val sysBus = PipelineMemoryGlobalBus(mem.config.toPipelinedMemoryBusConfig)

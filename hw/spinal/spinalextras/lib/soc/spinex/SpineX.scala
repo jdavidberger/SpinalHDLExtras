@@ -242,7 +242,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 //    )
     val mem = Memories(MemoryRequirement(Bits(32 bits), onChipRamSize / 4,
       numReadWritePorts = 2,
-      needsMask = true))
+      needsMask = true, label = "spinex_ram"))
     val mem_pmbs = mem.pmbs()
     add_slave(mem_pmbs(1).resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "dBus")
     add_slave(mem_pmbs(0).resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "iBus")
@@ -280,7 +280,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     val xip = ifGen(genXip)(new Area{
       val ctrl = Apb3SpiXdrMasterCtrl(xipConfig)
 
-      apbMapping += ctrl.io.apb     -> (0x0, 1 kB)
+      apbMapping += ctrl.io.apb     -> (0x01000, 1 kB)
 
       add_slave(ctrl.io.xip, "xip", SizeMapping(0x20000000L, 0x01000000), "iBus", "dBus")
 
@@ -298,11 +298,15 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       io.spiflash_cs_n := ctrl.io.spi.ss(0)
     })
 
-    print(apbMapping.toSeq)
+    println("APB Mappings: ")
+    for(m <- apbMapping) {
+      println(s"\t - ${m._2}: \t${m._1}")
+    }
+
     //******** Memory mappings *********
     val apbDecoder = Apb3Decoder(
       master = apbBridge.io.apb,
-      slaves = apbMapping.toSeq
+      slaves = apbMapping
     )
 
     interconnect.build()

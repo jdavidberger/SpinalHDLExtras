@@ -37,7 +37,7 @@ object ReflectionUtils {
 case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Component {
   val top = f()
   val dut = FormalDut(top)
-  setName("GeneralFormalDut" + top.getClass.getSimpleName)
+  setDefinitionName("GeneralFormalDut" + top.getClass.getSimpleName)
 
   assumeInitial(ClockDomain.current.isResetActive)
 
@@ -107,7 +107,10 @@ trait FormalTestSuite {
   def ProveConfig(): SpinalFormalConfig = formalConfig.withProve(defaultDepth())
 
   def renameDefinition(c: Component, suffix: String) = {
-    c.setDefinitionName(c.getClass.getSimpleName + "_" + suffix)
+    if(c.definitionName == null) {
+      c.setDefinitionName(c.getClass.getSimpleName + "_" + suffix)
+    }
+    c
   }
 
   def formalTests(): Seq[(String, () => Any)] = {

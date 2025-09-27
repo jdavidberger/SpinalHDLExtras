@@ -89,7 +89,7 @@ object HardwareMemory {
 case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : BigInt, numReadWritePorts : Int,
                                         numReadPorts : Int = 0, numWritePorts : Int = 0,
                                         needsMask : Boolean = false,
-                                        latencyRange : (Int, Int) = (1, 3)) {
+                                        latencyRange : (Int, Int) = (1, 3), label : String = "") {
   lazy val allocationSizeInBits = dataType.getBitsWidth * num_elements
   lazy val allocationSizeInBytes = dataType.getBitsWidth * num_elements / 8
 
@@ -97,9 +97,9 @@ case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : B
 
   override def toString: String = {
     if(dataType.globalData != null) {
-      s"${dataType.getBitsWidth}bits_${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
+      s"${label} - ${dataType.getBitsWidth}bits_${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
     } else {
-      s"${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
+      s"${label} - ${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
     }
   }
 
