@@ -4,7 +4,7 @@ import spinal.core.formal._
 import spinal.core._
 import spinal.lib.{Counter, CounterFreeRun}
 import spinalextras.lib.formal.ComponentWithFormalProperties.DefaultProperties
-import spinalextras.lib.formal.{ComponentWithFormalProperties, HasFormalProperties}
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperty, HasFormalProperties}
 
 import java.io.IOException
 import scala.reflect.runtime.universe._

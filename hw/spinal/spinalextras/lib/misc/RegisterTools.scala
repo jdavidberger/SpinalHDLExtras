@@ -3,8 +3,9 @@ package spinalextras.lib.misc
 import spinal.core._
 import spinal.lib.StreamCCByToggle
 import spinal.lib.bus.regif.AccessType.{RO, RW}
-import spinal.lib.bus.regif.{BusIf, SymbolName}
+import spinal.lib.bus.regif.{AccessType, BusIf, SymbolName}
 
+import java.util.zip.CRC32C
 import scala.language.postfixOps
 
 object RegisterTools {
@@ -12,6 +13,17 @@ object RegisterTools {
     val r = (b.getRegPtr() & 0xFFFFFF00L) + 0x100L
     b.regPtrReAnchorAt(r)
     b
+  }
+
+  def RegisterFileHeader(busif : BusIf, name : String, version : Int): Unit = {
+    val crc = new CRC32C()
+    crc.update(name.getBytes)
+
+    val signature = busif.newReg(doc = s"${name} IP Signature")
+    signature.field(UInt(32 bits), AccessType.RO, crc.getValue, doc = "Signature field")
+
+    val versionReg = busif.newReg(doc = "IP version")
+    versionReg.field(UInt(32 bits), AccessType.RO, version, doc = "version field")
   }
 
   def ReadOnly[T <: Data](busIf : BusIf, name : String, value: T): Unit = {

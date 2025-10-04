@@ -1,10 +1,16 @@
 package spinalextras.lib.bus
 
+import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalMasterSlave, FormalProperties, FormalProperty}
+import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
-case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMasterSlave {
+import scala.language.postfixOps
+
+case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMasterSlave with FormalMasterSlave {
   val cmd = PipelinedMemoryBusCmd(config)
   val rsp = Bits(config.dataWidth bits)
 
@@ -16,6 +22,7 @@ case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMas
 
   def isStall = valid && !ready
   def fire = valid && ready
+  def readFire = fire && !cmd.write
 
   def setIdle(): Unit = {
     valid := False
@@ -32,15 +39,73 @@ case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMas
     tx
   }
 
-  def formalIsProducerValid() = {
+  override def formalIsProducerValid() = new FormalProperties(this) {
     val wasStall = RegNext(isStall) init(False)
     val steadyValid = valid || !wasStall
     val lastPayload = RegNextWhen(cmd, valid)
     val payloadInvariant = (lastPayload === cmd) || !wasStall
-    steadyValid && payloadInvariant
+    addFormalProperty(steadyValid, "Valid was not steady")
+    addFormalProperty(payloadInvariant, "Payload was not invariant")
   }
 
-  def formalIsConsumerValid() = True
+  def write(address: UInt, data: Bits) = {
+    cmd.write := True
+    cmd.assignWordAddress(address)
+    cmd.mask.setAll()
+    cmd.data := data
+    valid := True
+
+    fire
+  }
+
+  def read(address: UInt) = {
+    cmd.write := False
+    cmd.assignWordAddress(address)
+    cmd.mask.setAll()
+    cmd.data := 0
+    valid := True
+
+    fire
+  }
+}
+
+case class DirectBusToPipelinedMemoryBus(config : PipelinedMemoryBusConfig) extends ComponentWithFormalProperties {
+  val io = new Bundle {
+    val db = slave (DirectBus(config))
+    val pmb = master (PipelinedMemoryBus(config))
+  }
+
+  val expectingRead = RegInit(False) setWhen(io.pmb.readRequestFire) clearWhen(io.pmb.rsp.fire)
+  val cmdLatch = RegInit(False) setWhen(io.db.valid && !io.db.ready && !expectingRead) clearWhen(io.pmb.cmd.fire)
+
+  io.pmb.cmd.valid := cmdLatch
+  io.pmb.cmd.payload := io.db.cmd
+
+  io.db.rsp := io.pmb.rsp.data
+  io.db.ready := io.pmb.rsp.valid || (io.pmb.cmd.fire && io.pmb.cmd.write)
+
+  override def covers(): Seq[FormalProperty] = Seq(
+    io.db.isStall && io.db.cmd.write,
+    io.db.isStall && !io.db.cmd.write,
+    io.db.fire && io.db.cmd.write,
+    io.db.fire && !io.db.cmd.write,
+  )
+
+  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    addFormalProperty(expectingRead.asUInt === io.pmb.contract.outstandingReads)
+
+    when(cmdLatch) {
+      addFormalProperty(!expectingRead)
+      addFormalProperty(io.db.valid)
+    }
+
+    when(expectingRead) {
+      addFormalProperty(io.db.valid && (io.db.cmd.write === False))
+    }
+
+    addFormalProperty(io.db.readFire === io.pmb.rsp.fire)
+  }
+
 }
 
 object DirectBus {
@@ -59,30 +124,20 @@ object DirectBus {
     busOut
   }
 
-  def toPipelinedMemoryBus(dBus : DirectBus): PipelinedMemoryBus = new Composite(dBus, "toPipelinedMemoryBus") {
-    val bus = PipelinedMemoryBus(dBus.config)
+  def toPipelinedMemoryBus(dBus : DirectBus): PipelinedMemoryBus = {
+    val converter = DirectBusToPipelinedMemoryBus(dBus.config)
+    converter.io.db <> dBus
+    converter.io.pmb
+  }
+}
 
-    val expectingRead = RegInit(False) setWhen(bus.readRequestFire) clearWhen(bus.rsp.fire)
-    val cmdLatch = RegInit(False) setWhen(dBus.valid && !dBus.ready && !expectingRead) clearWhen(bus.cmd.fire)
-    when(cmdLatch) {
-      assert(!expectingRead)
-      assert(dBus.valid)
-    }
-    bus.cmd.valid := cmdLatch
-    bus.cmd.payload := dBus.cmd
 
-    dBus.rsp := bus.rsp.data
-    dBus.ready := bus.rsp.valid || (bus.cmd.fire && bus.cmd.write)
+class DirectBusToPipelinedMemoryBusFormalTest extends AnyFunSuite with FormalTestSuite {
+  formalTests().foreach(t => test(t._1) { t._2() })
 
-    //assert(bus.formalContract.outstandingReads === expectingRead.asUInt)
+  override def defaultDepth(): Int = 20
 
-//
-//    override lazy val formalValidInputs = bus.formalIsConsumerValid() && dBus.formalIsProducerValid()
-//
-//    override protected def formalChecks()(implicit useAssumes: Boolean): Unit = {
-//      assertOrAssume(bus.formalIsProducerValid())
-//      assertOrAssume(bus.formalContract.outstandingReads.value === (!cmdLatch).asUInt)
-//    }
-  }.bus
-
+  override def generateRtl() = Seq(
+    ("Basic", () => new GeneralFormalDut(() => new DirectBusToPipelinedMemoryBus(PipelinedMemoryBusConfig(32, 32))))
+  )
 }

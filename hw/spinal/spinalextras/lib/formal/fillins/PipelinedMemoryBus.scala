@@ -51,6 +51,16 @@ object PipelinedMemoryBusFormal {
       assert(this.contract.outstandingReads === that.contract.outstandingReads)
     }
 
+    def formalFullStage() = {
+      val stage1 = bus.cmdM2sPipe()
+      //assert(this.contract.outstandingReads === stage1.contract.outstandingReads)
+      val stage2 = stage1.cmdS2mPipe()
+      //assert(stage2.contract.outstandingReads === stage1.contract.outstandingReads)
+      val stage3 = stage2.rspPipe()
+      //assert(stage2.contract.outstandingReads === stage3.contract.outstandingReads)
+      stage3
+    }
+
     EquivalenceRegistry.AddEquivalenceHandler { case (a : PipelinedMemoryBusCmd, b : PipelinedMemoryBusCmd) => pmb_cmd_equivalence(a, b) }
   }
 }

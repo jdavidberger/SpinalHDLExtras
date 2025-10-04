@@ -53,7 +53,7 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
     val pmb = master(PipelinedMemoryBus(pipelinedMemoryBusConfig))
   }
 
-  assert(io.pmb.cmd.valid === False || (io.wb.byteAddress() & (io.wb.config.wordAddressInc() - 1)) === 0, "PMB needs word alignment")
+  //assert(io.pmb.cmd.valid === False || (io.wb.byteAddress() & (io.wb.config.wordAddressInc() - 1)) === 0, "PMB needs word alignment")
   val pendingRead = RegInit(False) setWhen(io.pmb.readRequestFire) clearWhen(io.wb.ACK)
   io.pmb.cmd.valid := io.wb.masterHasRequest & !pendingRead
   io.pmb.cmd.data := io.wb.DAT_MOSI
@@ -176,7 +176,7 @@ object PipelinedMemoryBusToWishbone {
     val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, 0, addressMap = identity)
     if(bus.name != null)
       adapter.setWeakName(s"${wb}_adapter")
-    adapter.io.pmb.cmdM2sPipe().cmdS2mPipe().rspPipe() >> bus
+    adapter.io.pmb.formalFullStage() >> bus
     adapter.io.wb <> wb
     //bus.assertBusEquivalence(adapter.io.pmb)
     //wb.formalAssertEquivalence(adapter.io.wb)

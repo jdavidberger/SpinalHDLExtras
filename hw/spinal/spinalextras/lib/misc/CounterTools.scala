@@ -14,13 +14,13 @@ import scala.language.postfixOps
 class CounterVariableChange(val rangeBits : Int) extends ImplicitArea [SInt] {
   val value = Reg(SInt(rangeBits + 1 bits)) init(0)
 
-  val increment = UInt(rangeBits bits)
+  private val increment = UInt(rangeBits bits)
   increment := 0
   def increment_by(v : UInt): Unit = {
-    increment := v
+    increment := v.resized
   }
 
-  val decrement = UInt(rangeBits bits)
+  private val decrement = UInt(rangeBits bits)
   decrement := 0
   def decrement_by(v : UInt): Unit = {
     decrement := v

@@ -5,6 +5,7 @@ import spinal.lib._
 
 package object FragmentFormal {
   implicit class FragmentExt[T <: Data](fragment: Fragment[T]) extends FormalData {
+    override def underlyingData: Data = fragment
 
     override type Self = this.type
 

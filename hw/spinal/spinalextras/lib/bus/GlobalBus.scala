@@ -192,6 +192,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     preBuildTasks.append(task)
   }
   def build(): Unit = {
+    built = true
     preBuildTasks.foreach(_())
   }
 }
@@ -299,8 +300,8 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
 
   def addr_width() = config.addressWidth
   override def build(): Unit = {
-    println("System Bus Masters")
-    built = true
+    println(s"System Bus Masters")
+
     super.build()
 
     val ctx = Component.push(topComponent)

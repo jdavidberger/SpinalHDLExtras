@@ -150,5 +150,5 @@ class FormalProperties(val self : Nameable = null, val postfix : String = "forma
     this
   }
 
-  implicit override def implicitValue: Seq[FormalProperty] = formalProperties.toSeq
+  implicit override def implicitValue: Seq[FormalProperty] = formalProperties
 }

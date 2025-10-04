@@ -94,6 +94,7 @@ class GlobalLogger {
         logger.add_comments(comments)
         logger.codeDefinitions(output_path)
         logger.sqliteHandlers(output_path)
+        logger.yamlFile(output_path)
         logger.create_logger_port(sysBus, address, depth, outputStream)
         ctx.restore()
       } else {
@@ -505,6 +506,62 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
     }
 
   }
+  def yamlFile(output_path : String): Unit = {
+    val file = new PrintWriter(s"${output_path}/${name}.logger_defs.yml")
+
+    def get_field_name(n : String): String = {
+      assert(n.nonEmpty)
+
+      if(n.matches("[0-9*].*"))
+        s"_${n}"
+      else n
+    }
+
+    def emit(s : String): Unit = {
+      file.write(s)
+      file.write("\n");
+      file.flush()
+    }
+
+    def emit_type(d : Data, tabCount : Int = 1): Unit = {
+      val tabs = "   ".repeat(tabCount)
+      d match {
+        case b : MultiData => {
+          b.elements.foreach(x => {
+            val prefix = get_field_name(x._1)
+            emit(s"${tabs}- ${prefix}:")
+            emit_type(x._2, tabCount + 1)
+          })
+        }
+        case e : SpinalEnumCraft[_] => {
+          e.spinalEnum.elements.map(_.getDisplayName()).foreach(n => {
+            emit(s"${tabs}- ${n}")
+          })
+        }
+        case _ => {
+          emit(s"${tabs}${d.getClass.getSimpleName}: ${d.getBitsWidth}")
+        }
+      }
+    }
+
+    emit(s"clock_freq: ${clockDomain.get.frequency.getValue.toDouble}")
+    emit(s"signature: ${signature}")
+    emit(s"index_size: ${index_size}")
+    emit(s"log_bits: ${logBits}")
+    emit("event_definitions:")
+    datas.zipWithIndex.foreach(d_clk => {
+      val (d, cd) = d_clk._1
+      val idx = d_clk._2
+
+      emit(s"   - name: ${flows()(idx)._1.name}")
+      emit(s"     time_bits: ${logBits - d.getBitsWidth - index_size}")
+      emit(s"     type: ")
+      emit_type(d, 2)
+    })
+
+    file.close()
+  }
+
   def codeDefinitions(output_path : String): Unit = {
     def getCType(data: Data): String = {
       val sizes = Seq(8, 16, 32, 64, 128)
@@ -829,6 +886,8 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
 
     val manual_trigger = io.manual_trigger.clone()
     logger_port.driveFlow(manual_trigger, address + 32)
+    logger_port.createReadOnly(Bits(32 bits), address + 32) := B(datas.size, 32 bits).resized
+
     io.manual_trigger <> manual_trigger.stage()
 
     val inactive_channels = Reg(io.inactive_channels.clone()) init(0)

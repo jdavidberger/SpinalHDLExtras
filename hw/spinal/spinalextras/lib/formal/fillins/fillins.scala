@@ -1,8 +1,8 @@
 package spinalextras.lib.formal
 
-import spinal.core.{Area, Component, Data}
-import spinal.lib.bus.amba4.axi.Axi4
-import spinal.lib.{Counter, Fragment, Stream}
+import spinal.core.{Area, Bundle, Component, Data}
+import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly, Axi4Shared, Axi4WriteOnly}
+import spinal.lib.{Counter, Fragment, IMasterSlave, Stream}
 import spinal.lib.bus.simple.PipelinedMemoryBus
 import spinal.lib.bus.wishbone.Wishbone
 
@@ -49,6 +49,14 @@ package object fillins {
       }
     }
 
+    if(!data.isInstanceOf[FormalData]) {
+      data match {
+        case bundle: Bundle =>
+          return new BundleExt(bundle)
+        case _ =>
+      }
+    }
+
     orElse
   }
 
@@ -60,4 +68,8 @@ package object fillins {
   fillins.AddHandler { case bus: PipelinedMemoryBus => PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt(bus) }
   fillins.AddHandler { case counter: Counter => CounterFormalExt(counter) }
   fillins.AddHandler { case bus: Axi4 => Axi4Formal.Axi4FormalExt(bus) }
+  fillins.AddHandler { case bus: Axi4Shared => Axi4Formal.Axi4SharedFormalExt(bus) }
+  fillins.AddHandler { case bus: Axi4ReadOnly => Axi4Formal.Axi4ReadOnlyExt(bus) }
+  fillins.AddHandler { case bus: Axi4WriteOnly => Axi4Formal.Axi4WriteOnlyExt(bus) }
+
 }

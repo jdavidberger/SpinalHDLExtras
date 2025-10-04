@@ -25,15 +25,17 @@ class LMMI(config: LMMIConfig) extends Bundle with IMasterSlave {
   val cmd = Stream(LMMICmd(config))
   val rsp = Flow(Bits(config.dataWidth bits))
 
-  cmd.valid.setName(s"request")
-  cmd.offset.setName(s"offset")
-  cmd.write.setName(s"wr_rdn")
-  cmd.data.setName(s"wdata")
+  if(!globalData.config.formalAsserts) {
+    cmd.valid.setName(s"request")
+    cmd.offset.setName(s"offset")
+    cmd.write.setName(s"wr_rdn")
+    cmd.data.setName(s"wdata")
 
-  cmd.ready.setName(s"ready")
+    cmd.ready.setName(s"ready")
 
-  rsp.valid.setName(s"rdata_valid")
-  rsp.payload.setName(s"rdata")
+    rsp.valid.setName(s"rdata_valid")
+    rsp.payload.setName(s"rdata")
+  }
 
   override def asMaster(): Unit = {
     master(cmd)
