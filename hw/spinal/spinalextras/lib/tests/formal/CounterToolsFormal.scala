@@ -8,7 +8,7 @@ import spinal.lib.bus.regif.WishboneBusInterface
 import spinal.lib.bus.wishbone.WishboneConfig
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
 import spinalextras.lib.bus.general.{GeneralBusArbiter, GeneralBusInterface, XipBusMemBusInterfaceExtImpl}
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperty, HasFormalProperties}
 import spinalextras.lib.misc.CounterUpDownUneven
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus}
@@ -26,6 +26,7 @@ case class CounterUpDownUnevenComponent(val range : Int, val incBy : Int = 1, va
   when(io.clear) { counter.clear() }
   io.count := counter.value
 
+  override protected def formalInputProperties(): Seq[FormalProperty] = super.formalInputProperties() ++ Seq(FormalProperty(counter.formalInputStateIsValid, "Propagate input properties"))
   //override lazy val formalValidInputs = counter.formalValidInputs
 }
 
@@ -34,7 +35,7 @@ case class CounterToolsFormal(val range : Int, val incBy : Int = 1, val decBy : 
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.anyseq_inputs()
-  //HasFormalAsserts.printFormalAssertsReport()
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 

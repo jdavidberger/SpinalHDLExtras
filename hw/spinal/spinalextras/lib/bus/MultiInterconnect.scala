@@ -18,15 +18,15 @@ trait MultiBusInterface {
 }
 
 object MultiInterconnectConnectFactory {
-  type HandlerFunction = PartialFunction[(MultiBusInterface, MultiBusInterface), Unit]
+  type HandlerFunction = PartialFunction[(MultiBusInterface, MultiBusInterface), Any]
 
   private var handlers = mutable.ArrayBuffer[HandlerFunction]()
 
-  def apply(m: MultiBusInterface, s: MultiBusInterface): Unit = {
+  def apply(m: MultiBusInterface, s: MultiBusInterface): Any = {
     for (handler <- handlers) {
       val factoryFunc = handler.lift((m,s))
       if(factoryFunc.nonEmpty)
-        return
+        return factoryFunc.get
     }
 
     throw new MatchError(s"Could not find match to ${m} <> ${s}")

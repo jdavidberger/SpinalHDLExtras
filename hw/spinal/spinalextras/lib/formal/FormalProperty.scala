@@ -21,6 +21,10 @@ class FormalProperty(cond: Bool, val msg: Seq[Any])(implicit val loc: Location) 
   // This prevents us from creating a bunch of asserts unintentionally.
   //lazy val assertStatement = assert(condition, msg)(loc = loc)
 
+  override def toString(): String = {
+    msg.mkString(" ") + loc.toString
+  }
+
   def apply(assertStatementKind: AssertStatementKind) = {
     condition.component.withAutoPull()
     assertStatementKind match {

@@ -15,6 +15,7 @@ import spinalextras.lib.formal.StreamFormal.StreamExt
 import spinalextras.lib.formal._
 import spinalextras.lib.formal.fillins.Wishbone._
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal._
+import spinalextras.lib.misc.StreamFragmentWidthAdapterWithOccupancy
 
 import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
@@ -104,14 +105,17 @@ package object bus {
   class DBusSimpleContract(bus : DBusSimpleBus) extends FormalProperties(bus) {
     import bus._
 
-    val outstandingReads = Reg(SInt(32 bits)) init(0)
+    val outstandingReads = Reg(SInt(33 bits)) init(0)
 
-    val toAdd = Mux(cmd.fire, U(1), U(0))
+    val toAdd = (cmd.fire && !cmd.wr) ? U(1) | U(0)
     outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.ready.asUInt.intoSInt).resized
 
-    addFormalProperty(outstandingReads > 0 || !rsp.ready)
+    when(rsp.ready && toAdd === 0) {
+      addFormalProperty(outstandingReads > 0, "Response data with no outstanding reads")
+    }
+
     addFormalProperties(cmd.formalIsConsumerValid())
-    addFormalProperty(outstandingReads >= 0, "XIP outstanding reads should be above 0")
+    addFormalProperty(outstandingReads >= 0, "DBus outstanding reads should be above 0")
   }
 
   class DBusSimpleFormal(val bus : DBusSimpleBus) extends FormalMasterSlave {
@@ -152,7 +156,7 @@ package object bus {
 
     val outstandingReads = Reg(SInt(32 bits)) init(0)
 
-    val toAdd = Mux(cmd.fire, cmd.length + 1, U(0))
+    val toAdd = cmd.fire ? (cmd.length + 1) | U(0)
     outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.fire.asUInt.intoSInt).resized
 
     addFormalProperty(outstandingReads > 0 || !rsp.fire)
@@ -246,7 +250,8 @@ package object bus {
   }}
 
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: XipBusExt) => new Composite(m.bus, "to_xip") with HasFormalProperties {
-    m.bus.cmd.map(c => {
+    val wordWidth = (m.bus.cmd.data.getWidth / 8)
+    m.bus.cmd.discardWhen(m.bus.cmd.write).map(c => {
       val cmd = cloneOf(s.bus.cmd.payload)
       cmd.address := c.address.resized//(c.address << log2Up(m.bus.config.dataWidth / 8)).resized
       cmd.length := m.bus.config.dataWidth / 8 - 1
@@ -254,7 +259,7 @@ package object bus {
     }) >> s.bus.cmd
 
     val output = Stream(Fragment(Bits(m.bus.config.dataWidth bits)))
-    StreamFragmentWidthAdapter(s.bus.rsp, output)
+    val adapter = StreamFragmentWidthAdapterWithOccupancy(s.bus.rsp, output)
 
     output.map(r => {
       val rsp = cloneOf(m.bus.rsp.payload)
@@ -262,35 +267,36 @@ package object bus {
       rsp
     }).toFlow >> m.bus.rsp
 
-    /**
-     * @return The formal properties which should all be true if the formalInputProperties are true too. These are the main
-     *         assertions we are concerned with defining and verifying in formal testing
-     *
-     *         For complicated properties, consider using the helper class `FormalProperties`
-     */
-    override protected def formalProperties(): Seq[FormalProperty] = {
-      FormalProperty.toFormalProperties(PipelinedMemoryBusFormalExt(m.bus).contract.outstandingReads.value.asSInt ===
-        new XipBusFormal(s.bus).contract.outstandingReads)
+    override protected def formalProperties() = new FormalProperties(this) {
+      val xipReads = (new XipBusFormal(s.bus).contract.outstandingReads.asUInt +^ adapter.io.occupancy)
+      addFormalProperty(new PipelinedMemoryBusFormalExt(m.bus).contract.outstandingReads * wordWidth === xipReads, "Outstanding reads should match")
     }
   }}
 
 
-  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip") {
-    m.bus.cmd.map(c => {
+  MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip") with HasFormalProperties {
+    val wordWidth = (m.bus.cmd.data.getWidth / 8)
+
+    m.bus.cmd.throwWhen(m.bus.cmd.wr).map(c => {
       val wordShift = log2Up(c.address.getWidth / 8)
       val cmd = cloneOf(s.bus.cmd.payload)
       cmd.address := ((c.address >> wordShift) << wordShift).resized //(c.address << log2Up(m.bus.config.dataWidth / 8)).resized
-      cmd.length := m.bus.cmd.data.getWidth / 8 - 1
+      cmd.length := wordWidth - 1
       cmd
     }) >> s.bus.cmd
 
     val output = Stream(Fragment(Bits(m.bus.cmd.data.getWidth bits)))
-    StreamFragmentWidthAdapter(s.bus.rsp, output)
+    val adapater = StreamFragmentWidthAdapterWithOccupancy(s.bus.rsp, output)
 
     output.ready := True
     m.bus.rsp.ready := output.valid
     m.bus.rsp.data := output.payload.fragment
     m.bus.rsp.error := False
+
+    override protected def formalProperties() = new FormalProperties(this) {
+      val xipReads = (new XipBusFormal(s.bus).contract.outstandingReads.asUInt +^ adapater.io.occupancy)
+      addFormalProperty(new DBusSimpleFormal(m.bus).contract.outstandingReads.asUInt * wordWidth === xipReads, "Outstanding reads should match")
+    }
   }}
 
   MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: InstructionCacheMemBusExt) => new Composite(m.bus) {
@@ -327,21 +333,47 @@ package object bus {
     wb <> s.bus
   }}
 
+  def toWishbone(dbus: DBusSimpleBus) = {
+    import dbus._
+    val wishboneConfig = DBusSimpleBus.getWishboneConfig()
+    val bus = Wishbone(wishboneConfig)
+    val cmdStage = cmd
 
+    bus.ADR := cmdStage.address >> 2
+    bus.CTI :=B"000"
+    bus.BTE := "00"
+    bus.SEL := genMask(cmdStage).resized
+    bus.WE  := cmdStage.wr
+    bus.DAT_MOSI := cmdStage.data
+
+    cmdStage.ready := cmdStage.valid && (bus.ACK || bus.ERR)
+    bus.CYC := cmdStage.valid
+    bus.STB := cmdStage.valid
+
+    rsp.ready := cmdStage.valid && !bus.WE && (bus.ACK || bus.ERR)
+    rsp.data  := bus.DAT_MISO
+    rsp.error := bus.ERR
+    bus
+  }
   MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: WishboneMultiBusInterface) => new Composite(m.bus, "dbus_to_wb") with HasFormalProperties {
-    val dbus_as_wb = m.bus.toWishbone()
+    val dbus_as_wb = toWishbone(m.bus)
     dbus_as_wb.connectToGranularity(s.bus, allowAddressResize = true, allowDataResize = true)
     if(dbus_as_wb.ERR != null && s.bus.ERR == null) {
       dbus_as_wb.ERR := False
     }
 
-    override protected def formalProperties(): Seq[FormalProperty] = new DBusSimpleFormal(m.bus).contract.outstandingReads === 0
+    override protected def formalProperties() = new FormalProperties(this) {
+      addFormalProperty(new DBusSimpleFormal(m.bus).contract.outstandingReads === 0
+        , "Enforce syncronous operation")
+    }
   }}
 
   MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: PipelinedMemoryBusMultiBus) => new Composite(m.bus, "dbus_to_pmb") with HasFormalProperties {
     m.bus.toPipelinedMemoryBus() >> s.bus
     m.bus.rsp.error := False
 
-    override protected def formalProperties(): Seq[FormalProperty] = new DBusSimpleFormal(m.bus).contract.outstandingReads === s.bus.contract.outstandingReads.value.intoSInt
+    override protected def formalProperties() = new FormalProperties(this) {
+      addFormalProperty(new DBusSimpleFormal(m.bus).contract.outstandingReads.asUInt === s.bus.contract.outstandingReads.value, "Oustanding reads match")
+    }
   }}
 }

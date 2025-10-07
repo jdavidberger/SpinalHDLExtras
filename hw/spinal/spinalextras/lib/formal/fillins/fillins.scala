@@ -51,6 +51,8 @@ package object fillins {
 
     if(!data.isInstanceOf[FormalData]) {
       data match {
+        case ms : Bundle with IMasterSlave =>
+          return new IMasterSlaveExt(ms)
         case bundle: Bundle =>
           return new BundleExt(bundle)
         case _ =>

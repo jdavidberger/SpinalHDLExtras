@@ -1,7 +1,8 @@
 package spinalextras.lib.formal.fillins
 
 import spinal.core.{Bundle, Data}
-import spinalextras.lib.formal.{FormalData, FormalProperty}
+import spinal.lib.IMasterSlave
+import spinalextras.lib.formal.{FormalData, FormalMasterSlave, FormalProperty}
 
 class BundleExt(data : Bundle) extends FormalData {
 
@@ -17,4 +18,31 @@ class BundleExt(data : Bundle) extends FormalData {
   }
 
   override def underlyingData: Data = data
+}
+
+
+class IMasterSlaveExt(data : Bundle with IMasterSlave) extends FormalMasterSlave {
+  private lazy val elementsWithProperties = data.elements.map(x => findFillin(x._2))
+
+  override def underlyingData: Data = data
+
+  /**
+   * @return True if and only if the driving signals are valid
+   */
+  override def formalIsProducerValid(): Seq[FormalProperty] = {
+    elementsWithProperties.flatMap {
+      case ims: FormalMasterSlave => ims.formalIsProducerValid()
+      case formalData: FormalData => formalData.formalIsStateValid()
+      case _ => Seq()
+    }
+  }
+
+  override def formalIsConsumerValid(): Seq[FormalProperty] = {
+    elementsWithProperties.flatMap {
+      case ims: FormalMasterSlave => ims.formalIsConsumerValid()
+      case _ => Seq()
+    }
+  }
+
+  override def asIMasterSlave = data
 }

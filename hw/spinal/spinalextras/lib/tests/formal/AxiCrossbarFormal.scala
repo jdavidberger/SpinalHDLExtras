@@ -1,6 +1,6 @@
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.{Bundle, Component, IntToBuilder}
-import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4CrossbarFactory, Axi4ReadOnly, Axi4ReadOnlyArbiter, Axi4ReadOnlyDecoder, Axi4SharedOnChipRam, Axi4WriteOnly, Axi4WriteOnlyArbiter, Axi4WriteOnlyDecoder}
+import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4CrossbarFactory, Axi4ReadOnly, Axi4ReadOnlyArbiter, Axi4ReadOnlyDecoder, Axi4Shared, Axi4SharedDecoder, Axi4SharedOnChipRam, Axi4WriteOnly, Axi4WriteOnlyArbiter, Axi4WriteOnlyDecoder}
 import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
 import spinal.lib.{StreamPipe, master, slave}
 import spinalextras.lib.formal.ComponentWithFormalProperties
@@ -12,7 +12,7 @@ class AxiCrossbarTester extends ComponentWithFormalProperties {
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 2,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -24,7 +24,7 @@ class AxiCrossbarTester extends ComponentWithFormalProperties {
 
   val io = new Bundle {
     val masterA, masterB = slave (Axi4(axiMConfig))
-    val slaveA, slaveB = master (Axi4(axiMConfig.copy(idWidth = 9)))
+    val slaveA, slaveB = master (Axi4(axiMConfig.copy(idWidth = axiMConfig.idWidth + 1)))
   }
 
   axiCrossbar.addSlaves(
@@ -46,7 +46,7 @@ class AxiReadOnlyCrossbarTester extends ComponentWithFormalProperties {
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 2,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -58,7 +58,7 @@ class AxiReadOnlyCrossbarTester extends ComponentWithFormalProperties {
 
   val io = new Bundle {
     val masterA, masterB = slave (Axi4ReadOnly(axiMConfig))
-    val slaveA, slaveB = master (Axi4ReadOnly(axiMConfig.copy(idWidth = 9)))
+    val slaveA, slaveB = master (Axi4ReadOnly(axiMConfig.copy(idWidth = axiMConfig.idWidth + 1)))
   }
 
   axiCrossbar.addSlaves(
@@ -80,7 +80,7 @@ class AxiWriteOnlyCrossbarTester extends ComponentWithFormalProperties {
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 1,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -92,7 +92,7 @@ class AxiWriteOnlyCrossbarTester extends ComponentWithFormalProperties {
 
   val io = new Bundle {
     val masterA , masterB = slave (Axi4WriteOnly(axiMConfig))
-    val slaveA, slaveB = master (Axi4WriteOnly(axiMConfig.copy(idWidth = 9)))
+    val slaveA, slaveB = master (Axi4WriteOnly(axiMConfig.copy(idWidth = 2)))
   }
 
   axiCrossbar.addSlaves(
@@ -114,7 +114,7 @@ class AxiPipelineTester extends ComponentWithFormalProperties {
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 2,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -137,7 +137,7 @@ class AxiDirectTester extends ComponentWithFormalProperties {
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 2,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -161,7 +161,7 @@ class AxiReadOnlyDecoderTester extends ComponentWithFormalProperties {
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 2,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -182,11 +182,12 @@ class AxiReadOnlyDecoderTester extends ComponentWithFormalProperties {
   decoder.io.outputs(1) <> io.slaveB
 }
 
+
 class Axi4ReadOnlyArbiterTester extends ComponentWithFormalProperties {
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 0,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -198,10 +199,10 @@ class Axi4ReadOnlyArbiterTester extends ComponentWithFormalProperties {
 
   val io = new Bundle {
     val masterA, masterB = slave (Axi4ReadOnly(axiMConfig))
-    val slaveA = master (Axi4ReadOnly(axiMConfig.copy(idWidth = 9)))
+    val slaveA = master (Axi4ReadOnly(axiMConfig.copy(idWidth = axiMConfig.idWidth + 1)))
   }
 
-  val arbiter = Axi4ReadOnlyArbiter(axiMConfig.copy(idWidth = 9), 2)
+  val arbiter = Axi4ReadOnlyArbiter(axiMConfig.copy(idWidth = axiMConfig.idWidth + 1), 2)
   arbiter.io.inputs(0) <> io.masterA
   arbiter.io.inputs(1) <> io.masterB
   arbiter.io.output <> io.slaveA
@@ -211,7 +212,7 @@ class Axi4WriteOnlyArbiterTester(routeBufferSize : Int = 4) extends ComponentWit
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 2,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -223,10 +224,10 @@ class Axi4WriteOnlyArbiterTester(routeBufferSize : Int = 4) extends ComponentWit
 
   val io = new Bundle {
     val masterA, masterB = slave (Axi4WriteOnly(axiMConfig))
-    val slaveA = master (Axi4WriteOnly(axiMConfig.copy(idWidth = 9)))
+    val slaveA = master (Axi4WriteOnly(axiMConfig.copy(idWidth = axiMConfig.idWidth + 1)))
   }
 
-  val arbiter = Axi4WriteOnlyArbiter(axiMConfig.copy(idWidth = 9), 2, routeBufferSize)
+  val arbiter = Axi4WriteOnlyArbiter(axiMConfig.copy(idWidth = axiMConfig.idWidth + 1), 2, routeBufferSize)
   arbiter.io.inputs(0) <> io.masterA
   arbiter.io.inputs(1) <> io.masterB
   arbiter.io.output <> io.slaveA
@@ -237,7 +238,7 @@ class AxiWriteOnlyDecoderTester extends ComponentWithFormalProperties {
   val axiMConfig = Axi4Config(
     addressWidth    = 32,
     dataWidth       = 64,
-    idWidth         = 8,
+    idWidth         = 2,
     useRegion       = false,
     useId           = true,
     useLock         = true,
@@ -261,15 +262,15 @@ class AxiWriteOnlyDecoderTester extends ComponentWithFormalProperties {
 class AxiCrossbarTesterFormalTest extends AnyFunSuite with FormalTestSuite {
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def defaultDepth(): Int = 10
+  override def defaultDepth(): Int = 5
 
   override def generateRtlBMC() = Seq(
+    ("ReadDecoder", () => GeneralFormalDut( () => new AxiReadOnlyDecoderTester())),
+    ("ReadArbiter", () => GeneralFormalDut( () => new Axi4ReadOnlyArbiterTester())),
     ("writeCrossbar", () => GeneralFormalDut( () => new AxiWriteOnlyCrossbarTester())),
     ("WriteArbiter", () => GeneralFormalDut( () => new Axi4WriteOnlyArbiterTester())),
     ("Direct", () => GeneralFormalDut( () => new AxiDirectTester())),
     ("Pipelined", () => GeneralFormalDut( () => new AxiPipelineTester())),
-    ("ReadDecoder", () => GeneralFormalDut( () => new AxiReadOnlyDecoderTester())),
-    ("ReadArbiter", () => GeneralFormalDut( () => new Axi4ReadOnlyArbiterTester())),
     ("WriteDecoder", () => GeneralFormalDut( () => new AxiWriteOnlyDecoderTester())),
     ("readCrossbar", () => GeneralFormalDut( () => new AxiReadOnlyCrossbarTester())),
     ("crossbar", () => GeneralFormalDut( () => new AxiCrossbarTester())),

@@ -35,7 +35,7 @@ class CounterVariableChange(val rangeBits : Int) extends ImplicitArea [SInt] {
   override def implicitValue: SInt = value
 }
 
-class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1) extends ImplicitArea[UInt] with HasFormalProperties {
+class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1, underFlowAllowed : Boolean = false) extends ImplicitArea[UInt] with HasFormalProperties {
   val valueNext = UInt(log2Up(range + 1) bits)
   val value = RegNext(valueNext) init(0)
 
@@ -66,6 +66,7 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
 
   val willOverflowIfInc: Bool = value > (range - incBy)
   val willUnderflowIfDec: Bool = value < decBy
+  val willUderflow = value < delta.abs && delta >= S(0)
 
   //assert(value <= range, f"Usage overflow ${value} ${this}")
 
@@ -85,6 +86,16 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
   override def implicitValue: UInt = value
 
   /**
+   * @return Returns the list of properties that must be true if the input to the given component-like class are to
+   *         be considered valid, and thus signify that the `formalProperties` themselves are all true as well.
+   *
+   *         For complicated properties, consider using the helper class `FormalProperties`
+   */
+  override protected def formalInputProperties(): Seq[FormalProperty] = super.formalInputProperties() ++ (if(!underFlowAllowed) {
+    Seq(FormalProperty(willUderflow, "Underflow disallowed"))
+  }  else Seq())
+
+  /**
    * @return The formal properties which should all be true if the formalInputProperties are true too. These are the main
    *         assertions we are concerned with defining and verifying in formal testing
    *
@@ -94,11 +105,6 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
     addFormalProperty(value <= range, f"Usage overflow ${value} ${this}, max ${range}")
     val inc_dec_gcd = gcd(incBy, decBy)
     addFormalProperty((value % inc_dec_gcd) === 0)
-
-    val absDelta = delta.abs
-    when(delta < 0) {
-      addFormalProperty(value >= absDelta)
-    }
   }
 }
 

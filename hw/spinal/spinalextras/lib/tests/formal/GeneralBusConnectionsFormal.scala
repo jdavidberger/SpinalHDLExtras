@@ -18,7 +18,7 @@ import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus}
 import vexriscv.plugin.{DBusSimpleBus, IBusCachedPlugin, IBusSimpleBus}
 import spinalextras.lib.bus.bus._
 import spinalextras.lib.bus.bus.XipBusFormal
-import spinalextras.lib.formal.{ComponentWithFormalProperties, HasFormalProperties}
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty, HasFormalProperties}
 
 import scala.language.postfixOps
 
@@ -33,6 +33,7 @@ case class GeneralBusConnectionComponent(val m : () => MultiBusInterface, val s 
 
   withAutoPull()
   MultiInterconnectConnectFactory(mBus, sBus)
+
 }
 
 case class GeneralBusConnectionFormal(val m : () => MultiBusInterface, val s : () => MultiBusInterface) extends Component {

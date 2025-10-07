@@ -8,6 +8,7 @@ import spinal.lib.bus.amba4.axi.Axi4.resp.OKAY
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4R, Axi4W}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.fsm._
+import spinalextras.lib.formal.fillins.Axi4Formal.Axi4FormalExt
 import spinalextras.lib.{Config, Memories, MemoryRequirement}
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty, HasFormalProperties}
@@ -64,6 +65,13 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
   // AR Channel
   io.axi.ar.ready := False
 
+  // --- Address Increment Calculation ---
+  def get_addr_increment(axSize: UInt): UInt = {
+    (U(1) << axSize).resized
+  }
+
+  def addr_increment = RegInit(get_addr_increment(io.axi.ar.size))
+
   val write_area = new Area {
     // --- Write Path Registers ---
     val aw_reg = Reg(cloneOf(io.axi.aw))
@@ -80,14 +88,19 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
     }) <> io.pmb.cmd
 
     when(io.axi.w.fire) {
-      current_write_addr  := current_write_addr + get_addr_increment(aw_reg.size)
+      current_write_addr  := current_write_addr + addr_increment
     }
   }
   // --- Read Path Registers ---
 
   val read_area = new Area {
     val readMode = False
-    val ar_reg = Reg(cloneOf(io.axi.ar))
+    val ar_reg = Reg(cloneOf(io.axi.ar)) init({
+      val init = cloneOf(io.axi.ar)
+      init.clearAll()
+      init
+    })
+    val read_beats_remaining, rsp_beats_remaining = Reg(cloneOf(io.axi.ar.len +^ 1)) init(0)
 
     val current_read_addr = Reg(config.axiConfig.addressType) init(0)// Address for current PMB command
     val read_pmb_cmds_sent = Reg(UInt(9 bits)) init(0) // PMB Read commands sent
@@ -105,15 +118,17 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
     pmb_rsp_fifo.io.push << io.pmb.rsp.map(_.data).toStream // Connect PMB response to FIFO input
     pmb_rsp_fifo.io.pop.map(rsp => {
       val r = cloneOf(io.axi.r.payload)
-      r.last := rspCount.value === ar_reg.len
+      r.last := rsp_beats_remaining === 1
       r.resp := Axi4.resp.OKAY
       r.data := rsp
       r.id := ar_reg.id
       r
-    }).s2mPipe() <> io.axi.r
+    }) <> io.axi.r
 
+    assert(ar_reg.len -^ rspCount +^ ar_reg.valid.asUInt === rsp_beats_remaining)
     when(io.axi.r.fire) {
       rspCount.increment()
+      rsp_beats_remaining := rsp_beats_remaining - 1
     }
 
     val inFlightCounter = CounterUpDown(pmb_rsp_fifo.depth,
@@ -121,11 +136,6 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
       decWhen = pmb_rsp_fifo.io.pop.fire)
 
     val readStall = inFlightCounter.willOverflowIfInc
-  }
-
-  // --- Address Increment Calculation ---
-  def get_addr_increment(axSize: UInt): UInt = {
-    (U(1) << axSize).resized
   }
 
   // --- State Machine Definition ---
@@ -141,10 +151,11 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
     // State: S_IDLE
     sIdle.whenIsActive {
       io.axi.aw.ready := True
-      io.axi.ar.ready := True
+      io.axi.ar.ready := !io.axi.aw.valid
 
       when(io.axi.aw.fire) { // Write Address received
         write_area.aw_reg := io.axi.aw
+        addr_increment := get_addr_increment(io.axi.aw.size)
 
         write_area.current_write_addr := io.axi.aw.payload.addr
         assert(io.axi.aw.payload.burst === Axi4.burst.INCR)//, "Bridge only supports INCR bursts for writes")
@@ -153,6 +164,10 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
       }
         .elsewhen(io.axi.ar.fire) { // Read Address received
           read_area.ar_reg := io.axi.ar
+          addr_increment := get_addr_increment(io.axi.aw.size)
+
+          read_area.read_beats_remaining := io.axi.ar.len +^ 1
+          read_area.rsp_beats_remaining := io.axi.ar.len +^ 1
 
           read_area.current_read_addr  := io.axi.ar.payload.addr
           read_area.read_pmb_cmds_sent := 0
@@ -190,11 +205,12 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
       assert(read_area.read_pmb_cmds_sent <= (read_area.ar_reg.len))
 
       when(io.pmb.cmd.fire) { // PMB accepted the read command
+        read_area.read_beats_remaining := read_area.read_beats_remaining - 1
         read_area.read_pmb_cmds_sent := read_area.read_pmb_cmds_sent + 1
-        read_area.current_read_addr  := read_area.current_read_addr + get_addr_increment(read_area.ar_reg.size)
+        read_area.current_read_addr  := read_area.current_read_addr + addr_increment
 
         // If this was the last PMB command to send for the burst, move to wait for/send responses
-        when ((read_area.read_pmb_cmds_sent) === (read_area.ar_reg.len)) { // Check for next count
+        when(read_area.read_beats_remaining === 1) {
           goto(sReadBurstWaitRsp) // Or directly to sReadBurstSendR if FIFO is expected to have data soon
         }
       }
@@ -205,10 +221,14 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
       when(io.axi.r.fire && io.axi.r.last) {
         read_area.rspCount.clear()
         read_area.read_pmb_cmds_sent := 0
+        read_area.ar_reg.clearAll()
+
         goto(sIdle)
       }
     }
   }
+
+  override def covers(): Seq[FormalProperty] = Seq(io.axi.r.last && io.axi.r.fire)
 
   override def formalComponentProperties() = new FormalProperties {
     addFormalProperty(io.pmb.contract.outstandingReads +^ read_area.pmb_rsp_fifo.io.occupancy === read_area.inFlightCounter, "Flight counter should account for outstanding reads and items in the fifo")
@@ -216,9 +236,17 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
     addFormalProperty((read_area.rspCount +^ read_area.inFlightCounter.value) === read_area.read_pmb_cmds_sent, "In flight + rsp inc should equal pmb sents")
     addFormalProperty(read_area.read_pmb_cmds_sent <= (read_area.ar_reg.len +^ 1), "read pmbs sent cant exceed the request length")
 
-    when(read_area.readMode) {
+    addFormalProperty(io.axi.readContract.outstandingReads >= read_area.pmb_rsp_fifo.io.occupancy +^ io.pmb.contract.outstandingReads)
+    addFormalProperty(((read_area.read_beats_remaining +^ read_area.inFlightCounter) <= read_area.rsp_beats_remaining), "Maintain relationship between read and rsp")
 
+    val expectedAxiReadCount = (read_area.inFlightCounter +^ read_area.read_beats_remaining)
+    addFormalProperty(io.axi.readContract.outstandingReads === expectedAxiReadCount, "Maintain read counters between PMB and AXI")
+
+    when(read_area.readMode) {
+      addFormalProperty((read_area.read_beats_remaining +^ read_area.read_pmb_cmds_sent) === (read_area.ar_reg.len +^ 1))
     } otherwise {
+      addFormalProperty(expectedAxiReadCount === 0, "Expected reads should be zero")
+
       addFormalProperty(read_area.rspCount === 0, "rsp count should be 0 outside of readmode")
       addFormalProperty(read_area.inFlightCounter.value === 0, "If there are reads in flight, we need to be in one of the read modes")
       addFormalProperty(read_area.read_pmb_cmds_sent === 0)
