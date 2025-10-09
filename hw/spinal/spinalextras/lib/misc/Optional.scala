@@ -15,6 +15,12 @@ case class Optional[T <: Data](dataType : HardType[T]) extends Bundle with Forma
         addFormalProperty(valid === False || v.condition, v.msg)(v.loc)
       }
   }
+  def formalAssertEquivalence(that : Optional[T]) = new FormalProperties {
+    addFormalProperty(valid === that.valid, s"${this} valid signal does not match ${that}")
+    when(valid) {
+      addFormalProperty(value === that.value, s"${this} value signal does not match ${that}")
+    }
+  }
 }
 
 object Optional {

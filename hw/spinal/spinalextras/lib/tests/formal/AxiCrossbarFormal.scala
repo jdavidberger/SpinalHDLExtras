@@ -1,9 +1,9 @@
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.core.{Bundle, Component, IntToBuilder}
+import spinal.core.{Bundle, Component, IntToBuilder, cover}
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4CrossbarFactory, Axi4ReadOnly, Axi4ReadOnlyArbiter, Axi4ReadOnlyDecoder, Axi4Shared, Axi4SharedDecoder, Axi4SharedOnChipRam, Axi4WriteOnly, Axi4WriteOnlyArbiter, Axi4WriteOnlyDecoder}
 import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
 import spinal.lib.{StreamPipe, master, slave}
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 class AxiCrossbarTester extends ComponentWithFormalProperties {
@@ -154,6 +154,18 @@ class AxiDirectTester extends ComponentWithFormalProperties {
 
   io.masterA <> io.slaveA
 
+  override def covers(): Seq[FormalProperty] = new FormalProperties(this) {
+    addFormalProperty(io.masterA.ar.fire)
+    addFormalProperty(io.masterA.r.fire)
+    addFormalProperty(io.masterA.aw.fire)
+    addFormalProperty(io.masterA.w.fire)
+    addFormalProperty(io.masterA.b.fire)
+
+    addFormalProperty(io.masterA.aw.valid)
+    addFormalProperty(io.masterA.ar.valid)
+
+    addFormalProperty(io.slaveA.r.valid)
+  }
 }
 
 
@@ -262,14 +274,22 @@ class AxiWriteOnlyDecoderTester extends ComponentWithFormalProperties {
 class AxiCrossbarTesterFormalTest extends AnyFunSuite with FormalTestSuite {
   formalTests().foreach(t => test(t._1) { t._2() })
 
+  override def ProveConfig() = formalConfig.withProve(5)
   override def defaultDepth(): Int = 5
+
+  override def generateRtlCover() = Seq(
+    ("Direct", () => GeneralFormalDut( () => new AxiDirectTester())),
+  )
+
+  override def generateRtlProve() = Seq(
+    ("Direct", () => GeneralFormalDut( () => new AxiDirectTester())),
+  )
 
   override def generateRtlBMC() = Seq(
     ("ReadDecoder", () => GeneralFormalDut( () => new AxiReadOnlyDecoderTester())),
     ("ReadArbiter", () => GeneralFormalDut( () => new Axi4ReadOnlyArbiterTester())),
     ("writeCrossbar", () => GeneralFormalDut( () => new AxiWriteOnlyCrossbarTester())),
     ("WriteArbiter", () => GeneralFormalDut( () => new Axi4WriteOnlyArbiterTester())),
-    ("Direct", () => GeneralFormalDut( () => new AxiDirectTester())),
     ("Pipelined", () => GeneralFormalDut( () => new AxiPipelineTester())),
     ("WriteDecoder", () => GeneralFormalDut( () => new AxiWriteOnlyDecoderTester())),
     ("readCrossbar", () => GeneralFormalDut( () => new AxiReadOnlyCrossbarTester())),

@@ -41,12 +41,10 @@ case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Com
 
   assumeInitial(ClockDomain.current.isResetActive)
 
-  dut.covers().foreach(x => cover(x.condition)(x.loc))
   dut.anyseq_inputs()
-  HasFormalProperties.printFormalAssertsReport()
+  dut.covers().foreach(x => cover(x.condition)(x.loc))
 
-  val cycles = CounterFreeRun(5)
-  cover(cycles.value > 3)
+  HasFormalProperties.printFormalAssertsReport()
 }
 
 class DefaultFormalDut(f : () => Component) extends Component {
@@ -81,12 +79,12 @@ trait FormalTestSuite {
     removePruned = false,
     defaultClockDomainFrequency = FixedFrequency(100 MHz))
 
-  val formalConfig = FormalConfig
+  def formalConfig = FormalConfig
     .withDebug
     .withConfig(config)
     .withEngies(Seq(SmtBmc(nopresat = false,
       //solver = SmtBmcSolver.Boolector,
-      progress = false, //noincr = false,
+      progress = true, //noincr = false,
       //track_assumes = true, minimize_assumes = true
     )))
 
@@ -114,8 +112,8 @@ trait FormalTestSuite {
   }
 
   def formalTests(): Seq[(String, () => Any)] = {
-    (generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), s"${lst._1}_bmc")))) ++
-      generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), f"${lst._1}prove")))) ++
+    ( generateRtlProve().map(lst => (s"${lst._1}_prove", () => ProveConfig().doVerify(renameDefinition(lst._2(), f"${lst._1}prove")))) ++
+      generateRtlBMC().map(lst => (s"${lst._1}_bmc", () => BMCConfig().doVerify(renameDefinition(lst._2(), s"${lst._1}_bmc")))) ++
       generateRtlCover().map(lst => (s"${lst._1}_cover", () => CoverConfig().doVerify(renameDefinition(lst._2(), s"${lst._1}_cover")))))
       .map(t => {
         (t._1, () => {

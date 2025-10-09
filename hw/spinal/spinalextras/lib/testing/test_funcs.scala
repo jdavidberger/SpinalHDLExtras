@@ -11,7 +11,8 @@ import spinal.lib.sim.{ScoreboardInOrder, StreamDriver, StreamMonitor}
 import spinal.lib.{CounterUpDown, Stream, StreamFifo}
 import spinalextras.lib.Config
 import spinalextras.lib.bus.WishboneExt
-import spinalextras.lib.misc.ComponentWithKnownLatency
+import spinalextras.lib.formal.FormalProperties
+import spinalextras.lib.misc.{ComponentWithKnownLatency, Optional}
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -48,17 +49,16 @@ object test_funcs {
     }
   }
 
-  def formalCheckRam[T <: Data](fifo: StreamFifo[T], cond: T => Bool): Vec[Bool] = {
+  def formalMapRam[T <: Data](fifo: StreamFifo[T]): Seq[Optional[T]] = {
     val depth = fifo.depth
     val useVec = fifo.useVec
     val logic = fifo.logic
 
     if (fifo.depth == 0) {
-      Vec(Bool())
+      Seq(Optional(fifo.dataType))
     } else if (fifo.depth == 1) {
-      Vec(fifo.oneStage.buffer.valid && cond(fifo.oneStage.buffer.payload))
+      Seq( Optional(fifo.oneStage.buffer.valid, (fifo.oneStage.buffer.payload)))
     } else {
-      val condition = (0 until depth).map(x => cond(if (useVec) logic.vec(x) else logic.ram(x)))
       // create mask for all valid payloads in FIFO RAM
       // inclusive [popd_idx, push_idx) exclusive
       // assume FIFO RAM is full with valid payloads
@@ -91,12 +91,21 @@ object test_funcs {
       }.elsewhen(logic.ptr.empty) {
         mask := mask.getZero
       }
-      val check = mask.zipWithIndex.map { case (x, id) => x & condition(id) }
-      Vec(check)
+      mask.zipWithIndex.map { case (x, id) => Optional(x, if (useVec) logic.vec(id) else logic.ram(id)) }
     }
   }
 
-//  def assertPMBDecoder(decoder : PipelinedMemoryBusDecoder) = new Area {
+  def formalAssertEquivalence[T <: Data](af: StreamFifo[T], bf: StreamFifo[T]) = new FormalProperties() {
+    addFormalProperty(af.logic.ptr.push === bf.logic.ptr.push)
+    addFormalProperty(af.logic.ptr.pop === bf.logic.ptr.pop)
+    test_funcs.formalMapRam(af).zip(test_funcs.formalMapRam(bf)).zipWithIndex.foreach { case ((a, b), idx) => {
+      a.setWeakName(s"${af}_${idx}")
+      b.setWeakName(s"${bf}_${idx}")
+      addFormalProperties(a.formalAssertEquivalence(b))
+    }}
+  }
+
+  //  def assertPMBDecoder(decoder : PipelinedMemoryBusDecoder) = new Area {
 //    val output_contracts = decoder.io.outputs.map(bus => test_funcs.assertPMBContract(bus))
 //    val input_contract = test_funcs.assertPMBContract(decoder.io.input)
 //    val output_outstanding = output_contracts.map(_.outstanding_cnt.value).fold(U(0))({ case (a: UInt, b: UInt) => {

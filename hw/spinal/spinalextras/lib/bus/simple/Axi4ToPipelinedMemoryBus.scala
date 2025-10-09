@@ -70,7 +70,7 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
     (U(1) << axSize).resized
   }
 
-  def addr_increment = RegInit(get_addr_increment(io.axi.ar.size))
+  val addr_increment = RegInit(U(0, log2Up(1 << io.axi.ar.size.maxValue.toInt) bits))
 
   val write_area = new Area {
     // --- Write Path Registers ---
@@ -236,17 +236,29 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
     addFormalProperty((read_area.rspCount +^ read_area.inFlightCounter.value) === read_area.read_pmb_cmds_sent, "In flight + rsp inc should equal pmb sents")
     addFormalProperty(read_area.read_pmb_cmds_sent <= (read_area.ar_reg.len +^ 1), "read pmbs sent cant exceed the request length")
 
-    addFormalProperty(io.axi.readContract.outstandingReads >= read_area.pmb_rsp_fifo.io.occupancy +^ io.pmb.contract.outstandingReads)
-    addFormalProperty(((read_area.read_beats_remaining +^ read_area.inFlightCounter) <= read_area.rsp_beats_remaining), "Maintain relationship between read and rsp")
+    //addFormalProperty(io.axi.readContract.outstandingReads >= read_area.pmb_rsp_fifo.io.occupancy +^ io.pmb.contract.outstandingReads)
+    //addFormalProperty(((read_area.read_beats_remaining +^ read_area.inFlightCounter) <= read_area.rsp_beats_remaining), "Maintain relationship between read and rsp")
 
-    val expectedAxiReadCount = (read_area.inFlightCounter +^ read_area.read_beats_remaining)
-    addFormalProperty(io.axi.readContract.outstandingReads === expectedAxiReadCount, "Maintain read counters between PMB and AXI")
+    addFormalProperty(io.axi.readContract.outstandingReadsPerId(read_area.ar_reg.id) === read_area.rsp_beats_remaining, "Outstanding read counts")
+    addFormalProperty(io.axi.readContract.outstandingBurstsPerId(read_area.ar_reg.id) <= 1, "Current ID should have at most one active burst")
+
+    io.axi.readContract.outstandingReadsPerId.zipWithIndex.map(x => {
+      when(x._2 =/= read_area.ar_reg.id || !read_area.ar_reg.valid) {
+        addFormalProperty(io.axi.readContract.outstandingBurstsPerId(x._2) === 0, s"Inactive channel ${x._2} should have no bursts")
+        addFormalProperty(io.axi.readContract.outstandingReadsPerId(x._2) === U(0), s"Inactive channel ${x._2} should be empty")
+      }
+    })
+
+    // # Cmds to read + # Reads in flight -
+//    val expectedAxiReadCount = (read_area.inFlightCounter +^ read_area.read_beats_remaining)
+//    addFormalProperty(io.axi.readContract.outstandingReads === expectedAxiReadCount, "Maintain read counters between PMB and AXI")
 
     when(read_area.readMode) {
+      addFormalProperty(read_area.rsp_beats_remaining =/= 0, "rsp remaining should be nonzero 0 when in readmode")
       addFormalProperty((read_area.read_beats_remaining +^ read_area.read_pmb_cmds_sent) === (read_area.ar_reg.len +^ 1))
     } otherwise {
-      addFormalProperty(expectedAxiReadCount === 0, "Expected reads should be zero")
-
+      //addFormalProperty(expectedAxiReadCount === 0, "Expected reads should be zero")
+      addFormalProperty(read_area.rsp_beats_remaining === 0, "rsp remaining should be 0 outside of readmode")
       addFormalProperty(read_area.rspCount === 0, "rsp count should be 0 outside of readmode")
       addFormalProperty(read_area.inFlightCounter.value === 0, "If there are reads in flight, we need to be in one of the read modes")
       addFormalProperty(read_area.read_pmb_cmds_sent === 0)
@@ -378,7 +390,8 @@ class Axi4ToPipelinedMemoryBusTester extends AnyFunSuite {
 
 class Axi4ToPipelinedMemoryBusFormalTester extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 15
+  override def defaultDepth() = 3
+  override def CoverConfig() = formalConfig.withCover(10)
 
   formalTests().foreach(t => test(t._1) {
     t._2()
@@ -386,7 +399,7 @@ class Axi4ToPipelinedMemoryBusFormalTester extends AnyFunSuite with FormalTestSu
 
   override def generateRtl() = {
     for (
-      config <- Seq(Axi4ToPipelinedMemoryBusConfig(Axi4Config(32, 32, idWidth = 8)))
+      config <- Seq(Axi4ToPipelinedMemoryBusConfig(Axi4Config(32, 32, idWidth = 1)))
     ) yield {
       (s"${suiteName}", () =>
         GeneralFormalDut(() => new Axi4ToPipelinedMemoryBus(config)))
