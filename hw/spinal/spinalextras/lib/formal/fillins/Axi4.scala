@@ -7,7 +7,8 @@ import spinalextras.lib.formal.StreamFormal.StreamExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalDataWithEquivalnce, FormalMasterSlave, FormalProperties, FormalProperty, StreamFormal, fillins}
 import spinal.core._
 import spinal.core.internals.AssertStatementKind.ASSERT
-import spinal.lib.bus.amba4.axi.{Axi4, Axi4Ax, Axi4B, Axi4Bus, Axi4Config, Axi4R, Axi4ReadOnly, Axi4Shared, Axi4W, Axi4WriteOnly}
+import spinal.lib.bus.amba4.axi.{Axi4, Axi4Ax, Axi4B, Axi4Bus, Axi4Config, Axi4R, Axi4ReadOnly, Axi4ReadOnlyErrorSlave, Axi4Shared, Axi4W, Axi4WriteOnly}
+import spinalextras.lib.formal.ComponentWithFormalProperties.DefaultProperties
 import spinalextras.lib.misc.CounterVariableChange
 import spinalextras.lib.testing.test_funcs
 
@@ -100,7 +101,7 @@ object Axi4Formal {
 
     def formalIsConsumerValid() = new FormalProperties(this) {
       addFormalProperty(!noArForRead, s"No AR for read")
-      addFormalProperty(!mismatchedLength, s"Mismatched length")
+      addFormalProperty(!mismatchedLength, s"Mismatched length for read")
     }
 
     def formalAssertEquivalence(that: Axi4ReadStreamContract) = new FormalProperties() {
@@ -148,7 +149,7 @@ object Axi4Formal {
     val enforcer = new Axi4ReadContractEnforcer(ar.payload, r.config)
     enforcer.setWeakName(s"axi_${bus.name}_read_enforcer")
 
-    enforcer.io.arComplete <> ar.toFlowFire
+    enforcer.io.arComplete <> ar.toFlowFire.throwWhen(is_write)
     enforcer.io.r <> validFire(r)
 
     val outstandingBurstsPerId = enforcer.io.outstandingBurstsPerId
@@ -170,6 +171,9 @@ object Axi4Formal {
   }
 
   class Axi4WriteContractEnforcer[T <: Axi4Ax](axType: HardType[T], config : Axi4Config, maxQueue : Int = maxFormalQueue) extends ComponentWithFormalProperties {
+    val activeStreams = 1 << config.idWidth
+    val writeLastCounters = Vec(RegInit(U(0, 8 bits)), 1 << config.idWidth)
+
     val io = new Bundle {
       val aw = slave Flow(axType)
       val awComplete = slave Flow(axType)
@@ -178,13 +182,16 @@ object Axi4Formal {
 
       val w = slave Flow(Axi4W(config))
       val wComplete = slave Flow(Axi4W(config))
+
+      val outstandingWrites = out UInt(log2Up(maxQueue * (1 + (1 << config.lenWidth))) bits)
+      val outstandingBurstsPerId = out cloneOf(writeLastCounters)
     }
     val (aw, w, b) = (io.aw, io.w, io.b)
 
     // The spec allows AW and W to stream through independently. So we can have all the W beats first and then the
     // AW beats follow or vice versa. This means we have to track this.
     val beatCounter = Counter(aw.len.maxValue, inc = w.fire)
-    val beatLengthFifo = createFifo(w.takeWhen(w.last).translateWith(beatCounter.value), maxQueue, latency = 1)
+    val beatLengthFifo = createFifo(w.takeWhen(w.last).translateWith(beatCounter.value), maxQueue, latency = 0)
     when(beatLengthFifo.io.push.fire) {
       beatCounter.clear()
     }
@@ -194,19 +201,21 @@ object Axi4Formal {
     // When 'LAST' exists, it is legal to have FEWER beats than LEN but you can never have more beats than specified in
     // LEN. So we track AW lens and counted beats and compare them as we have the info for them. 128 is arbitrary but
     // it is unlikey that this limits our proving power realistically.
-    val awLengthFifo = createFifo(aw.map(_.len), maxQueue, latency = 1)
+    val awLengthFifo = createFifo(aw.map(_.len), maxQueue, latency = 0)
     val beatStream = StreamJoin(awLengthFifo.io.pop, beatLengthFifo.io.pop)
     beatStream.freeRun()
 
-    val writeLastCounters = Vec(RegInit(U(0, 8 bits)), 1 << config.idWidth)
     // Assume no overflows
     writeLastCounters.foreach(c => assume(c.getAheadValue() =/= 0 || !c.andR))
-
-    val lastCounterVerify = Flow(writeLastCounters.dataType)
-    lastCounterVerify.setIdle()
+    io.outstandingBurstsPerId := writeLastCounters
 
     val awCompleteFifo = createFifo(io.awComplete.map(_.asInstanceOf[Axi4Ax]), maxQueue)
-    val wCompleteFifo = createFifo(io.wComplete.takeWhen(io.wComplete.last), maxQueue)
+
+    withAutoPull()
+    io.outstandingWrites := addTree(test_funcs.formalMapRam(awCompleteFifo).map(x => x.valid ? (x.value.len +^ 1) | U(0) ))
+
+
+    val wCompleteFifo = createFifo(io.wComplete.takeWhen(io.wComplete.last).map(x => U(0, 0 bits)), maxQueue)
     val awComplete = StreamJoin(awCompleteFifo.io.pop, wCompleteFifo.io.pop).toFlow.map(_._1)
     awComplete.freeRun()
 
@@ -214,17 +223,20 @@ object Axi4Formal {
       writeLastCounters(awComplete.id) := writeLastCounters(awComplete.id) + 1
     }
 
+    val lastCounterVerify = Flow(writeLastCounters.dataType).setIdle()
+
     when(b.fire) {
-      lastCounterVerify.valid := True
-      lastCounterVerify.payload := writeLastCounters(b.id)
+      lastCounterVerify.push(writeLastCounters(b.id))
       writeLastCounters(b.id) := writeLastCounters(b.id) - 1
     }
 
     def formalIsProducerValid() = new FormalProperties(this) {
       when(beatStream.fire) {
-        addFormalProperty(beatStream.payload._1 >= beatStream.payload._2, "Beats mismatch -- sent more than specified")
+        addFormalProperty(beatStream.payload._1 >= beatStream.payload._2, "Beats fire mismatch -- sent more than specified")
       }
-
+      when(awLengthFifo.io.pop.valid) {
+        addFormalProperty(awLengthFifo.io.pop.payload >= beatCounter.valueNext, "Beats valid mismatch -- sending more than specified")
+      }
       when(lastCounterVerify.valid) {
         addFormalProperty(lastCounterVerify.payload =/= 0, "Last count write verification")
       }
@@ -246,17 +258,21 @@ object Axi4Formal {
     }
   }
 
-  class Axi4WriteContract[T <: Axi4Ax](bus: Nameable, aw: Stream[T], w: Stream[Axi4W], b: Stream[Axi4B], is_write: Bool) extends Composite(bus, "writeContract") {
+  class Axi4WriteContract[T <: Axi4Ax](bus: Nameable with Data, aw: Stream[T], w: Stream[Axi4W], b: Stream[Axi4B], is_write: Bool) extends Composite(bus, "writeContract") {
     require(w.payload.id == null)
 
     val enforcer = new Axi4WriteContractEnforcer(aw.payload, aw.config)
-    enforcer.setWeakName(s"axi_${bus.name}_write_enforcer")
+    enforcer.setWeakName(s"${bus.getRtlPath().replace("/", "_")}_write_enforcer")
     enforcer.io.aw <> validFire(aw).takeWhen(is_write)
     enforcer.io.awComplete <> aw.toFlowFire.takeWhen(is_write)
     enforcer.io.wComplete <> w.toFlowFire
 
     enforcer.io.b <> validFire(b)
     enforcer.io.w <> validFire(w)
+
+    val outstandingBurstsPerId = enforcer.io.outstandingBurstsPerId
+    val outstandingWrites = enforcer.io.outstandingWrites
+    val outstandingWriteResponses = addTree(outstandingBurstsPerId)
 
     def formalIsProducerValid() = new FormalProperties(bus) {
       Seq(aw, w).foreach(s => addFormalProperties(StreamFormal.formalIsProducerValid(s)))
@@ -367,4 +383,12 @@ object Axi4Formal {
   implicit class Axi4WriteOnlyExt(bus: Axi4WriteOnly) extends Axi4BaseExt(bus) {
     override val writeContract = writeContracts.getOrElseUpdate(bus, Axi4WriteContract(bus))
   }
+
+  EquivalenceRegistry.AddEquivalenceHandler { case (a : Axi4R, b : Axi4R) => {
+    def cleanSignal(x : Axi4R) = {
+      Mux(x.isOKAY(), x.data, B(0, x.config.dataWidth bits) ) ## Seq(x.id, x.resp, x.user, x.last).filter(_ != null).reduce(_ ## _)
+    }
+
+    cleanSignal(a) === cleanSignal(b)
+  } }
 }
