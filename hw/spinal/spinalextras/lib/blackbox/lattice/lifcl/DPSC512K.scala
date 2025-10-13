@@ -6,7 +6,8 @@ import spinalextras.lib.{HardwareMemory, MemoryRequirement}
 class DPSC512K(
                  OUTREG : Boolean = false,
                  GSR : Boolean = true,
-                 ENABLE_ECC : Boolean = false //Enable ECC or Byte-enable support
+                 ENABLE_ECC : Boolean = false, //Enable ECC or Byte-enable support
+                 initialContent : Seq[BigInt] = Seq()
                ) extends BlackBox {
 
   addGeneric("OUTREG_A", if(OUTREG) "OUT_REG" else "NO_REG")
@@ -17,6 +18,12 @@ class DPSC512K(
   addGeneric("RESETMODE", if(ASYNC_RESET) "ASYNC" else "SYNC")
   addGeneric("ASYNC_RESET_RELEASE", if(ASYNC_RESET) "ASYNC" else "SYNC")
   addGeneric("ECC_BYTE_SEL", if(ENABLE_ECC) "ECC_EN" else "BYTE_EN")
+
+
+  require(initialContent.size <= 0x7F)
+  initialContent.zipWithIndex.foreach { case (d, idx) => {
+    addGeneric(f"INITVAL_$idx%02X", f"0x$d%X")
+  }}
 
   val io = new Bundle {
     val CLK = in Bool()
@@ -49,7 +56,7 @@ class DPSC512K(
   mapCurrentClockDomain(clock=io.CLK)
 }
 
-class DPSC512K_Mem(target_latency : Int = 2, read_write_ports : Int = 2) extends HardwareMemory[Bits]() {
+class DPSC512K_Mem(target_latency : Int = 2, read_write_ports : Int = 2, initialContent : Seq[BigInt] = Seq()) extends HardwareMemory[Bits]() {
   override val requirements = MemoryRequirement(
     Bits(32 bits), (1 << 14), read_write_ports, 0, 0
   )
@@ -58,7 +65,7 @@ class DPSC512K_Mem(target_latency : Int = 2, read_write_ports : Int = 2) extends
   assert(read_write_ports == 2 || read_write_ports == 1)
 
   val outreg = latency == 2
-  val mem = new DPSC512K(OUTREG = outreg)
+  val mem = new DPSC512K(OUTREG = outreg, initialContent = initialContent)
 
   val mem_port_a = (mem.io.DIA, mem.io.ADA, mem.io.WEA, mem.io.CSA, mem.io.BENA_N, mem.io.DOA)
   val mem_port_b = (mem.io.DIB, mem.io.ADB, mem.io.WEB, mem.io.CSB, mem.io.BENB_N, mem.io.DOB)

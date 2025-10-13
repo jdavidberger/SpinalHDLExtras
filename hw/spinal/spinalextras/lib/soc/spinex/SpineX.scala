@@ -233,20 +233,12 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
 
     //****** MainBus slaves ********
-//    val mainBusMapping = ArrayBuffer[(PipelinedMemoryBus,SizeMapping)]()
-//    val ram = new MuraxPipelinedMemoryBusRam(
-//      onChipRamSize = onChipRamSize,
-//      onChipRamHexFile = onChipRamHexFile,
-//      pipelinedMemoryBusConfig = pipelinedMemoryBusConfig,
-//      bigEndian = bigEndianDBus
-//    )
     val mem = Memories(MemoryRequirement(Bits(32 bits), onChipRamSize / 4,
       numReadWritePorts = 2,
-      needsMask = true, label = "spinex_ram"))
+      needsMask = true, label = "spinex_ram", initialContent = Seq(0x12345, 0x6789)))
     val mem_pmbs = mem.pmbs()
     add_slave(mem_pmbs(1).resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "dBus")
     add_slave(mem_pmbs(0).resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "iBus")
-//    mainBusMapping += ram.io.bus -> (0x80000000l, onChipRamSize)
 
     val apbBridge = new PipelinedMemoryBusToApbBridge(
       apb3Config = Apb3Config(

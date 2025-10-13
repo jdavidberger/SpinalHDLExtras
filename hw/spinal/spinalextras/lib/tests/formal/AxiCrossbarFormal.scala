@@ -285,10 +285,10 @@ class AxiCrossbarTesterFormalTest extends AnyFunSuite with FormalTestSuite {
   )
 
   override def generateRtlProve() = Seq(
-//    ("Direct", () => GeneralFormalDut( () => new AxiDirectTester( cfg => new Axi4(cfg) ))),
-//    ("DirectShared", () => GeneralFormalDut( () => new AxiDirectTester( cfg => new Axi4Shared(cfg) ))),
-//    ("DirectRO", () => GeneralFormalDut( () => new AxiDirectTester( cfg => new Axi4ReadOnly(cfg) ))),
-//    ("DirectWO", () => GeneralFormalDut( () => new AxiDirectTester( cfg => new Axi4WriteOnly(cfg) ))),
+    ("Direct", () => GeneralFormalDut( () => new AxiDirectTester( cfg => new Axi4(cfg) ))),
+    ("DirectShared", () => GeneralFormalDut( () => new AxiDirectTester( cfg => new Axi4Shared(cfg) ))),
+    ("DirectRO", () => GeneralFormalDut( () => new AxiDirectTester( cfg => new Axi4ReadOnly(cfg) ))),
+    ("DirectWO", () => GeneralFormalDut( () => new AxiDirectTester( cfg => new Axi4WriteOnly(cfg) ))),
   )
 
   override def generateRtlBMC() = Seq(

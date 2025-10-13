@@ -43,7 +43,8 @@ case class PDPSC16K(
   // Read chip select active setting, 0=active high 1=active low 
   CSDECODE_R: String = "000",
   // Reset release sync/async control
-  ASYNC_RST_RELEASE : Boolean = false
+  ASYNC_RST_RELEASE : Boolean = false,
+  initialContent : Seq[BigInt] = Seq()
 ) extends BlackBox {
 
   addGeneric("DATA_WIDTH_W", DATA_WIDTH_W.toString)
@@ -59,10 +60,10 @@ case class PDPSC16K(
   addGeneric("GSR", if(GSR) "ENABLED" else "DISABLED")
   addGeneric("ASYNC_RST_RELEASE", if(ASYNC_RST_RELEASE) "ASYNC" else "SYNC")
 
-  // Add INITVAL_XX generics using a for loop
-  for (i <- 0 until 0x40) {
-    addGeneric(f"INITVAL_${i}%02X", "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000")
-  }
+  require(initialContent.size <= 0x3F)
+  initialContent.zipWithIndex.foreach { case (d, idx) => {
+    addGeneric(f"INITVAL_$idx%02X", f"0x$d%X")
+  }}
 
   val io = new Bundle {
     // Data in
@@ -121,6 +122,7 @@ class PDPSC16K_Mem(data_pins : Int = 36, target_latency : Int = 2) extends Hardw
     OUTREG = outreg,
     DATA_WIDTH_R = pins,
     DATA_WIDTH_W = pins,
+    initialContent = requirements.initialContent
   )
 
   val read = io.readPorts.head

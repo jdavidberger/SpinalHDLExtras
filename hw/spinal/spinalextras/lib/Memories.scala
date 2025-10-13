@@ -89,7 +89,7 @@ object HardwareMemory {
 case class MemoryRequirement[T <: Data](dataType : HardType[T], num_elements : BigInt, numReadWritePorts : Int,
                                         numReadPorts : Int = 0, numWritePorts : Int = 0,
                                         needsMask : Boolean = false,
-                                        latencyRange : (Int, Int) = (1, 3), label : String = "") {
+                                        latencyRange : (Int, Int) = (1, 3), label : String = "", initialContent : Seq[BigInt] = Seq()) {
   lazy val allocationSizeInBits = dataType.getBitsWidth * num_elements
   lazy val allocationSizeInBytes = dataType.getBitsWidth * num_elements / 8
 
@@ -420,9 +420,9 @@ object LatticeMemories {
           val latency = requirements.latencyRange._2.min(2)
           SpinalInfo(s"Using LRAM for ${requirements}, ${lram_available} lrams remaining")
           (requirements.numReadPorts, requirements.numWritePorts, requirements.numReadWritePorts) match {
-            case (1, 1, 0) => new PDPSC512K_Mem(target_latency = latency)
-            case (0, 0, 1) => new DPSC512K_Mem(target_latency = latency, read_write_ports = 1)
-            case (0, 0, 2) => new DPSC512K_Mem(target_latency = latency, read_write_ports = 2)
+            case (1, 1, 0) => new PDPSC512K_Mem(target_latency = latency, initialContent = requirements.initialContent)
+            case (0, 0, 1) => new DPSC512K_Mem(target_latency = latency, read_write_ports = 1, initialContent = requirements.initialContent)
+            case (0, 0, 2) => new DPSC512K_Mem(target_latency = latency, read_write_ports = 2, initialContent = requirements.initialContent)
           }
         }
       }

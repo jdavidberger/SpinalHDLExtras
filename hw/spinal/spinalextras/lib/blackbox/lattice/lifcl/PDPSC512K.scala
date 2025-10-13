@@ -11,7 +11,8 @@ class PDPSC512K(
                  GSR : Boolean = true,
                  ASYNC_RESET : Boolean = false,
                  ASYNC_RESET_RELEASE : Boolean = false,
-                 ENABLE_ECC : Boolean = false //Enable ECC or Byte-enable support
+                 ENABLE_ECC : Boolean = false, //Enable ECC or Byte-enable support
+                 initialContent : Seq[BigInt] = Seq()
                ) extends BlackBox {
 
   addGeneric("OUTREG", if(OUTREG) "OUT_REG" else "NO_REG")
@@ -19,6 +20,11 @@ class PDPSC512K(
   addGeneric("RESETMODE", if(ASYNC_RESET) "ASYNC" else "SYNC")
   addGeneric("ASYNC_RESET_RELEASE", if(ASYNC_RESET_RELEASE) "ASYNC" else "SYNC")
   addGeneric("ECC_BYTE_SEL", if(ENABLE_ECC) "ECC_EN" else "BYTE_EN")
+
+  require(initialContent.size <= 0x7F)
+  initialContent.zipWithIndex.foreach { case (d, idx) => {
+    addGeneric(f"INITVAL_$idx%02X", f"0x$d%X")
+  }}
 
   val io = new Bundle {
     val CLK = in Bool()
@@ -44,14 +50,14 @@ class PDPSC512K(
   mapCurrentClockDomain(clock=io.CLK, reset=io.RSTR)
 }
 
-class PDPSC512K_Mem(target_latency : Int = 2) extends HardwareMemory[Bits]() {
+class PDPSC512K_Mem(target_latency : Int = 2, initialContent : Seq[BigInt] = Seq()) extends HardwareMemory[Bits]() {
   override val requirements = MemoryRequirement(
     Bits(32 bits), (1 << 14), 0, 1, 1
   )
   override lazy val latency : Int = target_latency
   assert(latency == 2 || latency == 1)
   val outreg = latency == 2
-  val mem = new PDPSC512K(OUTREG = outreg)
+  val mem = new PDPSC512K(OUTREG = outreg, initialContent = initialContent)
 
   val read = io.readPorts.head
   mem.io.ADR := read.cmd.payload.asBits

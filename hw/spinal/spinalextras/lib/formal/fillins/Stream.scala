@@ -38,5 +38,13 @@ package object StreamFormal {
 
     override def asIMasterSlave: IMasterSlave = stream
   }
+
+  EquivalenceRegistry.AddEquivalenceHandler { case (a : Stream[Data], b : Stream[Data]) => {
+    def cleanSignal(x : Stream[Data]) = {
+      Mux(x.valid, x.payload.asBits, B(0, x.payload.getBitsWidth bits)) ## x.valid
+    }
+
+    cleanSignal(a) === cleanSignal(b)
+  } }
 }
 
