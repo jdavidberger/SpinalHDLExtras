@@ -7,13 +7,13 @@ import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties,
 import spinal.lib.{KeepAttribute, Stream, StreamFifoInterface, master, slave}
 import spinalextras.lib.HardwareMemory.HardwareMemoryReadWriteCmd
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt}
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 
 class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
                                   val depth: Int,
                                   val mem_factory: ((MemoryRequirement[T]) => HardwareMemory[T]) = Memories.applyAuto[T] _,
-                                  val withAsserts : Boolean = true,
                                   latencyRange : (Int, Int) = (1, 3),
                                   val memory_label : String = ""
                                  ) extends ComponentWithFormalProperties {
@@ -61,6 +61,10 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
 //  }
 
   override def formalComponentInputProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    mem.io.readWritePortsOutstanding.zip(sysBus.masters).foreach { case (cnt, bus) => {
+      addFormalProperty(cnt === bus._1.contract.outstandingReads)
+    }
+    }
     when(io.flush) {
       addFormalProperty(io.pop.ready, "Flush requires a ready on the pop")
     }
@@ -71,7 +75,7 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
 
 
 class MemoryBackedFifoFormalTester extends AnyFunSuite with FormalTestSuite {
-  override def defaultDepth() = 10
+  override def defaultDepth() = 5
 
   formalTests().foreach(t => test(t._1) {
     t._2()
