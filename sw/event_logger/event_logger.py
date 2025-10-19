@@ -67,14 +67,31 @@ def decode_log_stream(stream, event_def_metadata):
         index = global_logger_parse_field(tx, 1, index_size)
 
         if index == (1 << index_size) - 1:
-            gtime = global_logger_parse_field(tx, 1 + syscnt_padding, 64)
+            reserved_usage_id = global_logger_parse_field(tx, index_size + 1, 8)
 
-            yield {
-                "event_id": index,
-                "event": "time_sync",
-                "cycle": gtime,
-                "timestamp": gtime * clock_scale,
-            }
+            if reserved_usage_id == 0:
+                gtime = global_logger_parse_field(tx, 1 + index_size + 8, 64)
+
+                yield {
+                    "event_id": index,
+                    "event": "time_sync",
+                    "cycle": gtime,
+                    "timestamp": gtime * clock_scale,
+                }
+            elif reserved_usage_id == 1:
+                yield {
+                    "event_id": index + 1,
+                    "event": "metadata",
+                    "stream_cnt": global_logger_parse_field(tx, 1 + index_size + 8, 10),
+                    "signature": global_logger_parse_field(tx, 1 + index_size + 18, 32)
+                }
+            else:
+                yield {
+                    "event_id": index + reserved_usage_id,
+                    "event": "unknown_meta",
+                    "data": list(map(hex, tx))
+                }
+
             continue
 
         if index >= len(event_defs):
@@ -135,7 +152,8 @@ def decode_log_stream(stream, event_def_metadata):
             "event": event_def["name"],
             "cycle": timestamp,
             "timestamp": timestamp * clock_scale,
-            "value": fields
+            "value": fields,
+            #"data": list(map(hex, tx))
         }
 
 def open_data_stream(file_arg = None):

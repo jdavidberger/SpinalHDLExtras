@@ -1,15 +1,80 @@
 package spinalextras.lib.soc.spinex
 
-import spinal.core.{HertzNumber, IntToBuilder, ifGen}
+import spinal.core.{HertzNumber, IntToBuilder, ifGen, log2Up}
+import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config, Apb3SlaveFactory}
+import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactoryNonStopWrite, BusSlaveFactoryOnReadAtAddress, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryRead, BusSlaveFactoryWrite, SizeMapping}
 import spinal.lib.com.spi.ddr.{SpiXdrMasterCtrl, SpiXdrParameter}
 import spinal.lib.com.uart.{UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemoryMappedConfig, UartParityType, UartStopType}
+import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
+import spinalextras.lib.soc.bus.WishbonePlugin
+import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
+import spinalextras.lib.soc.spinex.plugins.{IdentificationPlugin, OpenCoresI2CPlugin, TimerPlugin}
 import vexriscv.ip.InstructionCacheConfig
 import vexriscv.{VexRiscv, plugin}
 import vexriscv.plugin.CsrAccess.WRITE_ONLY
 import vexriscv.plugin.{BranchPlugin, CsrPlugin, CsrPluginConfig, DBusSimplePlugin, DecoderSimplePlugin, ExternalInterruptArrayPlugin, HazardSimplePlugin, IBusCachedPlugin, IBusSimplePlugin, IntAluPlugin, LightShifterPlugin, MulDivIterativePlugin, Plugin, RegFilePlugin, STATIC, SrcPlugin, StaticMemoryTranslatorPlugin, YamlPlugin}
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
+
+trait SpinexPlugin {
+  def apply(som : Spinex) : Unit
+}
+
+abstract class SpinexRegisterFilePlugin(name : String, mapping : SizeMapping) extends DeviceTreeProvider(mapping.base) with SpinexPlugin {
+  override def compatible : Seq[String] = Seq(s"spinex,${name}")
+
+  override def entryName: String = name
+
+  override def regs : Seq[(String, SizeMapping)] = Seq(("base" -> SizeMapping(0, mapping.size)))
+}
+
+abstract class SpinexRegisterFileApbPlugin(name : String, mapping : SizeMapping) extends SpinexRegisterFilePlugin(name, SizeMapping(mapping.base + 0xe0000000L, mapping.size)) {
+  val apbConfig = Apb3Config(log2Up(mapping.size), 32)
+  lazy val apb : Apb3 = new Apb3(apbConfig).setName(s"${name}Bus", weak = true)
+
+  var hasBusCtrl : Boolean = false
+
+  lazy val busCtrl = {
+    hasBusCtrl = true
+    Apb3SlaveFactory(apb)
+  }
+
+  def busCtrlToRegs(busCtrl : Apb3SlaveFactory) = {
+    busCtrl.elements.filter(_.mapping != null).map {
+      case r: BusSlaveFactoryRead => {
+        r.documentation -> SizeMapping(r.mapping.lowerBound, (r.that.getBitsWidth + 7) / 8)
+      }
+      case r: BusSlaveFactoryOnReadAtAddress => {
+        r.documentation -> SizeMapping(r.mapping.lowerBound, 0x04)
+      }
+      case w: BusSlaveFactoryWrite => {
+        w.documentation -> SizeMapping(w.mapping.lowerBound, (w.that.getBitsWidth + 7) / 8)
+      }
+      case w: BusSlaveFactoryOnWriteAtAddress => {
+        w.documentation -> SizeMapping(w.mapping.lowerBound, 0x4)
+      }
+      case w: BusSlaveFactoryNonStopWrite => {
+        w.documentation -> SizeMapping(w.mapping.lowerBound, 0x4)
+      }
+    }.filter(x => x != null && x._1 != null)
+      .map(x => x._2.base -> x).toMap.values.toSeq.sortBy(_._2.base)
+  }
+
+  override def regs : Seq[(String, SizeMapping)] = {
+    if(hasBusCtrl) {
+      busCtrlToRegs(busCtrl)
+    } else {
+      Seq(("base" -> SizeMapping(0, mapping.size)))
+    }
+  }
+
+  override def apply(som: Spinex): Unit = {
+    som.system.apbMapping += apb -> mapping
+  }
+
+}
 
 case class SpinexConfig(coreFrequency : HertzNumber,
                         onChipRamSize      : BigInt,
@@ -24,11 +89,16 @@ case class SpinexConfig(coreFrequency : HertzNumber,
                         withNativeJtag      : Boolean,
                         cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
                         externalInterrupts : Int,
-                        withWishboneBus : Boolean
+                        withWishboneBus : Boolean,
+                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins
                        ){
   require(pipelineApbBridge || pipelineMainBus, "At least pipelineMainBus or pipelineApbBridge should be enable to avoid wipe transactions")
   val genXip = xipConfig != null
 
+
+  def withPlugins(extraPlugins: SpinexPlugin*): SpinexConfig = {
+    this.copy(plugins = extraPlugins ++ this.plugins)
+  }
 }
 
 
@@ -185,4 +255,20 @@ object SpinexConfig{
 
     config
   }
+
+  def defaultPlugins = Seq(
+    WishbonePlugin(SizeMapping(0xb0000000L, 0x10000000L), "wb0"),
+    IdentificationPlugin(registerLocation = 0x3000),
+    RandomPlugin(registerLocation = 0x3060),
+    TimerPlugin(),
+    UartCtrlPlugin(),
+    XipFlashPlugin(),
+
+    OpenCoresI2CPlugin(),
+    SystemRam(),
+
+    PrintAPBMapping()
+  )
+
+
 }

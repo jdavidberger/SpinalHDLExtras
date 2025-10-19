@@ -36,6 +36,7 @@ class CounterVariableChange(val rangeBits : Int) extends ImplicitArea [SInt] {
 }
 
 class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int = 1, underFlowAllowed : Boolean = false) extends ImplicitArea[UInt] with HasFormalProperties {
+  val maxValue = range
   val valueNext = UInt(log2Up(range + 1) bits)
   val value = RegNext(valueNext) init(0)
 
@@ -66,7 +67,8 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
 
   val willOverflowIfInc: Bool = value > (range - incBy)
   val willUnderflowIfDec: Bool = value < decBy
-  val willUderflow = value < delta.abs && delta >= S(0)
+  val willUderflow = value < delta.abs && delta <= S(0)
+  val willOverflow: Bool = ((value +^ delta.abs) > range) && delta >= S(0)
 
   //assert(value <= range, f"Usage overflow ${value} ${this}")
 
@@ -92,7 +94,10 @@ class CounterUpDownUneven(val range : Int, val incBy : Int = 1, val decBy : Int 
    *         For complicated properties, consider using the helper class `FormalProperties`
    */
   override protected def formalInputProperties(): Seq[FormalProperty] = super.formalInputProperties() ++ (if(!underFlowAllowed) {
-    Seq(FormalProperty(willUderflow, "Underflow disallowed"))
+    Seq(
+      FormalProperty(!willUderflow, f"Underflow disallowed ${value} ${this}, max ${range}"),
+      FormalProperty(!willOverflow, f"Overflow disallowed ${value} ${this}, max ${range}")
+    )
   }  else Seq())
 
   /**

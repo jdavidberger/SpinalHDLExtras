@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Tuple, Optional
 import os
 import time
 from event_logger import *
+from aggregation_registry import *
 
 # -------------------------
 # Naming / normalization
@@ -204,6 +205,31 @@ class EventDB:
             #self.conn.execute("PRAGMA locking_mode = EXCLUSIVE;")
             self.conn.execute("PRAGMA temp_store = MEMORY;")
 
+    def create_flat_join(self, prefix, tables):
+        all_fields = set()
+        table_fields = defaultdict(set)
+
+        for table in tables:
+            for field in table[1]['type']:
+                all_fields.add((list(field.keys())[0]))
+                table_fields[table[0]].add((list(field.keys())[0]))
+
+        stmts = []
+        for table in tables:
+            stmt = f"SELECT event_id, timestamp, '{table[0]}' as label"
+            for field in all_fields:
+                if field in table_fields[table[0]]:
+                    stmt = stmt + ", " + field
+                else:
+                    stmt = stmt + ", '' as " + field
+            stmt = stmt + f" FROM {table[0]}"
+            stmts.append(stmt)
+        select_stmt = f"CREATE VIEW {prefix.rstrip('_')} AS " + " UNION ".join(stmts) + " order by timestamp"
+
+        cur = self.conn.cursor()
+        print(select_stmt)
+        cur.execute(select_stmt)
+
 
     def create_tables_from_yaml(self, yaml_path: str):
         with open(yaml_path, "r") as f:
@@ -231,6 +257,18 @@ class EventDB:
             # We'll add a 'timestamp' column explicitly in SQL creation step
             self._create_event_table(schema)
             self.schemas[name] = schema
+
+        def create_axi_view(x):
+            all_tables = []
+            for prefix in x.keys():
+                for table in x[prefix].items():
+                    all_tables.append((f"{table[0]}", table[1]))
+                self.create_flat_join(prefix, x[prefix].items())
+            self.create_flat_join('axi4', all_tables)
+
+        registry = AggregationRegistry()
+        registry.register(["ar", "aw", "w", "r", "b"], create_axi_view)
+        registry.process_event_definitions(event_defs)
 
         return data
 

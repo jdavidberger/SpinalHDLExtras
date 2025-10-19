@@ -28,15 +28,15 @@ case class WishboneTx(config : WishboneConfig) extends Bundle {
   val SEL       = if(config.useSEL)   Bits(config.selWidth bits) else null
 }
 object WishboneBusLogger {
-  def flows(addressMapping: AddressMapping, wishbone: Wishbone*): Seq[(Data, Flow[Bits])] = {
+  def flows(addressMapping: AddressMapping, address_width : Int, wishbone: Wishbone*): Seq[(Data, Flow[Bits])] = {
     wishbone.map(wb => {
-      val wbLog = WishboneTx(wb.config)
+      val wbLog = WishboneTx(wb.config.copy(addressWidth = Math.min(address_width, wb.config.addressWidth)))
       wbLog.CYC := wb.CYC
       wbLog.STB := wb.STB
       wbLog.ACK := wb.ACK
       if(wbLog.STALL != null)
         wbLog.STALL := wb.STALL
-      wbLog.ADR := wb.ADR
+      wbLog.ADR := wb.ADR.resized
       wbLog.WE := wb.WE
       wbLog.DAT := Mux(wb.WE, wb.DAT_MOSI, wb.DAT_MISO)
       if(wbLog.SEL != null)
@@ -48,8 +48,14 @@ object WishboneBusLogger {
       (wbLog.setName(wb.name), stream)
     })
   }
+  def flows(addressMapping: AddressMapping, wbs: Wishbone*): Seq[(Data, Flow[Bits])] = {
+    flows(addressMapping, Int.MaxValue, wbs:_*)
+  }
+  def flows(address_width : Int, wbs: Wishbone*): Seq[(Data, Flow[Bits])] = {
+    flows(AllMapping, address_width, wbs:_*)
+  }
   def flows(wbs: Wishbone*): Seq[(Data, Flow[Bits])] = {
-    flows(AllMapping, wbs:_*)
+    flows(AllMapping, Int.MaxValue, wbs:_*)
   }
 }
 

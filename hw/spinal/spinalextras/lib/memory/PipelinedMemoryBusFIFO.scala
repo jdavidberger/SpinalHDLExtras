@@ -6,140 +6,16 @@ import spinal.lib.bus.misc.{DefaultMapping, SizeMapping}
 import spinal.lib.bus.regif.AccessType.{RO, RW}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinal.lib.bus.simple._
+import spinal.lib.fsm.{EntryPoint, State, StateMachine}
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
-import spinalextras.lib.misc.{CounterUpDownUneven, RegisterTools, StreamTools}
-import spinalextras.lib.testing.test_funcs
-import spinalextras.lib.bus.bus._
-import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
+import spinalextras.lib.formal.StreamFormal.StreamExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
+import spinalextras.lib.misc.RegisterTools
+import spinalextras.lib.testing.test_funcs
 
-import scala.collection.mutable
 import scala.language.postfixOps
 
-case class PipelinedMemoryBusBuffer[T <: Data](dataType : HardType[T], depthInBytes : Int, baseAddress : Int = 0,
-                                               var config : PipelinedMemoryBusConfig = null,
-                                               rsp_latency : Int = 0, cmd_latency : Int = 0, read_trigger : Int = -1) extends ComponentWithFormalProperties {
-  if(config == null) {
-    config = PipelinedMemoryBusConfig(addressWidth = log2Up(depthInBytes), dataWidth = dataType.getBitsWidth)
-  }
-  val depthInWords = depthInBytes >> config.wordAddressShift
 
-  val midDatatype = Bits(StreamTools.lcm(dataType.getBitsWidth, config.dataWidth) bits)
-
-  val bufferSize = (rsp_latency + 1).max(midDatatype.getWidth / config.dataWidth)
-
-  val bufferSizeInBits = bufferSize * config.dataWidth
-  val bufferSizeInMidWords = bufferSizeInBits / midDatatype.getWidth
-  val readTriggerInBits = read_trigger * config.dataWidth
-
-  assert(bufferSizeInMidWords > 0)
-  require(bufferSizeInBits % midDatatype.getBitsWidth == 0)
-
-  val io = new Bundle {
-    val bus = master(PipelinedMemoryBus(config))
-    val pop = master Stream (dataType)
-    val flush = in Bool() default(False)
-
-    val memoryAvailable = slave(Stream(Bool()))
-
-    val occupancy = out UInt(log2Up(bufferSizeInBits) bits)
-  }
-
-  val readBus = io.bus
-
-  val readBusCmd = cloneOf(readBus.cmd)
-  val readBusCmdQueue = StreamFifo(readBusCmd.payloadType, cmd_latency)
-  val haltCmdQueue = RegInit(False)
-
-  readBusCmdQueue.io.flush := io.flush
-  readBusCmdQueue.io.push <> readBusCmd
-  readBus.cmd <> readBusCmdQueue.io.pop.haltWhen(io.flush)
-
-  val read_counter = Counter(depthInWords, readBusCmd.fire && !readBusCmd.write)
-
-  readBusCmd.setIdle()
-  readBusCmd.write := False
-  readBusCmd.payload.assignByteAddress(((read_counter.value << readBus.config.wordAddressShift) +^ baseAddress).resized)
-
-  var fifo = StreamFifo(midDatatype, bufferSizeInMidWords, latency = 0)
-  withAutoPull()
-
-  val adaptPop = StreamTools.AdaptWidth(fifo.io.pop.haltWhen(io.flush), Bits(dataType.getBitsWidth bits)).map(_.as(dataType))
-
-  val usage = new CounterUpDownUneven(bufferSizeInBits, config.dataWidth, midDatatype.getBitsWidth)
-  val burnRtn = Reg(usage.value.clone()) init(0)
-  assert(burnRtn.getWidth >= U(usage.decBy).getBitsWidth)
-  haltCmdQueue := burnRtn =/= 0
-
-  val fifoOccInBits = fifo.io.occupancy * fifo.dataType.getBitsWidth
-
-  when(burnRtn > 0) {
-    io.pop.setIdle()
-    adaptPop.freeRun()
-    when(fifo.io.pop.fire) {
-      burnRtn := burnRtn - usage.decBy
-    }
-  } otherwise {
-    adaptPop <> io.pop
-    when(fifo.io.pop.fire) { usage.decrement() }
-  }
-
-  when(readBusCmd.fire) { usage.increment() }
-
-  val usageIsMax = usage.isMax
-
-  io.memoryAvailable.ready := readBusCmd.fire
-
-  val readTrigger =
-    if(readTriggerInBits >= 0) {
-      RegInit(True) setWhen(usage <= readTriggerInBits) clearWhen(io.pop.fire)
-    } else {
-      True
-    }
-
-  when(~usageIsMax) {
-    readBusCmd.valid := io.memoryAvailable.valid && readTrigger && !haltCmdQueue
-  }
-
-  val overflow = Bool()
-
-  val read_port_unpack = Flow(midDatatype)
-   val adapt_out_width = StreamTools.AdaptWidth(io.bus.rsp.map(_.data.asBits), read_port_unpack)
-  read_port_unpack.toStream(overflow) <> fifo.io.push
-  assert(~overflow, "overflow buffer is full")
-
-  when(io.flush) {
-    read_counter.clearAll()
-    usage.clear()
-    haltCmdQueue := True
-    burnRtn := burnRtn + usage.value
-  }
-
-  val occupancy = (readBus.contract.outstandingReads.value + adapt_out_width.io.occupancy + fifo.io.occupancy).resized
-  io.occupancy := occupancy
-
-  override def formalComponentProperties() : Seq[FormalProperty] = new FormalProperties(this) {
-      val readCmdBusCheck = readBusCmdQueue.formalCheckRam(_.write)
-      val readCmdBusCheckOutput = readBusCmdQueue.formalCheckOutputStage(_.write)
-      addFormalProperty(readCmdBusCheck.orR === False && readCmdBusCheckOutput === False)
-
-      //readBusCmdQueue.formalAssumeInputs()
-      //readBusCmdQueue.formalAssumes()
-
-      val busInFlightOccInBits = readBus.contract.outstandingReads.value * config.dataWidth
-      val usageCheckInBits = fifoOccInBits +^ busInFlightOccInBits +^ readBusCmdQueue.io.occupancy * config.dataWidth
-      addFormalProperty((usage.value +^ burnRtn) === (usageCheckInBits), s"Usage counts should be equal to the usageCheck ${this}")
-
-      //fifo.formalAssertInputs()
-      //fifo.formalAssumes()
-
-    addFormalProperty(burnRtn % usage.decBy === 0)
-    addFormalProperty(~overflow, "PMBBuffer overflowed")
-    addFormalProperty((burnRtn +^ usage.value).msb === False )
-    addFormalProperty((burnRtn +^ usage.value) <= bufferSizeInBits)
-  }
-
-}
 
 case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
                                              sm : SizeMapping,
@@ -174,41 +50,39 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
       (sysBus.add_master(s"pmb_fifo_write_${baseAddress.hexString()}"), sysBus)
     }
   )
-
-//  val writeBusContract = test_funcs.assertPMBContract(writeBus)
-//  val readBusContract = test_funcs.assertPMBContract(readBus)
-  //assert(writeBusContract.outstanding_cnt.value === 0)
+  writeBus.cmd.setIdle()
+  val isWriteBusStalled = RegNext(writeBus.cmd.isStall)
+  val writeBusStalled = RegNextWhen(writeBus.cmd.payload, writeBus.cmd.isStall)
+  writeBus.cmd.payload := writeBusStalled
 
   when(!io.debug_fake_write) {
     assert(!writeBus.cmd.valid || writeBus.cmd.write)
   }
 
   val ramBackedBuffer = PipelinedMemoryBusBuffer(dataType, depthInBytes, baseAddress, sharedBus.config, rsp_latency = localPopDepth)
-
   ramBackedBuffer.io.bus <> readBus
   ramBackedBuffer.io.memoryAvailable.payload := False
 
   val inFlight = new CounterUpDown(depthInWords, handleOverflow = false)
-  when(ramBackedBuffer.burnRtn > 0) {
-    assert(inFlight.value === 0)
-  }
   withAutoPull()
 
-  val occupancy, ramOccupancy = new CounterUpDown(depthInWords, handleOverflow = false)
-  when(writeBus.cmd.fire) {
-    occupancy.increment()
-    ramOccupancy.increment()
-  }
+  val
+    // Number of items in the fifo currently
+  occupancy,
+   // ???
+  ramOccupancy = new CounterUpDown(depthInWords, handleOverflow = false)
 
   for (c <- Seq(inFlight, occupancy, ramOccupancy)) {
     test_funcs.assertCounter(c)
   }
 
-  assert((ramOccupancy.value +^ inFlight.value) === occupancy.value)
+  val isFlushing = Bool()
+  isFlushing := False
 
   io.occupancy := occupancy.resized
   io.availability := depthInWords - occupancy.value
   ramBackedBuffer.io.memoryAvailable.valid := ramOccupancy > 0
+  val memoryAvailableStall = RegNext(ramBackedBuffer.io.memoryAvailable.isStall) init(False)
 
   when(ramBackedBuffer.io.pop.fire) {
     inFlight.decrement()
@@ -219,16 +93,14 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     occupancy.decrement()
   }
 
-  when(ramBackedBuffer.io.memoryAvailable.fire) {
-    inFlight.increment()
-    ramOccupancy.decrement()
-  }
-
   val write_counter = Counter(depthInWords, writeBus.cmd.fire)
 
-  val full = CombInit(occupancy.value === (depthInWords - 1))
-  val push = if(localPushDepth > 0) io.push.queue(localPushDepth) else io.push
-  push.map(wrd => {
+  val full = CombInit(occupancy.willOverflowIfInc)// CombInit(occupancy.value === (depthInWords - 1))
+
+  val push = io.push.continueWhen(!isFlushing).addFormalException(isFlushing)
+
+  val queuedPush = if(localPushDepth > 0) push.queue(localPushDepth) else push
+  val pushToCmd = queuedPush.map(wrd => {
     val cmd = PipelinedMemoryBusCmd(writeBus.config)
     cmd.mask.setAll()
     cmd.write := ~io.debug_fake_write
@@ -237,19 +109,61 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     cmd.assignByteAddress(byteAddress.resized)
     cmd.data := wrd.asBits
     cmd
-  }).haltWhen(full | io.flush) >> writeBus.cmd
+  }).addFormalException(io.flush)
+  pushToCmd.setBlocked()
 
   val empty = CombInit(occupancy === 0) // && readFifo.io.occupancy === 0
   io.empty := empty
 
   ramBackedBuffer.io.flush := io.flush
-  when(io.flush) {
-    occupancy.clearAll()
-    ramOccupancy.clearAll()
-    inFlight.clearAll()
-    write_counter.clearAll()
 
-    io.pop.valid := False
+  val fsm = new StateMachine {
+    val normal = new State with EntryPoint
+    val flushing = new State
+
+    normal.whenIsActive {
+      pushToCmd.haltWhen(full) >> writeBus.cmd
+
+      when(writeBus.cmd.fire) {
+        occupancy.increment()
+        ramOccupancy.increment()
+      }
+
+      when(ramBackedBuffer.io.memoryAvailable.fire) {
+        inFlight.increment()
+        ramOccupancy.decrement()
+      }
+
+      when(io.flush) {
+        occupancy.clearAll()
+        ramOccupancy.clearAll()
+        inFlight.clearAll()
+
+        goto(flushing)
+      }
+    }
+
+    flushing.whenIsActive {
+      ramBackedBuffer.io.flush := True
+      ramBackedBuffer.io.pop.ready := True
+
+      isFlushing := True
+
+      ramBackedBuffer.io.memoryAvailable.valid := memoryAvailableStall
+      writeBus.cmd.valid := isWriteBusStalled
+      pushToCmd.freeRun()
+
+      io.pop.valid := False
+      io.push.ready := False
+
+      when(!isWriteBusStalled && !memoryAvailableStall) {
+        write_counter.clearAll()
+
+        when(!io.flush) {
+          goto(normal)
+        }
+      }
+    }
   }
 
   override def covers() = new FormalProperties(this) {
@@ -278,11 +192,23 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
 
   }
 
+  override def formalComponentInputProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    when(io.flush) {
+      addFormalProperty(io.pop.ready, "Flush requires a ready on the pop")
+    }
+  }
+
   override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
     withAutoPull()
-
+    addFormalProperty((ramOccupancy.value +^ inFlight.value) === occupancy.value, "RamOcc + inFlight should equal occ")
     //addFormalProperty(readBus.contract.outstandingReads === ramBackedBuffer.readBus.contract.outstandingReads)
-    addFormalProperty(inFlight.value === ramBackedBuffer.io.occupancy)
+    addFormalProperty(inFlight.value === ramBackedBuffer.io.occupancy, "Inflight and occupanccy counter is off")
+
+    when(isFlushing) {
+      addFormalProperty(occupancy === 0, "Occupancy must be zero while flushing")
+      addFormalProperty(ramOccupancy === 0, "Ram Occ must be zero while flushing")
+      addFormalProperty(inFlight === 0, "In flight occ must be zero while flushing")
+    }
   }
 
 }

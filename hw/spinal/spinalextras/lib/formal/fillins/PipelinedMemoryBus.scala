@@ -36,7 +36,7 @@ object PipelinedMemoryBusFormal {
      * @return True if and only if the driving signals are valid
      */
     override def formalIsProducerValid(): Seq[FormalProperty] = {
-      StreamFormal.formalIsProducerValid(bus.cmd)//, equivalence_check = pmb_cmd_equivalence)
+      bus.cmd.formalIsProducerValid()//, equivalence_check = pmb_cmd_equivalence)
     }
 
     def contract = contracts.getOrElseUpdate(bus, new PipelinedMemoryBusContract(bus))

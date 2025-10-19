@@ -131,7 +131,6 @@ object FormalProperty {
  * }}}
  */
 class FormalProperties(val self : Nameable = null, val postfix : String = "formalProperties") extends ImplicitArea[Seq[FormalProperty]] {
-
   val prefix = if(self != null) {
     if (postfix == null) {
       setCompositeName(self, weak = true)

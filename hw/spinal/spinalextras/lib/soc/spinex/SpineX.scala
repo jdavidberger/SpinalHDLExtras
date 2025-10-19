@@ -5,51 +5,32 @@ import spinal.lib._
 import spinal.lib.bus.amba3.apb._
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.simple._
-import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
+import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.jtag.{Jtag, JtagTapInstructionCtrl}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBus
-import spinal.lib.com.spi.ddr._
-import spinal.lib.com.uart._
 import spinal.lib.cpu.riscv.debug._
-import spinalextras.lib.{Config, Memories, MemoryRequirement}
-import spinalextras.lib.blackbox.lattice.lifcl.{OSCD, OSCDConfig, PLL}
-import spinalextras.lib.blackbox.memories.W25Q128JVxIM_quad
-import spinalextras.lib.blackbox.opencores.i2c_master_top
-import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusExt, PipelinedMemoryBusMultiBus, WishboneToPipelinedMemoryBus}
-import spinalextras.lib.io.TristateBuffer
+import spinalextras.lib.Config
+import spinalextras.lib.blackbox.lattice.lifcl.PLL
+import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
 import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
 import spinalextras.lib.misc.ClockSpecification
-import spinalextras.lib.soc.peripherals.{SpinexApb3Timer, SpinexApb3UartCtrl}
-import vexriscv.demo.MuraxPipelinedMemoryBusRam
-import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus}
-import vexriscv.plugin.CsrAccess.WRITE_ONLY
+import vexriscv.ip.InstructionCacheMemBus
 import vexriscv.plugin._
-import vexriscv.{VexRiscv, VexRiscvConfig, plugin}
+import vexriscv.{VexRiscv, VexRiscvConfig}
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
+import scala.reflect.ClassTag
 
 case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Component{
   import config._
+  val self = this
 
-  val wbConfig = WishboneConfig(32, 32, useERR = true, useRTY = false, selWidth = 4, addressGranularity = AddressGranularity.BYTE).withBurstType
   val io = new Bundle {
     val jtag = ifGen(!config.withNativeJtag) (slave(Jtag()))
-
-    //Peripherals IO
-    val uart = master(Uart())
-
-    val i2c0_scl = inout(Analog(Bool()))
-    val i2c0_sda = inout(Analog(Bool()))
-
-    val spiflash_clk = genXip generate out(Bool())
-    val spiflash_cs_n = genXip generate out(Bool())
-    val spiflash_dq = genXip generate inout(Analog(Bits(xipConfig.ctrl.spi.dataWidth bits)))
-
-    val wb = config.withWishboneBus generate master(Wishbone(wbConfig))
-    val externalInterrupts = in(Bits(config.externalInterrupts bits)) default(0)
   }
   noIoPrefix()
 
@@ -151,6 +132,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
   def add_slave(bus: XipBus, name : String, mapping : AddressMapping, tags : String*): Unit = {
     interconnect.addSlave(bus, mapping = mapping, tags:_*)
   }
+
   def add_slave(bus: Wishbone, name : String, mapping : AddressMapping, tags : String*): Unit = {
     interconnect.addSlave(bus, mapping = mapping, tags:_*)
   }
@@ -162,8 +144,6 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       addressWidth = 32,
       dataWidth = 32
     )
-
-    val bigEndianDBus = config.cpuPlugins.exists(_ match{ case plugin : DBusSimplePlugin => plugin.bigEndian case _ => false})
 
     //Instanciate the CPU
     val cpu = new VexRiscv(
@@ -185,20 +165,17 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
     //Checkout plugins used to instanciate the CPU to connect them to the SoC
     val timerInterrupt = False
-    val externalInterrupts = Bits(32 bits)
+    private val externalInterrupts = Bits(32 bits)
     externalInterrupts := 0
 
-    externalInterrupts(0, config.externalInterrupts bits) := io.externalInterrupts
-
-    val usb32_irq_loc = 0
-    val timer0_irq_loc = 1
-    val uart_irq_loc = 2
-    val framectrl = 4
-    val i2s_rx = 6
-    val i2s_tx = 7
-
-    if(config.withWishboneBus) {
-      add_slave(io.wb, "wb0", SizeMapping(0xb0000000L, 0x10000000L), "dBus")
+    var currentInterruptIdx = 0
+    var interruptInfos = new mutable.ArrayBuffer[(Data, Int)]()
+    def addInterrupt(signal : Data) = {
+      interruptInfos.append((signal, currentInterruptIdx))
+      val rtn = currentInterruptIdx
+      externalInterrupts(currentInterruptIdx, signal.getBitsWidth bits) := signal.asBits
+      currentInterruptIdx = currentInterruptIdx + signal.getBitsWidth
+      rtn
     }
 
     for(plugin <- cpu.plugins) plugin match{
@@ -230,70 +207,35 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       case _ =>
     }
 
+    //******** APB peripherals *********
+    val apbMapping = ArrayBuffer[(Apb3, SizeMapping)]()
+  }
 
+  def getPlugins[T](implicit tag: ClassTag[T]) : Seq[T] = {
+    config.plugins.filter(tag.runtimeClass.isInstance(_)).map(_.asInstanceOf[T])
+  }
+  def getPlugin[T](implicit tag: ClassTag[T]) = getPlugins[T](tag).headOption
 
-    //****** MainBus slaves ********
-    val mem = Memories(MemoryRequirement(Bits(32 bits), onChipRamSize / 4,
-      numReadWritePorts = 2,
-      needsMask = true, label = "spinex_ram", initialContent = Seq(0x12345, 0x6789)))
-    val mem_pmbs = mem.pmbs()
-    add_slave(mem_pmbs(1).resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "dBus")
-    add_slave(mem_pmbs(0).resizeAddress(32), "ram", SizeMapping(0x40000000l, onChipRamSize), "iBus")
+  val clockingAreaBuild = new ClockingArea(systemClockDomain) {
+    import system._
 
+    config.plugins.foreach(x => x(self))
+
+    val apbRegion = SizeMapping(0xe0000000L, 0x4000)
+    apbMapping.foreach(m => {
+      require(apbRegion.size >= m._2.end)
+    })
+
+    val largestAddressWidth = apbMapping.map(x => log2Up(x._2.end)).max
     val apbBridge = new PipelinedMemoryBusToApbBridge(
       apb3Config = Apb3Config(
-        addressWidth = 20,
+        addressWidth = largestAddressWidth,
         dataWidth = 32
       ),
       pipelineBridge = pipelineApbBridge,
       pipelinedMemoryBusConfig = pipelinedMemoryBusConfig
     )
-    add_slave(apbBridge.io.pipelinedMemoryBus, "apbBridge", SizeMapping(0xe0000000L, 0x5000), "dBus")
-
-
-    //******** APB peripherals *********
-    val apbMapping = ArrayBuffer[(Apb3, SizeMapping)]()
-
-    val uartCtrl = SpinexApb3UartCtrl(uartCtrlConfig)
-    uartCtrl.io.uart <> io.uart
-    externalInterrupts(uart_irq_loc) := (uartCtrl.io.interrupt)
-    apbMapping += uartCtrl.io.apb  -> (0x1800, 1 kB)
-
-    val timer = new SpinexApb3Timer(0x2800)
-    timerInterrupt setWhen(timer.io.interrupt)
-    externalInterrupts(timer0_irq_loc) := (timer.io.interrupt)
-    apbMapping += timer.io.apb     -> (timer.baseAddress, 1 kB)
-
-    val i2cCtrl = new i2c_master_top()
-    i2cCtrl.attachi2c(io.i2c0_scl, io.i2c0_sda)
-
-    add_slave(i2cCtrl.io.wb, "i2c", SizeMapping(0xe0005000L, 32 Bytes), "dBus")
-
-    val xip = ifGen(genXip)(new Area{
-      val ctrl = Apb3SpiXdrMasterCtrl(xipConfig)
-
-      apbMapping += ctrl.io.apb     -> (0x01000, 1 kB)
-
-      add_slave(ctrl.io.xip, "xip", SizeMapping(0x20000000L, 0x01000000), "iBus", "dBus")
-
-      val buffers = ctrl.io.spi.data.map(_ => TristateBuffer())
-
-      for(i <- io.spiflash_dq.bitsRange) {
-        val (phy, tristate, xdr) = (io.spiflash_dq(i), buffers(i), ctrl.io.spi.data(i))
-        tristate.io.output_enable := xdr.writeEnable
-        tristate.io.input := xdr.write(0)
-        xdr.read(0) := RegNext(RegNext(tristate.io.output))
-        tristate.io.phy <> phy
-      }
-
-      io.spiflash_clk := ctrl.io.spi.sclk.write(0)
-      io.spiflash_cs_n := ctrl.io.spi.ss(0)
-    })
-
-    println("APB Mappings: ")
-    for(m <- apbMapping) {
-      println(s"\t - ${m._2}: \t${m._1}")
-    }
+    add_slave(apbBridge.io.pipelinedMemoryBus, "apbBridge", apbRegion, "dBus")
 
     //******** Memory mappings *********
     val apbDecoder = Apb3Decoder(
@@ -303,7 +245,6 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
     interconnect.build()
   }
-
 }
 
 

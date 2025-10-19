@@ -51,7 +51,7 @@ object Axi4Formal {
       val arComplete = slave(Flow(UInt(config.lenWidth bits)))
       val r = slave(Flow(Bool()))
 
-      val outstandingReads = out UInt(32 bits)
+      val outstandingReads = globalData.config.formalAsserts generate (out UInt(32 bits))
       val outstandingBursts = out UInt(log2Up(maxQueue + 1) bits)
     }
 
@@ -60,9 +60,14 @@ object Axi4Formal {
     io.outstandingBursts := arFifo.io.occupancy
 
     withAutoPull()
-    val unfinishedArs = addTree(test_funcs.formalMapRam(arFifo).map(x => x.valid ? (x.value +^ 1) | U(0)))
-    val deducedReads = unfinishedArs - counter.value
-    io.outstandingReads := deducedReads.resized
+    val unfinishedArs = if(globalData.config.formalAsserts) {
+      val unfinishedArs = addTree(test_funcs.formalMapRam(arFifo).map(x => x.valid ? (x.value +^ 1) | U(0)))
+      val deducedReads = unfinishedArs - counter.value
+      io.outstandingReads := deducedReads.resized
+      unfinishedArs
+    } else {
+      U(0, 0 bits)
+    }
 
     val rFlow = io.r.takeWhen(io.r.payload).translateWith(counter.value)
     when(io.r.fire && io.r.payload) {
@@ -148,11 +153,11 @@ object Axi4Formal {
     val outstandingReads = addTree(outstandingReadsPerId)
 
     def formalIsProducerValid() = new FormalProperties(bus) {
-      addFormalProperties(StreamFormal.formalIsProducerValid(ar))
+      addFormalProperties(ar.formalIsProducerValid())
     }
 
     def formalIsConsumerValid() = new FormalProperties(bus) {
-      addFormalProperties(StreamFormal.formalIsProducerValid(r))
+      addFormalProperties(r.formalIsProducerValid())
       addFormalProperties(enforcer.formalIsConsumerValid())
     }
 
@@ -299,13 +304,13 @@ object Axi4Formal {
     lazy val isCmdUnordered = enforcer.isCmdUnordered
 
     def formalIsProducerValid() = new FormalProperties(bus) {
-      Seq(aw, w).foreach(s => addFormalProperties(StreamFormal.formalIsProducerValid(s)))
+      Seq(aw, w).foreach(s => addFormalProperties(s.formalIsProducerValid()))
       addFormalProperties(enforcer.formalIsProducerValid())
     }
 
     def formalIsConsumerValid() = new FormalProperties(bus) {
       addFormalProperties(enforcer.formalIsConsumerValid())
-      addFormalProperties(StreamFormal.formalIsProducerValid(b))
+      addFormalProperties(b.formalIsProducerValid())
       //addFormalProperty(!outstandingWriteLasts.willUnderflow, "Outstanding write lasts should not go negative")
     }
 

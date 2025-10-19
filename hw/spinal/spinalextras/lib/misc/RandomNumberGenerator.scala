@@ -48,22 +48,22 @@ class RandomNumberGenerator(withSeed: Boolean = false) extends Component {
 }
 
 // RNG with APB3 register interface
-case class RandomNumberGeneratorApb3(baseAddress: Int = 0) extends Component {
+case class RandomNumberGeneratorApb3(withSeed : Boolean = true) extends Component {
   val io = new Bundle {
-    val apb = slave(Apb3(Apb3Config(addressWidth = 8, dataWidth = 32)))
+    val apb = slave(Apb3(Apb3Config(addressWidth = 4, dataWidth = 32)))
   }
 
-  val rng = new RandomNumberGenerator(withSeed = true)
+  val rng = new RandomNumberGenerator(withSeed = withSeed)
   val busCtrl = Apb3SlaveFactory(io.apb)
 
   // 0x00: Random data register (read-only, new value on each read)
-  busCtrl.read(rng.io.random.asBits, 0x00)
+  busCtrl.read(rng.io.random.payload, 0x00, documentation = "random number")
   
   // 0x04: LFSR state control lower 32 bits (read/write for seeding)
-  val lfsrControlLow = busCtrl.createReadAndWrite(UInt(32 bits), 0x04, 0) init(0xBABE1234L)
+  val lfsrControlLow = busCtrl.createReadAndWrite(UInt(32 bits), 0x04, 0, documentation = "lfsr_low") init(0xBABE1234L)
   
   // 0x08: LFSR state control upper 32 bits (read/write for seeding)
-  val lfsrControlHigh = busCtrl.createReadAndWrite(UInt(32 bits), 0x08, 0) init(0xACE1CAFEL)
+  val lfsrControlHigh = busCtrl.createReadAndWrite(UInt(32 bits), 0x08, 0, documentation = "lfsr_high") init(0xACE1CAFEL)
   
   rng.io.seed.payload := lfsrControlHigh @@ lfsrControlLow
   rng.io.seed.valid := busCtrl.isWriting(0x04) || busCtrl.isWriting(0x08)
@@ -81,6 +81,6 @@ object RandomNumberGenerator {
     Config.spinal.generateVerilog(new RandomNumberGenerator)
     
     // Generate RNG with APB3 interface
-    Config.spinal.generateVerilog(new RandomNumberGeneratorApb3(baseAddress = 0x0))
+    Config.spinal.generateVerilog(new RandomNumberGeneratorApb3())
   }
 }

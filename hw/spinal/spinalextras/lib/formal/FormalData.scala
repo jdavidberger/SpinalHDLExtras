@@ -44,6 +44,7 @@ object FormalData {
         }
         cloned.setWeakName("clonedExemplar")
         cloned.addTag(allowFloating)
+        cloned.purify()
 
         if(typeString.isDefined) {
           input_sets += ((typeString.get, (ins.toSet, outs.toSet)))
@@ -210,7 +211,7 @@ trait FormalDataWithEquivalnce[T <: FormalData] extends FormalData {
     this
   }
 
-  Component.toplevel.addPrePopTask( () => {
+  Component.current.addPrePopTask( () => {
     checkForEquivalance()
   })
 }

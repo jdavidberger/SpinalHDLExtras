@@ -6,6 +6,7 @@ import spinalextras.lib.Config
 import spinalextras.lib.blackbox.lattice.lifcl.{GSR, OSCD, OSCDConfig}
 import spinalextras.lib.blackbox.memories.W25Q128JVxIM_quad
 import spinalextras.lib.misc.ClockSpecification
+import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
 
 case class SpinexSim(memoryFile : String = "") extends Component {
 
@@ -22,15 +23,17 @@ case class SpinexSim(memoryFile : String = "") extends Component {
 
   val som = new Spinex(SpinexConfig.default.copy(withWishboneBus = false))
   val flash = new W25Q128JVxIM_quad(memoryFile)
-  flash.io.spiflash_dq <> som.io.spiflash_dq
-  flash.io.spiflash_cs_n <> som.io.spiflash_cs_n
-  flash.io.spiflash_clk <> som.io.spiflash_clk
+
+  val flashPlugin = som.getPlugin[XipFlashPlugin].get
+  flash.io.spiflash_dq <> flashPlugin.spiflash_dq
+  flash.io.spiflash_cs_n <> flashPlugin.spiflash_cs_n
+  flash.io.spiflash_clk <> flashPlugin.spiflash_clk
 
   som.io.jtag.tdi := False
   som.io.jtag.tms := False
   som.io.jtag.tck := False
 
-  som.io.uart.rxd := True
+  som.getPlugin[UartCtrlPlugin].foreach(_.uart.rxd := True)
 //  som.io.wb.DAT_MISO.clearAll()
 //  som.io.wb.ACK := False
 //  som.io.wb.ERR := False

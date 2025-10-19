@@ -1,10 +1,26 @@
 package spinalextras.lib
 
 import spinal.core._
+import spinal.lib.bus.misc._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone}
 
 package object bus {
+  def to_mask_mapping(address_width : Int, mapping: AddressMapping): AddressMapping = {
+    mapping match {
+      case SizeMapping(base, size) => {
+        val is_pow_2 = ((size & -size) == size) // ie, bound is a power of 2
+        if (is_pow_2 && (base & (size - 1)) == 0) {
+          MaskMapping(base, ((1L << address_width) - 1) & ~(size - 1))
+        } else {
+          SpinalWarning(s"${mapping} is not convertible to a mask mapping")
+          mapping
+        }
+      }
+      case _ => mapping
+    }
+  }
+
   implicit class WishboneExt(bus: Wishbone) {
     def isCycle = bus.CYC
 

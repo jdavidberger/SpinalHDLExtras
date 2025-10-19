@@ -5,8 +5,10 @@ import spinal.core.sim.SimPublic
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.regif.RegInst
+import spinalextras.lib.logging.FlowLoggerUtils.{FlowLoggerCCode, FlowLoggerSqlite, FlowLoggerYaml}
 import spinalextras.lib.memory.MemoryBackedFifo
 import spinalextras.lib.misc.RateLimitFlow
+import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
 import java.io.PrintWriter
@@ -92,9 +94,9 @@ class GlobalLogger {
         val logger = FlowLogger(signals)
         logger.setName(loggerName)
         logger.add_comments(comments)
-        logger.codeDefinitions(output_path)
-        logger.sqliteHandlers(output_path)
-        logger.yamlFile(output_path)
+        FlowLoggerCCode(logger, output_path)
+        FlowLoggerSqlite(logger, output_path)
+        FlowLoggerYaml(logger, output_path)
         logger.create_logger_port(sysBus, address, depth, outputStream)
         ctx.restore()
       } else {
@@ -290,7 +292,7 @@ object StreamArbiterTree {
   }
 }
 
-class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends Component {
+class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends Component {
   val signature = datas.map(_.toString()).hashCode().abs
   val io = new Bundle {
     val flows = datas.map(b => slave Flow (Bits(b._1.getBitsWidth bits)))
@@ -319,7 +321,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
     val (((inp, cd), port), idx) = x
     if (inp.name != null)
       port.setName(inp.getName())
-    println(s"${port} ${idx} has ${port.payload.getWidth} bits ${port.payload.getWidth + index_size} total")
+    println(s"${port} ${idx} has ${port.payload.getWidth} bits ${port.payload.getWidth + index_size} total, ${logBits - port.payload.getWidth - index_size - 1} time bits")
   })
 
   def assign(signals: Seq[Flow[Bits]]): this.type = {
@@ -350,9 +352,15 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
   val syscnt_stream = Stream(Bits(logBits bits))
   val needs_syscnt = RegInit(False)
   needs_syscnt := needs_syscnt | time_since_syscnt
+
+  val meta_id_width = 8
   val syscnt_padding = logBits - index_size - 64
-  syscnt_stream.payload := (syscnt ## ~B(0, syscnt_padding bits)).resized
-  syscnt_stream.valid := syscnt_stream.ready & needs_syscnt
+  syscnt_stream.payload := (syscnt ## B(0, meta_id_width bits) ## ~B(0, index_size bits)).resized
+  syscnt_stream.valid := syscnt_stream.ready & needs_syscnt // We combine with ready here so we can change payload when needs_syscnt is true
+
+  val metadata_stream = Stream(Bits(logBits bits))
+  metadata_stream.payload := (U(signature, 32 bits) ## U(datas.size, 10 bits) ## B(1, meta_id_width bits) ## ~B(0, index_size bits)).resized
+  metadata_stream.valid := RegInit(False) setWhen(time_since_syscnt) clearWhen(metadata_stream.fire)
 
   var minimum_time_bits = logBits
   val encoded_streams = {
@@ -382,7 +390,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
     time_since_syscnt.clear()
   }
 
-  io.log <> StreamArbiterFactory.lowerFirst.noLock.on(encoded_streams ++ Seq(syscnt_stream.stage())).stage()
+  io.log <> StreamArbiterFactory.lowerFirst.noLock.on(encoded_streams ++ Seq(syscnt_stream.stage(), metadata_stream.stage())).stage()
   //io.log <> StreamArbiterTree(encoded_streams ++ Seq(syscnt_stream.stage())).stage()
 
   def getTypeName(d: Data): String = {
@@ -400,443 +408,6 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
   var comments = new ArrayBuffer[String]()
   def add_comments(comments: ArrayBuffer[String]) = {
     this.comments ++= comments
-  }
-
-  def sqliteHandlers(output_path : String): Unit = {
-    val file = new PrintWriter(s"${output_path}/${getName()}_sqlite.c")
-    def emit(s : String): Unit = {
-      file.write(s)
-      file.write("\n");
-      file.flush()
-    }
-
-    val defined = new mutable.HashMap[String, mutable.ArrayBuffer[(Flow[Bits], Int)]]()
-    for ((flow, idx) <- flows()) {
-      val key = getTypeName(datas(idx))
-      require(!key.isEmpty)
-      defined.getOrElseUpdate(key, new mutable.ArrayBuffer[(Flow[Bits], Int)]) += ((flow, idx))
-    }
-    emit(
-      f"""
-         |#include "stdlib.h"
-         |#include "sqlite3.h"
-         |#include "event_logger_defs.h"
-
-         |#define ${getName()}_COLUMN_DEF(f)  ", " #f " INTEGER"
-         |#define ${getName()}_COLUMN_VIEW(f)  ", '" #f "'," #f
-         |#define ${getName()}_QUESTION_MARK(f)  ", ?"
-         |""".stripMargin)
-
-    var all_table = new mutable.ListBuffer[String]()
-    for(key <- defined.keys) {
-      file.write(s"static const char* ${getName()}_${key}_CREATE_TABLE = ")
-      emit(s""""CREATE TABLE IF NOT EXISTS ${getName()}_${key} (_key INTEGER PRIMARY KEY, _time INTEGER, _id INTEGER " ${getName()}_${key}_FIELDS(${getName()}_COLUMN_DEF) ")"; """)
-      file.write(s"static const char* ${getName()}_${key}_CREATE_VIEW = ")
-      emit(s""" "CREATE VIEW IF NOT EXISTS ${getName()}_${key}_JSON AS SELECT *, '${key}' as TYPE, JSON_OBJECT('id', _id, 'time', _time " ${getName()}_${key}_FIELDS(${getName()}_COLUMN_VIEW) ") as JSON  FROM ${getName()}_${key} ORDER BY _time"; """)
-
-      all_table += s"SELECT _id, _time, TYPE, JSON from ${getName()}_${key}_JSON"
-    }
-
-    emit(s"""
-        |typedef struct SqlLiteCtx {
-        |     sqlite3 *db;
-        |${defined.keys.map(key => s"     sqlite3_stmt *${key}_insert_stmt;").mkString("\n")}
-        |} SqlLiteCtx;
-        |static const char* ${getName()}_ALL_EVENTS_CREATE_TABLE = "CREATE VIEW IF NOT EXISTS ALL_EVENTS AS ${all_table.mkString(" UNION ")} ORDER BY _time";
-        |
-        |#define ${getName()}_COLUMN(f)  ", " #f
-        |#define ${getName()}_FORMAT(f) ", %u"
-        |#define ${getName()}_FIELD(f) , pkt.f
-        |#define ${getName()}_BIND(f)  sqlite3_bind_int64(stmt, idx++, pkt.f);
-        |
-        |sqlite3 *${getName()}_db = 0;
-        |
-        |void create_table(sqlite3 * db, const char* create_stmt) {
-        |    char* errmsg = 0;
-        |    sqlite3_exec(db, create_stmt, 0, 0, &errmsg);
-        |    if(errmsg) {
-        |         fprintf(stderr, "Create table error in '%s': %s\\n", create_stmt, errmsg);
-        |    }
-        |}
-        |
-        |void GlobalLogger_handle_transaction(${getName()}_ctx* ctx, uint8_t id, const struct GlobalLogger_transaction* tx) { }
-        |
-        |void ${getName()}_init_sql(${getName()}_ctx* ctx, sqlite3 *db) {
-        |    SqlLiteCtx* sqlCtx = (SqlLiteCtx*)calloc(sizeof(SqlLiteCtx), 1);
-        |    ctx->user = sqlCtx;
-        |    sqlCtx->db = db;
-        |    sqlite3_exec(db, "PRAGMA synchronous = OFF", NULL, NULL, 0);
-        |    sqlite3_exec(db, "PRAGMA journal_mode = OFF", NULL, NULL, 0);
-        ${
-      defined.keys.toList.flatMap(key => { s"""
-        |    create_table(db, ${getName()}_${key}_CREATE_TABLE);
-        |    create_table(db, ${getName()}_${key}_CREATE_VIEW);
-        |    {
-        |    const char* query = "INSERT into ${getName()}_${key} (_time, _id " ${getName()}_${key}_FIELDS(${getName()}_COLUMN) " )  VALUES (?, ? " ${getName()}_${key}_FIELDS(${getName()}_QUESTION_MARK) ")";
-        |    int rc = sqlite3_prepare_v2(db, query, -1, &sqlCtx->${key}_insert_stmt, NULL);
-        |    if (rc != 0) {
-        |         fprintf(stderr, "Prepare error %d for %s: %s\\n", rc, query, sqlite3_errmsg(db));
-        |         exit(-1);
-        |    }
-        |    }
-        """
-      }).mkString
-    }
-        |    create_table(db, ${getName()}_ALL_EVENTS_CREATE_TABLE);
-        |}""".stripMargin)
-
-    for (t <- datas.map(getTypeName).toSet[String]) {
-      emit(s"""
-              |void ${getName()}_handle_${t} (${getName()}_ctx* ctx, uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt) {
-              |    SqlLiteCtx* sqlCtx = ctx->user;
-              |    sqlite3 * db = sqlCtx->db;
-              |    char* errmsg = 0;
-              |    sqlite3_stmt *stmt = sqlCtx->${t}_insert_stmt;
-              |    int idx = 1;
-              |    sqlite3_bind_int64(stmt, idx++, time);
-              |    sqlite3_bind_int64(stmt, idx++, id);
-              |    ${getName()}_${t}_FIELDS(${getName()}_BIND);
-              |    int rc = sqlite3_step(stmt);
-              |    if (rc != SQLITE_DONE) {
-              |        fprintf(stderr, "Insert error %d: %s\\n", rc, sqlite3_errmsg(db));
-              |    }
-              |    sqlite3_reset(stmt);
-              |}
-        """.stripMargin)
-    }
-
-  }
-  def yamlFile(output_path : String): Unit = {
-    val file = new PrintWriter(s"${output_path}/${name}.logger_defs.yml")
-
-    def get_field_name(n : String): String = {
-      assert(n.nonEmpty)
-
-      if(n.matches("[0-9*].*"))
-        s"_${n}"
-      else n
-    }
-
-    def emit(s : String): Unit = {
-      file.write(s)
-      file.write("\n");
-      file.flush()
-    }
-
-    def emit_type(d : Data, tabCount : Int = 1): Unit = {
-      val tabs = "   ".repeat(tabCount)
-      d match {
-        case b : MultiData => {
-          b.elements.foreach(x => {
-            val prefix = get_field_name(x._1)
-            emit(s"${tabs}- ${prefix}:")
-            emit_type(x._2, tabCount + 1)
-          })
-        }
-        case e : SpinalEnumCraft[_] => {
-          e.spinalEnum.elements.map(_.getDisplayName()).foreach(n => {
-            emit(s"${tabs}- ${n}")
-          })
-        }
-        case _ => {
-          emit(s"${tabs}${d.getClass.getSimpleName}: ${d.getBitsWidth}")
-        }
-      }
-    }
-
-    emit(s"clock_freq: ${clockDomain.get.frequency.getValue.toDouble}")
-    emit(s"signature: ${signature}")
-    emit(s"index_size: ${index_size}")
-    emit(s"log_bits: ${logBits}")
-    emit("event_definitions:")
-    datas.zipWithIndex.foreach(d_clk => {
-      val (d, cd) = d_clk._1
-      val idx = d_clk._2
-
-      emit(s"   - name: ${flows()(idx)._1.name}")
-      emit(s"     time_bits: ${logBits - d.getBitsWidth - index_size}")
-      emit(s"     type: ")
-      emit_type(d, 2)
-    })
-
-    file.close()
-  }
-
-  def codeDefinitions(output_path : String): Unit = {
-    def getCType(data: Data): String = {
-      val sizes = Seq(8, 16, 32, 64, 128)
-      val pow2 = sizes.filter(_ >= (1 << (log2Up(data.getBitsWidth)))).head
-      data match {
-        case u : UInt => s"uint${pow2}_t"
-        case s : SInt => s"int${pow2}_t"
-        case b : Bool => "bool"
-        case b : Bits => s"uint${pow2}_t"
-        case e : SpinalEnum => s"uint${pow2}_t"
-        case e : SpinalEnumCraft[_] => s"uint${pow2}_t"
-        case b : Bundle => getCType(b.asBits)
-        case _ => assert(false); ""
-      }
-    }
-
-    val file = new PrintWriter(s"${output_path}/event_logger_defs.h")
-    def emit(s : String): Unit = {
-      file.write(s)
-      file.write("\n");
-      file.flush()
-    }
-
-    val defined = new mutable.HashMap[String, mutable.ArrayBuffer[(Flow[Bits], Int)]]()
-    for ((flow, idx) <- flows()) {
-      val key = getTypeName(datas(idx))
-      defined.getOrElseUpdate(key, new mutable.ArrayBuffer[(Flow[Bits], Int)]) += ((flow, idx))
-    }
-
-    //|${flows().map { case (x, idx) => s"#define ${x.getName().toUpperCase}_ID ${idx}" }.mkString("\n")}
-    emit(s"""#pragma once
-               |//Generated do not edit!
-               |#include "stdint.h"
-               |#include "stdbool.h"
-               |#include "stdio.h"
-               |
-               |#include "event_logger.h"
-               |
-               |/****
-               |${comments.mkString("\n\n")}
-               |**/
-               |
-               |uint32_t ${this.name}_INDEX_BITS = ${index_size};
-               |uint32_t ${this.name}_SIGNATURE = 0x${signature.toHexString};
-               |uint32_t ${getName()}_EVENT_COUNT = ${flows().size};
-               |
-               |static ${getName()}_info_t ${getName()}_info_get(volatile uint32_t* base) {
-               |  ${getName()}_info_t rtn = (${getName()}_info_t) {
-               |    .ctrl = base[0],
-               |    .captured_events = base[1],
-               |    .checksum = base[5],
-               |    .sysclk_lsb = base[6],
-               |    .fifo_occupancy = base[7],
-               |    .inactive_mask = base[9],
-               |    .signature = base[12],
-               |    .dropped_events = base[13]
-               |  };
-               |  for(int i = 0;i < ${flows().size};i++) {
-               |     rtn.event_counter[i] = base[56/4 + i];
-               |  }
-               |  return rtn;
-               |}
-               |
-               |typedef struct ${getName()}_ctx {
-               |    void* user;
-               |    uint32_t ctrl;
-               |    uint64_t last_timestamp;
-               |} ${getName()}_ctx;
-               |
-               |static void GlobalLogger_enable_memory_dump(GlobalLogger_ctx* ctx, volatile uint32_t* base, bool enable) {
-               |  if(ctx->ctrl != enable) {
-               |    base[0] = enable;
-               |    ctx->ctrl = enable;
-               |  }
-               |}
-               |
-               |typedef struct ${getName()}_transaction {
-               |  uint32_t l[3];
-               |} ${getName()}_transaction;
-               |
-               |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask);
-               |bool ${getName()}_poll(${getName()}_ctx* ctx, volatile uint32_t* ip_location, uint32_t mask) {
-               |  GlobalLogger_enable_memory_dump(ctx, ip_location, 1);
-               |  struct ${getName()}_transaction tx = {0};
-               |  tx.l[0] = ip_location[2 + 0];
-               |  if((tx.l[0] & 1) == 1) {
-               |      tx.l[1] = ip_location[2 + 1];
-               |      tx.l[2] = ip_location[2 + 2];
-               |
-               |    ${getName()}_handle(ctx, &tx, mask);
-               |    return true;
-               |  }
-               |  return false;
-               |}
-               |
-               |static uint64_t shift(uint64_t d, int16_t shift) {
-               |  if(shift >= 0) {
-               |    return d >> shift;
-               |  }
-               |  return d << (-shift);
-               |}
-               |static uint64_t ${getName()}_parse_field(const struct ${getName()}_transaction* tx, int8_t bit_offset, int8_t bit_width) {
-               |    if(bit_width == 0) {
-               |        return 0;
-               |    }
-               |  uint64_t l0 = tx->l[0];
-               |  uint64_t l1 = tx->l[1];
-               |  uint64_t l2 = tx->l[2];
-               |  uint64_t mask = bit_width == 64 ? 0xffffffffffffffffll : ((1ll << bit_width) - 1);
-               |  return (shift(l0, bit_offset) |
-               |     shift(l1, bit_offset-32) |
-               |     shift(l2, bit_offset-64)) & mask;
-               |}
-               |
-               |
-               |static uint64_t ${getName}_full_time(const struct ${getName()}_transaction* tx, uint64_t gtime, uint8_t time_bit_width) {
-               |  uint64_t time_part = ${getName()}_parse_field(tx, 96 - time_bit_width, 64);
-               |  if(time_bit_width >= 64) {
-               |      return time_part;
-               |  }
-               |  uint64_t mask_bits = time_bit_width;
-               |  uint64_t next_incr = (1LL << mask_bits);
-               |  uint64_t mask = next_incr - 1;
-               |  uint64_t time_reconstruction = (gtime & ~mask) | time_part;
-               |  if(time_reconstruction + (next_incr/4) < gtime) {
-               |      return time_reconstruction + next_incr;
-               |  }
-               |  return time_reconstruction;
-               |}
-               |
-               |#define ${getName()}_DEFINITIONS(HANDLE_DEFINE) \\
-               |${defined.map(d => s"   HANDLE_DEFINE(${d._1})").mkString("\\\n")}
-               |
-               |""".stripMargin)
-
-    emit(s"#define ${getName().toUpperCase}_FULL_TIME_ID 0x${((1 << index_size) - 1).toHexString}")
-
-    def get_field_name(n : String): String = {
-      assert(n.nonEmpty)
-
-      if(n.matches("[0-9*].*"))
-        s"_${n}"
-      else n
-    }
-
-    for(key <- defined.keys) {
-      val exemplar = datas(defined(key).head._2)._1
-      exemplar match {
-        case b : MultiData => {
-          emit(s"typedef struct ${getName()}_${key}_t {")
-          b.elements.foreach(x => {
-            val prefix = get_field_name(x._1)
-            emit(s"\t${getCType(x._2)} ${prefix};")
-          })
-          emit(s"} ${getName()}_${key}_t;")
-
-          emit(s"#define ${getName()}_${key}_FIELDS(HANDLE_FIELD) \\")
-          b.elements.foreach(x => {
-            val prefix = get_field_name(x._1)
-            emit(s"\tHANDLE_FIELD(${prefix}) \\")
-          })
-          emit("")
-
-        }
-        case _ => {
-          emit(s"#define ${getName()}_${key}_FIELDS(HANDLE_FIELD) HANDLE_FIELD(value)")
-          emit(s"typedef struct ${getName()}_${key}_t {")
-          emit(s"    ${getCType(exemplar)} value;")
-          emit(s"} ${getName()}_${key}_t;")
-        }
-      }
-    }
-
-    emit(s"const char* ${getName()}_get_id_name(int id) {")
-    emit(s"   switch(id) {")
-    for ((flow, idx) <- flows()) {
-      emit(s"   case ${idx}: return ${'"' + flow.getName() + '"'};")
-    }
-    emit("    }")
-    emit("    return \"UNKNOWN\";")
-    emit("}")
-
-    def getParseName(d : Data): String = {
-      d match {
-        case b: MultiData => {
-          val parent_name = if (d.parent != null) d.parent.name else s"${d.name}"
-          f"${getName()}_parse_${parent_name}"
-        }
-        case _ => {
-          f"${getName()}_parse_${d.getName()}"
-        }
-      }
-    }
-
-    val handledTypes = new mutable.HashSet[String]()
-    def emitTypeFunctions(d : Data): Unit = {
-      val typeName = getTypeName(d)
-
-      var bitOffset = 0
-      val time_bits = logBits - d.getBitsWidth - index_size
-      emit(s"#define ${d.getName()}_TIME_BIT_WIDTH ${time_bits}")
-      d match {
-        case b : MultiData => {
-          val parent_name = if(d.parent != null) d.parent.name else s"${d.name}"
-
-          if(handledTypes.contains(parent_name))
-            return
-          handledTypes.add(parent_name)
-
-          b.elements.foreach(x => {
-            val prefix = s"${parent_name}_${x._1}"
-            emit(s"#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}")
-            emit(s"#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${x._2.getBitsWidth}")
-            bitOffset += x._2.getBitsWidth
-          })
-          emit(s"static ${getName()}_${typeName}_t ${getName()}_parse_${parent_name}(const ${getName()}_transaction* tx) {")
-          emit(s"\treturn (${getName()}_${typeName}_t) {")
-          b.elements.foreach(x => {
-            val prefix = s"${parent_name}_${x._1}"
-            emit(s"\t\t.${get_field_name(x._1)} = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH),")
-          })
-          emit("\t};")
-          emit("}")
-        }
-        case _ => {
-          val time_bits = logBits - d.getBitsWidth - index_size
-          val prefix = s"${d.getName()}"
-          emit(
-            s"""
-               |#define ${prefix}_TIME_BIT_WIDTH ${time_bits}
-               |#define ${s"${prefix}_BIT_OFFSET".padTo(32, ' ')} ${bitOffset}
-               |#define ${s"${prefix}_BIT_WIDTH".padTo(32, ' ')} ${d.getBitsWidth}
-               |static ${getName()}_${typeName}_t ${getName()}_parse_${d.getName()}(const ${getName()}_transaction* tx) {
-               |   return (${getName()}_${typeName}_t){ .value = ${getName()}_parse_field(tx, ${prefix}_BIT_OFFSET + ${this.name}_INDEX_BITS + 1 /* VALID bit */, ${prefix}_BIT_WIDTH) };
-               |}
-               |""".stripMargin)
-        }
-      }
-    }
-
-    datas.foreach(d_clk => {
-      val (d, cd) = d_clk
-      emitTypeFunctions(d)
-    })
-
-    emit(s"void ${getName()}_handle_transaction(${getName()}_ctx* ctx, uint8_t id, const struct ${getName()}_transaction* tx);")
-    for (t <- datas.map(getTypeName).toSet[String]) {
-      emit(s"void ${getName()}_handle_${t} (${getName()}_ctx* ctx, uint64_t time, uint8_t id, const ${getName()}_${t}_t pkt);")
-    }
-
-    emit(
-      s"""
-         |static uint8_t ${getName()}_get_id(const struct ${getName()}_transaction* tx){ return ${getName()}_parse_field(tx, 1, ${index_size}); }
-         |static void ${getName()}_handle(${getName()}_ctx* ctx, const struct ${getName()}_transaction* tx, uint32_t mask){
-         |    uint8_t id = ${getName()}_get_id(tx);
-         |    if(mask & (1 << id)) return;
-         |    ${getName()}_handle_transaction(ctx, id, tx);
-         |    switch(id) {
-         |""".stripMargin)
-
-    for ((flow, idx) <- flows()) {
-      emit(
-        s"""   case ${idx}: {
-           |      ctx->last_timestamp = ${getName}_full_time(tx, ctx->last_timestamp, ${flow.getName()}_TIME_BIT_WIDTH);
-           |      ${getName()}_handle_${getTypeName(datas(idx))}(ctx, ctx->last_timestamp, id, ${getParseName(datas(idx)._1)}(tx));
-           |      break;
-           |    }""".stripMargin)
-    }
-    emit(
-      s"""
-         |   case ${(1 << index_size) - 1}: ctx->last_timestamp = ${getName()}_parse_field(tx, 1 + ${syscnt_padding}, 64); break;
-         |   default: fprintf(stderr, "Unknown id %d\\n", id);
-         |  }
-         |}
-      """.stripMargin)
   }
 
   def create_logger_port(sysBus: GlobalBus_t, address: BigInt, depth: Int,
@@ -862,7 +433,7 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
       return
     }
 
-    val logger_port = sysBus.add_slave_factory("logger_port", SizeMapping(address, 1 KiB), "cpu")
+    val logger_port = sysBus.add_slave_factory("logger_port", SizeMapping(address, 1 KiB), true, true, "cpu")
 
     val ctrlReg = logger_port.createReadAndWrite(UInt(32 bits), address + 0) init(0)
     val inMemory = ctrlReg(0)
@@ -903,9 +474,12 @@ class FlowLogger(datas: Seq[(Data, ClockDomain)], val logBits: Int = 95) extends
       when(x._1) {
         flowCnt := flowCnt + 1
       }
-    }
-    )
+    })
 
+    new DeviceTreeProvider(address) {
+      override def compatible : Seq[String] = Seq(s"spinex,event-logger")
+      override def baseEntryPath = Seq("/", f"eventLogger@${address.toString(16)}")
+    }
   }
 
 
@@ -941,11 +515,14 @@ object FlowLogger {
     val timeout = Timeout(duration)
     val counter = Reg(UInt(64 bit))
     val eventsPerDuration = Flow(cloneOf(counter))
+    val arm = RegInit(False)
+
     eventsPerDuration.payload := counter
-    eventsPerDuration.valid := timeout
+    eventsPerDuration.valid := timeout && arm
 
     when(evt) {
       counter := counter + 1
+      arm := True
     }
 
     when(timeout) {

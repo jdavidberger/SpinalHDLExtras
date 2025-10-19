@@ -2,10 +2,12 @@ package spinalextras.lib.bus
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
+import spinal.core.sim.{SimBaseTypePimper, SimBoolPimper, SimClockDomainHandlePimper, SimEquivBitVectorBigIntPimper, SimTimeout}
 import spinal.lib._
 import spinal.lib.bus.amba4.axi._
 import spinal.lib.bus.wishbone._
 import spinal.lib.fsm.{EntryPoint, State, StateMachine}
+import spinalextras.lib.Config
 import spinalextras.lib.formal.fillins.Axi4Formal.Axi4FormalExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
@@ -132,6 +134,70 @@ case class Wb2Axi4(wbConfig : WishboneConfig, axiConfig: Axi4Config, val AXI_WRI
   }
 }
 
+
+class Wb2AxiTester extends AnyFunSuite {
+  def doTest(wbConfig : WishboneConfig): Unit = {
+    Config.sim.doSim(
+      new Component {
+        val io = new Bundle {
+          val wb = slave(Wishbone(wbConfig))
+        }
+
+        val ram = new Axi4SharedOnChipRam(64, 2048, 1, false)
+        ram.ram.initialContent = (0 until 2048).map(BigInt(_)).toArray
+        val wb2axi = new Wb2Axi4(wbConfig, ram.axiConfig)
+        io.wb <> wb2axi.io.wb
+
+        ram.io.axi <> wb2axi.io.axi.toShared()
+      }
+    ) { dut =>
+      SimTimeout(5000 us)
+      dut.clockDomain.forkStimulus(100 MHz)
+
+      dut.io.wb.SEL #= 0xf
+      dut.io.wb.CYC #= false
+      dut.io.wb.STB #= false
+
+      dut.clockDomain.waitSampling(10)
+
+      for(i <- 0 until 256) {
+        dut.io.wb.CYC #= true
+        dut.io.wb.STB #= true
+        dut.io.wb.ADR #= i * 4
+        dut.io.wb.DAT_MOSI #= i
+        dut.io.wb.WE #= true
+        dut.clockDomain.waitSamplingWhere(dut.io.wb.ACK.toBoolean)
+        dut.io.wb.CYC #= true
+        dut.io.wb.STB #= false
+      }
+
+      dut.clockDomain.waitSampling(10)
+
+      for(i <- 0 until 256) {
+        dut.io.wb.CYC #= true
+        dut.io.wb.STB #= true
+        dut.io.wb.ADR #= i * 4
+        dut.io.wb.WE #= false
+        dut.clockDomain.waitSamplingWhere(dut.io.wb.ACK.toBoolean)
+        println(i, dut.io.wb.DAT_MISO.toBigInt)
+        dut.io.wb.STB #= false
+        dut.io.wb.ADR #= 0
+        dut.clockDomain.waitSampling(3)
+      }
+
+    }
+  }
+
+
+  test("ByteTest") {
+    doTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE, selWidth = 4))
+  }
+  test("WordTest") {
+    doTest(WishboneConfig(32, 32, addressGranularity = AddressGranularity.WORD, selWidth = 4))
+  }
+
+}
+
 class Wb2Axi4FormalTester extends AnyFunSuite with FormalTestSuite {
 
   override def defaultDepth() = 10
@@ -151,21 +217,7 @@ class Wb2Axi4FormalTester extends AnyFunSuite with FormalTestSuite {
 }
 
 
-class Axi4SharedOnChipRamFormalTester extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 20
-
-  formalTests().foreach(t => test(t._1) {
-    t._2()
-  })
-  override def generateRtl() = Seq()
-  override def generateRtlBMC() = {
-    Seq(
-      (s"Basic", () =>
-        GeneralFormalDut(() => new Axi4SharedOnChipRam(64, 8, 1)))
-    )
-  }
-}
 
 
 

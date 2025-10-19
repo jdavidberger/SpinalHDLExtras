@@ -37,7 +37,7 @@ class CSREventManager extends Area {
     val interrupt = Vec(sources.zipWithIndex.map{ case (s, idx) => {
       busCtrl.read(s.status.setName(s"${s.name}_status"), address = statusAddr, bitOffset = idx, documentation = s.description)
       busCtrl.readAndClearOnSet(s.pending.setName(s"${s.name}_pending"), address = pendingAddr, bitOffset = idx)
-      busCtrl.readAndWrite(s.enable.setName(s"${s.name}_enable"), enableAddr, bitOffset = idx)
+      busCtrl.readAndWrite(s.enable.setName(s"${s.name}_enable"), enableAddr, bitOffset = idx, documentation = s.description + " enable")
       s.irq
     }}).orR
   }.interrupt

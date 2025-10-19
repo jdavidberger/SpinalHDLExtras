@@ -4,6 +4,7 @@ import spinal.core.{Bool, Component, MultiData}
 import spinal.lib.IMasterSlave
 import spinal.lib.bus.misc.{AddressMapping, DefaultMapping, MaskMapping, SizeMapping}
 import spinal.lib.bus.simple.PipelinedMemoryBusDecoder
+import spinalextras.lib.bus
 
 import scala.collection.mutable
 
@@ -90,18 +91,9 @@ class MultiInterconnect {
   }
 
   def to_mask_mapping(bus: MultiBusInterface)(mapping: AddressMapping): AddressMapping = {
-    mapping match {
-      case SizeMapping(base, size) => {
-        val is_pow_2 = ((size & -size) == size) // ie, bound is a power of 2
-          if (is_pow_2 && (base & (size - 1)) == 0) {
-          MaskMapping(base, ((1L << bus.address_width) - 1) & ~(size - 1))
-        } else {
-          mapping
-        }
-      }
-      case _ => mapping
-    }
+    spinalextras.lib.bus.to_mask_mapping(bus.address_width, mapping)
   }
+
   def build(): Unit = {
     val connectionsInput  = mutable.HashMap[ConnectionModel, MultiBusInterface]()
     val connectionsOutput = mutable.HashMap[ConnectionModel, MultiBusInterface]()
@@ -184,7 +176,7 @@ class MultiInterconnectByTag extends MultiInterconnect {
     buildConnections()
     super.build()
 
-    println("System Bus Masters")
+    println("Multi-interconnect System Bus Masters")
     for(m <- masters) {
       println(s"\t${m} ${tags(m)}")
       val connected_slaves = connections.filter(_.m == m).map(_.s)

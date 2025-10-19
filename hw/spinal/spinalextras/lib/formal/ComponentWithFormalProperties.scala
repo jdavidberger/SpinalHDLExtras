@@ -19,6 +19,21 @@ object ComponentWithFormalProperties {
     this
   }
 
+
+  def isMasterInterface(d: Data) : Option[Boolean] = {
+    d match {
+      case null => None
+      case ms: IMasterSlave => {
+        (ms.isMasterInterface, ms.isSlaveInterface) match {
+          case (true, _) => Some(true ^ !isMasterInterface(d.parent).getOrElse(true))
+          case (_, true) => Some(false ^ !isMasterInterface(d.parent).getOrElse(true))
+          case _ => isMasterInterface(d.parent)
+        }
+      }
+      case _ => isMasterInterface(d.parent)
+    }
+  }
+
   /**
    * The default implementation of formalInputProperties for components checks their IO bundle for bundles with the
    * formal trait and uses those as the input properties.
@@ -31,9 +46,11 @@ object ComponentWithFormalProperties {
     val iosWithFillins = flattenIOs.map(fillins.findFillin)
     iosWithFillins.foreach({
       case io: FormalMasterSlave =>
-        if (io.asIMasterSlave.isMasterInterface) addFormalProperties(io.formalIsConsumerValid())
-        else if (io.asIMasterSlave.isSlaveInterface) addFormalProperties(io.formalIsProducerValid())
-        else if (io.underlyingData.isInput) addFormalProperties(io.formalIsStateValid())
+        isMasterInterface(io.asIMasterSlave.asInstanceOf[Data]) match {
+          case Some(true) => addFormalProperties(io.formalIsConsumerValid())
+          case Some(false) => addFormalProperties(io.formalIsProducerValid())
+          case _ => if (io.underlyingData.isInput) addFormalProperties(io.formalIsStateValid())
+        }
       case io: FormalData => if (io.underlyingData.isInput) addFormalProperties(io.formalIsStateValid())
       case io: Any => {}
     })
@@ -153,9 +170,10 @@ class ComponentWithFormalProperties extends Component with HasFormalProperties {
     getAllIo.filter(_.isInput).filter(_.dlcIsEmpty).foreach(anyseq)
   }
 
-  override protected def formalInputProperties(): Seq[FormalProperty] = ComponentWithFormalProperties.formalInputProperties(this)
-
+  def formalComponentInputProperties() : Seq[FormalProperty] = Seq.empty
   def formalComponentProperties() : Seq[FormalProperty] = Seq.empty
+
+  override protected def formalInputProperties(): Seq[FormalProperty] = ComponentWithFormalProperties.formalInputProperties(this) ++ formalComponentInputProperties()
 
   lazy val contained_elements = new mutable.ArrayBuffer[Data]()
   override def valCallbackRec(ref: Any, name: String): Unit = {

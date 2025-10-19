@@ -90,28 +90,17 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
   def add_slave(name : String, mapping : AddressMapping, tags : String*) : T = {
     val (topBus, rtn) = add_interface(name, slave_direction)
 
-    val newMapping = mapping match {
-      case SizeMapping(base, size) => {
-        if((base & (size - 1)) == 0) {
-          MaskMapping(base, ((1L << addr_width()) - 1) & ~(size - 1))
-        } else {
-          mapping
-        }
-      }
-      case _ => mapping
-    }
-
     slaves.foreach(s => {
       //println(s"Checking ${s._2} vs ${newMapping}")
-      val no_overlap = !s._2.hit(newMapping.lowerBound) && !newMapping.hit(s._2.lowerBound)
+      val no_overlap = !s._2.hit(mapping.lowerBound) && !mapping.hit(s._2.lowerBound)
       if(!no_overlap) {
         println("Invalid memory settings, overlap between two slave devices:")
-        println(s"${s} overlaps with ${name} (${newMapping})")
+        println(s"${s} overlaps with ${name} (${mapping})")
       }
       require(no_overlap)
     })
 
-    slaves.append((topBus, newMapping, Set(tags:_*)))
+    slaves.append((topBus, mapping, Set(tags:_*)))
 
     rtn
   }
@@ -149,9 +138,13 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     add_bus_interface(name, mapping, false, false, tags:_*)
   }
 
-  def add_slave_factory(name: String, mapping: SizeMapping, tags: String*): BusSlaveFactory = {
-    val port = add_slave(name, mapping, tags:_*)
+  def add_slave_factory(name: String, mapping: SizeMapping, m2s_stage : Boolean, s2m_stage : Boolean, tags: String*): BusSlaveFactory = {
+    val port = apply_staging(add_slave(name, mapping, tags:_*), m2s_stage, s2m_stage)
     slave_factory(port)
+  }
+
+  def add_slave_factory(name: String, mapping: SizeMapping, tags: String*): BusSlaveFactory = {
+    add_slave_factory(name, mapping = mapping, m2s_stage = false, s2m_stage = false, tags = tags:_*)
   }
 
 
@@ -164,7 +157,9 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
 
         val connected_slaves = slaves.filter { case (s, mapping, slave_tags) =>
           tags.isEmpty || slave_tags.isEmpty || slave_tags.intersect(tags).nonEmpty
-        }.map { case (s, mapping, slave_tags) =>
+        }.map { case (s, inputMapping, slave_tags) =>
+          val mapping = spinalextras.lib.bus.to_mask_mapping(32, inputMapping)
+
           val mappingName = mapping match {
             case MaskMapping(base, mask) => s"MaskMapping(0x${base.toString(16)}, 0x${mask.toString(16)})"
             case SizeMapping(base, size) => s"SizeMapping(0x${base.toString(16)}, 0x${size.toString(16)})"

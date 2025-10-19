@@ -17,7 +17,7 @@ import scala.collection.mutable
 case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
                                                    sm : SizeMapping,
                                                    sysBus : Option[PipelineMemoryGlobalBus] = None, localPushDepth : Int = 0, localPopDepth : Int = 0,
-                                                   check_flush : Boolean = false,
+                                                   check_flush : Boolean = true,
                                                    check_response : Boolean = false) extends Component {
   val globalBus = sysBus.getOrElse(PipelineMemoryGlobalBus(PipelinedMemoryBusConfig(32, dataType.getBitsWidth)))
   val busSlave = globalBus.add_slave("default", DefaultMapping)
@@ -82,9 +82,9 @@ class PipelinedMemoryBusFIFOFormalTest extends AnyFunSuite with FormalTestSuite 
 
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def defaultDepth() = 5
+  override def defaultDepth() = 10
 
-  //override def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(20)
+  override def BMCConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withBMC(15)
   override def CoverConfig() : SpinalFormalConfig = FormalConfig.withConfig(config).withCover(10).withDebug
 
   override def generateRtlBMC() = Seq(("check_response", () => create_formal(true)))

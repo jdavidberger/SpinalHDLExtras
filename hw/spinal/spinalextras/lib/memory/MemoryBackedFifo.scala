@@ -1,12 +1,13 @@
 package spinalextras.lib.memory
 
-import spinal.core.{Area, Bool, BooleanPimped, Bundle, CombInit, Component, Data, False, HardType, IntToBuilder, Reg, RegNextWhen, True, U, UInt, assert, cloneOf, in, isPow2, log2Up, out, when}
+import org.scalatest.funsuite.AnyFunSuite
+import spinal.core.{Area, Bits, Bool, BooleanPimped, Bundle, CombInit, Component, Data, False, HardType, IntToBuilder, Reg, RegNextWhen, True, U, UInt, assert, cloneOf, in, isPow2, log2Up, out, when}
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinal.lib.{KeepAttribute, Stream, StreamFifoInterface, master, slave}
 import spinalextras.lib.HardwareMemory.HardwareMemoryReadWriteCmd
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt}
-import spinalextras.lib.testing.test_funcs
+import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 
 class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
@@ -58,4 +59,33 @@ class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
 //  if(withAsserts) {
 //    this.formalAsserts()
 //  }
+
+  override def formalComponentInputProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    when(io.flush) {
+      addFormalProperty(io.pop.ready, "Flush requires a ready on the pop")
+    }
+  }
+
 }
+
+
+
+class MemoryBackedFifoFormalTester extends AnyFunSuite with FormalTestSuite {
+  override def defaultDepth() = 10
+
+  formalTests().foreach(t => test(t._1) {
+    t._2()
+  })
+
+  override def generateRtl() = {
+    Seq(
+      (s"Basic", () =>
+        GeneralFormalDut(() => new MemoryBackedFifo(Bits(95 bits), 16000)))
+    )
+  }
+}
+
+
+
+
+
