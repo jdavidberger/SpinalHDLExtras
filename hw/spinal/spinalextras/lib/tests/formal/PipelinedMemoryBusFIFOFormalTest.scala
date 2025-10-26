@@ -63,6 +63,7 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
   //anyconst(dut.io.debug_fake_write)
   dut.io.debug_fake_write := False
 
+  cover(dut.full)
   cover(dut.io.push.fire)
   cover(dut.io.push.valid)
   cover(busSlave.rsp.valid)
@@ -78,7 +79,7 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
 
 class PipelinedMemoryBusFIFOFormalTest extends AnyFunSuite with FormalTestSuite {
 
-  val create_formal = (check_response : Boolean) => new PipelinedMemoryBusFIFOFormal(UInt(8 bits), (0, 3), check_response = check_response, localPopDepth = 2)
+  val create_formal = (check_response : Boolean) => new PipelinedMemoryBusFIFOFormal(UInt(8 bits), (0, 3), check_response = check_response, localPopDepth = 4)
 
   formalTests().foreach(t => test(t._1) { t._2() })
 

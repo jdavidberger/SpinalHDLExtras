@@ -8,7 +8,7 @@ import spinal.lib.com.uart.{UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemory
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.soc.bus.WishbonePlugin
 import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
-import spinalextras.lib.soc.spinex.plugins.{IdentificationPlugin, OpenCoresI2CPlugin, TimerPlugin}
+import spinalextras.lib.soc.spinex.plugins.{IdentificationPlugin, JTagPlugin, OpenCoresI2CPlugin, TimerPlugin}
 import vexriscv.ip.InstructionCacheConfig
 import vexriscv.{VexRiscv, plugin}
 import vexriscv.plugin.CsrAccess.WRITE_ONLY
@@ -89,7 +89,6 @@ case class SpinexConfig(coreFrequency : HertzNumber,
                         withNativeJtag      : Boolean,
                         cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
                         externalInterrupts : Int,
-                        withWishboneBus : Boolean,
                         plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins
                        ){
   require(pipelineApbBridge || pipelineMainBus, "At least pipelineMainBus or pipelineApbBridge should be enable to avoid wipe transactions")
@@ -106,7 +105,7 @@ case class SpinexConfig(coreFrequency : HertzNumber,
 object SpinexConfig{
   val resetVector = 0x20200000
 
-  def default : SpinexConfig = default(true, false)
+  def default : SpinexConfig = default(withXip = true, bigEndian = false)
   def default(withXip : Boolean = true, bigEndian : Boolean = false) =  SpinexConfig(
     coreFrequency         = 80 MHz,
     onChipRamSize         = 0x00010000,
@@ -238,7 +237,7 @@ object SpinexConfig{
       rxFifoDepth = 16
     ),
     externalInterrupts = 8,
-    withWishboneBus = true
+    plugins = plugins(withXip)
   )
 
   def fast = {
@@ -256,19 +255,28 @@ object SpinexConfig{
     config
   }
 
-  def defaultPlugins = Seq(
-    WishbonePlugin(SizeMapping(0xb0000000L, 0x10000000L), "wb0"),
-    IdentificationPlugin(registerLocation = 0x3000),
-    RandomPlugin(registerLocation = 0x3060),
-    TimerPlugin(),
-    UartCtrlPlugin(),
-    XipFlashPlugin(),
+  def plugins(withXip : Boolean = true) = {
+    val plugins = mutable.ArrayBuffer(
+      IdentificationPlugin(registerLocation = 0x3000),
+      RandomPlugin(registerLocation = 0x3060),
+      TimerPlugin(),
+      UartCtrlPlugin(),
 
-    OpenCoresI2CPlugin(),
-    SystemRam(),
+      OpenCoresI2CPlugin(),
+      SystemRam(),
+      new JTagPlugin(),
+      PrintAPBMapping()
+    )
 
-    PrintAPBMapping()
-  )
+    if(withXip)
+      plugins.append(new XipFlashPlugin())
+    else
+      plugins.append(new SystemRam("spinex_rom", SizeMapping(0x20000000L, 0x01000000)))
+
+    plugins
+  }
+
+  def defaultPlugins = plugins()
 
 
 }

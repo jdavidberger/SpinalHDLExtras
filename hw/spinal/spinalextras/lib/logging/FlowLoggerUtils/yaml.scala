@@ -65,7 +65,7 @@ object FlowLoggerYaml {
 
     file.close()
 
-    Files.delete(Paths.get(s"${output_path}/${name}.logger_defs.yml"))
+    Files.deleteIfExists(Paths.get(s"${output_path}/${name}.logger_defs.yml"))
     Files.createSymbolicLink(Paths.get(s"${output_path}/${name}.logger_defs.yml"), Paths.get(f"${name}.${signature.toHexString}.logger_defs.yml"))
 
   }

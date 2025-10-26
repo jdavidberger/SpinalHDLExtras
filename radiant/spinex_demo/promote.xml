@@ -1,3 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<userSetting name="/home/justin/source/cr/tinyclunx_dev/SpinalHDLExtras/radiant/spinex_demo/promote.xml" version="Diamond (64-bit) 2023.2.1.288.0  Patch Version(s) 21580" date="Mon Apr 14 03:07:05 PM 2025" vendor="Lattice Semiconductor Corporation" >
+<userSetting name="/home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo/promote.xml" version="Diamond (64-bit) 2025.1.1.308.0" date="Sat Oct 25 10:17:15 PM 2025" vendor="Lattice Semiconductor Corporation" >
+  <msg mid="2043184" type="Error" internal="true" />
+  <msg mid="2043310" type="Info" internal="true" />
+  <msg mid="2043010" type="Error" internal="true" />
+  <msg mid="2043063" type="Warning" internal="true" />
+  <msg mid="2043330" type="Warning" internal="true" />
+  <msg mid="2044320" type="Info" internal="true" />
+  <msg mid="2043328" type="Info" internal="true" />
+  <msg mid="35901010" type="Warning" internal="true" />
+  <msg mid="35931002" type="Warning" internal="true" />
+  <msg mid="2043018" type="Info" internal="true" />
+  <msg mid="35901209" type="Warning" internal="true" />
+  <msg mid="35921504" type="Info" internal="true" />
+  <msg mid="35901142" type="Warning" internal="true" />
+  <msg mid="35901328" type="Info" internal="true" />
 </userSetting>

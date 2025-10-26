@@ -1,10 +1,13 @@
 package spinalextras.lib.bus
 
-import spinal.core.{Bool, Component, MultiData}
-import spinal.lib.IMasterSlave
-import spinal.lib.bus.misc.{AddressMapping, DefaultMapping, MaskMapping, SizeMapping}
-import spinal.lib.bus.simple.PipelinedMemoryBusDecoder
+import spinal.core.{Bool, Component, MultiData, log2Up}
+import spinal.lib.{IMasterSlave, master, slave}
+import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, DefaultMapping, MaskMapping, NeverMapping, SizeMapping}
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig, PipelinedMemoryBusDecoder}
+import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig, WishboneSlaveFactory}
 import spinalextras.lib.bus
+import spinalextras.lib.bus.bus.WishboneMultiBusInterface
+import spinalextras.lib.bus.general.BusSlaveProvider
 
 import scala.collection.mutable
 
@@ -83,7 +86,7 @@ class MultiInterconnect {
   }
 
   def create_arbiter(bus : MultiBusInterface, ports : Int) = {
-    if(ports == 1) {
+    if(ports <= 1) {
       Seq(bus)
     } else {
       bus.create_arbiter(ports)
@@ -128,14 +131,22 @@ class MultiInterconnect {
   }
 }
 
-class MultiInterconnectByTag extends MultiInterconnect {
+class MultiInterconnectByTag extends MultiInterconnect with BusSlaveProvider {
+  val component = Component.current
+
   val tags = new mutable.HashMap[MultiBusInterface, mutable.Set[String]]()
 
   override def addSlave(bus: MultiBusInterface, mapping: AddressMapping) : this.type = {
     for((sbus, s) <- slaves) {
       if(tags(sbus).intersect(tags(bus)).size > 0) {
-        assert(!s.mapping.hit(mapping.lowerBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
-        assert(!s.mapping.hit(mapping.highestBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
+        val intersection = s.mapping.intersect(mapping)
+        //assert(!s.mapping.hit(mapping.lowerBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
+        //assert(!s.mapping.hit(mapping.highestBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
+        intersection match {
+          case NeverMapping => {}
+          case _ => assert(intersection.maxSequentialSize == 0, f"Memory map conflict ${s.mapping} vs ${mapping}")
+        }
+
       }
     }
 
@@ -173,6 +184,7 @@ class MultiInterconnectByTag extends MultiInterconnect {
   }
 
   override def build() : Unit = {
+    preBuildTasks.foreach(_())
     buildConnections()
     super.build()
 
@@ -190,5 +202,23 @@ class MultiInterconnectByTag extends MultiInterconnect {
       })
     }
 
+  }
+
+  override def add_slave_factory(name: String, mapping: SizeMapping, m2s_stage: Boolean, s2m_stage: Boolean, tags: String*): BusSlaveFactory = {
+    val config = WishboneConfig(log2Up(mapping.end), 32, addressGranularity = AddressGranularity.BYTE)
+
+    val bus = if(component != Component.current) {
+      val restore = Component.push(component)
+      val bus = master(new Wishbone(config))
+      restore.restore()
+      bus
+    } else {
+      WishboneStage(new Wishbone(WishboneConfig(log2Up(mapping.end), 32, addressGranularity = AddressGranularity.BYTE)),
+        m2s_stage, s2m_stage)
+    }
+    bus.setName(name)
+
+    addSlave(new WishboneMultiBusInterface(bus), mapping = mapping, tags = tags:_*)
+    WishboneSlaveFactory(WishboneStage(bus, m2s_stage, s2m_stage))
   }
 }

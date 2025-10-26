@@ -3,34 +3,37 @@ package spinalextras.lib.debug
 import spinal.core._
 import spinal.lib._
 import spinal.lib.com.jtag.{Jtag, JtagTap, JtagTapInstructionCtrl}
+import spinalextras.lib.Constraints
+import spinalextras.lib.clocking.ClockUtils
 
 import scala.language.postfixOps
 
 object JtagLoggerTap {
   def apply(log_stream : Stream[Bits], tap: JtagTap, jtag_cd : ClockDomain, instr : Int = 0x24) = {
-    val log_stream_cc = log_stream.queue(4, ClockDomain.current, popClock = jtag_cd)
+    val log_stream_cc = log_stream.ccToggle(ClockDomain.current, popClock = jtag_cd)
 
     val ctrl = new ClockingArea(jtag_cd) {
       tap.map(StreamJtagInstrCtrl(log_stream_cc), instr)
     }
   }
 }
-class JtagLoggerTap(bitWidth : Int, instr : Int = 0x24) extends Component {
+class JtagLoggerTap(bitWidth : Int, instr : Int = 0x24, frequency : HertzNumber = 12 MHz) extends Component {
   val io = new Bundle {
     val jtag    = slave(Jtag())
     val log_stream = slave(Stream(Bits(bitWidth bits)))
   }
 
-  val jtag_cd = ClockDomain(io.jtag.tck, reset = ClockDomain.current.reset,
-    config = ClockDomain.current.config.copy(resetKind = ASYNC))
+  ClockUtils.asAsyncReset(ClockDomain.current) on new Area {
+    val jtag_cd = ClockUtils.createAsyncClock(io.jtag.tck, FixedFrequency(12 MHz))
 
-  val ctrl = new ClockingArea(jtag_cd) {
-    val tap = new JtagTap(io.jtag, 8)
-    tap.idcode(B"h010003d1")(instructionId = 0xe0)
+    val ctrl = new ClockingArea(jtag_cd) {
+      val tap = new JtagTap(io.jtag, 8)
+      tap.idcode(B"h010003d1")(instructionId = 0xe0)
+    }
+    noIoPrefix()
+
+    JtagLoggerTap(io.log_stream, ctrl.tap, jtag_cd, instr)
   }
-  noIoPrefix()
-
-  JtagLoggerTap(io.log_stream, ctrl.tap, jtag_cd, instr)
 }
 
 class JtagChain(device_count : Int) extends Component {
@@ -39,6 +42,8 @@ class JtagChain(device_count : Int) extends Component {
     val jtags = Array.fill(device_count)(master(Jtag()))
   }
   noIoPrefix()
+  Constraints.create_clock(io.jtag.tck, 12 MHz)
+  Constraints.set_max_skew(10 ns, io.jtag.tck, io.jtag.tdi, io.jtag.tdo, io.jtag.tms)
 
   var td = io.jtag.tdi
   io.jtags.foreach(jtag_tap => {

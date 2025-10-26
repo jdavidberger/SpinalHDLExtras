@@ -136,7 +136,7 @@ case class UartCtrlPlugin(config: UartCtrlMemoryMappedConfig = UartCtrlPlugin.de
     uartCtrl.io.uart <> uart
     uartCtrl.io.apb <> apb
 
-    interruptIdx = som.system.addInterrupt(uartCtrl.io.interrupt)
+    interruptIdx = som.system.addInterrupt(uartCtrl.io.interrupt, 2)
 
     _regs = busCtrlToRegs(uartCtrl.busCtrl)
     super.apply(som)

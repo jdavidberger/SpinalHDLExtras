@@ -78,6 +78,8 @@ case class PLLOutputClockConfig(
                                  ACTUAL_FREQ : Double = 0, // In hertz
                                  ACTUAL_PHASE : Double = 0
                                ) {
+  val specification = ClockSpecification(ACTUAL_FREQ Hz, ACTUAL_PHASE)
+
   override def equals(o: Any) = {
     o match {
       case other : PLLOutputClockConfig => {
@@ -486,7 +488,7 @@ case class PLLConfig(
   }
 }
 
-class PLL(val cfg: PLLConfig) extends BlackBox {
+class PLL(val cfg: PLLConfig) extends BlackBox with spinalextras.lib.clocking.PLL {
 
   val io = new Bundle {
     // \desc = "", \pintype = "INTFBK"
@@ -619,6 +621,8 @@ class PLL(val cfg: PLLConfig) extends BlackBox {
     val CLKS = cfg.OUTPUT_CLKS.zip(Seq(CLKOP, CLKOS, CLKOS2, CLKOS3, CLKOS4, CLKOS5).filter(_ != null))
   }
 
+  val lock = io.LOCK
+
   val defParams = PLLConfig().Parameters
   for ((name, value) <- cfg.Parameters.toList.sortBy(_._1)) {
     //if(value != defParams(name)) {
@@ -657,6 +661,8 @@ class PLL(val cfg: PLLConfig) extends BlackBox {
     })
     Constraints.add_clock_group(true, io.CLKS.map(_._2):_*)
   })
+  override def inputSpecification: ClockSpecification = ???
+  override def outputSpectifications: Seq[ClockSpecification] = this.cfg.OUTPUT_CLKS.map(_.specification)
 }
 
 case class IoI2(io: Double, i2: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int)

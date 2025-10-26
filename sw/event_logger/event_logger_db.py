@@ -227,7 +227,7 @@ class EventDB:
         select_stmt = f"CREATE VIEW {prefix.rstrip('_')} AS " + " UNION ".join(stmts) + " order by timestamp"
 
         cur = self.conn.cursor()
-        print(select_stmt)
+
         cur.execute(select_stmt)
 
 

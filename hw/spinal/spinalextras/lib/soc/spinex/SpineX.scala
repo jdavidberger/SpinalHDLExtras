@@ -1,21 +1,23 @@
 package spinalextras.lib.soc.spinex
 
 import spinal.core._
+import spinal.core.sim.{SimClockDomainHandlePimper, SimClockDomainPimper, sleep}
 import spinal.lib._
 import spinal.lib.bus.amba3.apb._
 import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone.Wishbone
-import spinal.lib.com.jtag.{Jtag, JtagTapInstructionCtrl}
+import spinal.lib.com.jtag.JtagTapInstructionCtrl
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBus
 import spinal.lib.cpu.riscv.debug._
 import spinalextras.lib.Config
-import spinalextras.lib.blackbox.lattice.lifcl.PLL
 import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
+import spinalextras.lib.clocking.rst_sync
 import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
-import spinalextras.lib.misc.ClockSpecification
+import spinalextras.lib.soc.DeviceTree
+import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
 import vexriscv.ip.InstructionCacheMemBus
 import vexriscv.plugin._
 import vexriscv.{VexRiscv, VexRiscvConfig}
@@ -30,7 +32,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
   val self = this
 
   val io = new Bundle {
-    val jtag = ifGen(!config.withNativeJtag) (slave(Jtag()))
+
   }
   noIoPrefix()
 
@@ -51,8 +53,6 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
   val resetCtrl = new ClockingArea(resetCtrlClockDomain) {
     val mainClkResetUnbuffered  = False
 
-    //Implement an counter to keep the reset axiResetOrder high 64 cycles
-    // Also this counter will automatically do a reset when the system boot.
     val systemClkResetCounter = Reg(UInt(6 bits)) init(0)
     when(systemClkResetCounter =/= U(systemClkResetCounter.range -> true)){
       systemClkResetCounter := systemClkResetCounter + 1
@@ -61,11 +61,12 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
     when(BufferCC(mainClockDomain.readResetWire)){
       systemClkResetCounter := 0
+      mainClkResetUnbuffered := True
     }
 
     //Create all reset used later in the design
     val mainClkReset = RegNext(mainClkResetUnbuffered, init = True)
-    val systemReset  = RegNext(mainClkResetUnbuffered, init = True)
+      val systemReset  = RegNext(mainClkResetUnbuffered, init = True)
   }
 
 
@@ -168,13 +169,16 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     private val externalInterrupts = Bits(32 bits)
     externalInterrupts := 0
 
-    var currentInterruptIdx = 0
-    var interruptInfos = new mutable.ArrayBuffer[(Data, Int)]()
-    def addInterrupt(signal : Data) = {
-      interruptInfos.append((signal, currentInterruptIdx))
-      val rtn = currentInterruptIdx
-      externalInterrupts(currentInterruptIdx, signal.getBitsWidth bits) := signal.asBits
-      currentInterruptIdx = currentInterruptIdx + signal.getBitsWidth
+    var interruptInfos = new mutable.HashMap[Int, Data]()
+    def addInterrupt(signal : Data, requestedIrq : Int = -1) = {
+      val rtn = if (requestedIrq > -1) requestedIrq else {
+        (0 until 32).filter(i => !interruptInfos.contains(i)).head
+      }
+      assert(!interruptInfos.contains(rtn))
+
+      interruptInfos(rtn) = signal
+      externalInterrupts(rtn, signal.getBitsWidth bits) := signal.asBits
+
       rtn
     }
 
@@ -198,11 +202,11 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
         if (withNativeJtag) {
           jtagNative.jtagCtrl <> plugin.io.bus.fromJtagInstructionCtrl(ClockDomain(jtagNative.tap.TCK),0)
         } else {
-          io.jtag <> plugin.io.bus.fromJtag()
+          getPlugin[JTagPlugin].get.jtags.append(plugin.io.bus.fromJtag())
         }
       }
       case plugin : EmbeddedRiscvJtag => {
-        plugin.jtag <> io.jtag
+        getPlugin[JTagPlugin].get.jtags.append(plugin.jtag)
       }
       case _ =>
     }
@@ -243,14 +247,16 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       slaves = apbMapping
     )
 
-    interconnect.build()
+    Component.toplevel.addPrePopTask(() => {
+      interconnect.build()
+    })
   }
 }
 
 
 object Spinex{
   def main(args: Array[String]) {
-    val report = Config.spinal.generateVerilog(Spinex(SpinexConfig.default.copy(withWishboneBus = true)))
+    val report = Config.spinal.generateVerilog(Spinex(SpinexConfig.default))
     IPX.generate_ipx(report)
   }
 }
@@ -260,14 +266,14 @@ class SpinexWithClock extends Component {
     val led = out(Bool())
   }
   noIoPrefix()
+  withAutoPull()
 
-  val ClockDomains = PLL(
-    ClockSpecification(80 MHz),
-  )
+  //val clocks = new ClockSelection(ClockDomain.current.frequency, Seq(ClockSpecification(80 MHz)))
+  //val spinexClockDomain = clocks.ClockDomains.last
+  val spinexClockDomain = rst_sync(ClockDomain.current)
 
-
-  var connectionArea = new ClockingArea(clockDomain = ClockDomains.head) {
-    val som = Spinex(SpinexConfig.default.copy(withWishboneBus = false))
+  var connectionArea = new ClockingArea(clockDomain = spinexClockDomain) {
+    val som = Spinex(SpinexConfig.default.withPlugins(EventLoggerPlugin()))
 
     val counter = Timeout(1 sec)
     val led = RegInit(False)
@@ -283,8 +289,45 @@ class SpinexWithClock extends Component {
 
 object SpinexWithClock{
   def main(args: Array[String]) {
-    val report = Config.spinal.generateVerilog(new SpinexWithClock())
+    val report = Config.spinal.copy(defaultClockDomainFrequency = FixedFrequency(60 MHz)).generateVerilog(new SpinexWithClock())
 
     IPX.generate_ipx(report)
+    DeviceTree.generate(report)
+  }
+}
+
+object SpinexWithClockTestBench {
+  def main(args: Array[String]) {
+    val report = Config.spinal.copy(defaultClockDomainFrequency = FixedFrequency(60 MHz)).generateVerilog(new SpinexWithClock())
+
+    Config.sim.addIncludeDir("hw/verilog/opencores_i2c/rtl/verilog/").withConfig(
+      Config.spinal.includeSimulation.copy(
+        defaultClockDomainFrequency = FixedFrequency(60 MHz),
+        device = Device(vendor = "?", family = "?"),
+      )
+    ).doSim(new SpinexWithClock) { dut =>
+      dut.clockDomain.forkStimulus(60 MHz)
+      dut.clockDomain.waitSampling(1)
+      sleep(3005 ns)
+      dut.clockDomain.assertReset()
+      sleep(150 ns)
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling(20)
+
+      dut.clockDomain.waitSampling(300)
+
+      val jtag_clk = dut.getAllIo.find(_.name == "jtag_tck").get.asInstanceOf[Bool]
+      ClockDomain(jtag_clk).forkStimulus(9 MHz)
+
+      dut.clockDomain.waitSampling(300)
+      sleep(3005 ns)
+      dut.clockDomain.assertReset()
+      sleep(150 ns)
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling(20)
+
+
+      dut.clockDomain.waitSampling(1500)
+    }
   }
 }

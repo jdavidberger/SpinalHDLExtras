@@ -74,7 +74,3 @@ class StreamFifoFormalProperties[T <: Data](val fifo: StreamFifo[T]) extends Has
   }
 
 }
-
-object StreamFifoFormalProperties {
-  ComponentWithFormalProperties.AddHandler { case fifo: StreamFifo[Data] => new StreamFifoFormalProperties[Data](fifo) }
-}

@@ -1,8 +1,8 @@
 <HTML>
 <HEAD>
 <TITLE>Lattice TCL Log</TITLE>
-<link href="file:////data/lscc/radiant/2023.2/data/theme/css/light/report.css" rel="stylesheet" type="text/css" media="screen"/>
-<link href="file:////data/lscc/radiant/2023.2/data/theme/css/print/report.css" rel="stylesheet" type="text/css" media="print"/>
+<link href="file:////data/lscc/radiant/2025.1/data/theme/css/light/report.css" rel="stylesheet" type="text/css" media="screen"/>
+<link href="file:////data/lscc/radiant/2025.1/data/theme/css/print/report.css" rel="stylesheet" type="text/css" media="print"/>
 <style type="text/css">
 #toc {
   position: fixed;
@@ -52,11 +52,96 @@ prj_add_source "/home/justin/source/cr/tinyclunx_dev/hw/gen/Spinex.ipx"
 
 
 
+<A name="pn251024212733"></A><B><U><big>pn251024212733</big></U></B>
+#Start recording tcl command: 10/24/2025 13:47:18
+#Project Location: /home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo; Project name: spinex_demo
+prj_open "/home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo/spinex_demo.rdf"
+prj_remove_source "/home/justin/source/cr/tinyclunx_dev_docker/hw/gen/Spinex.ipx"
+prj_add_source "/home/justin/source/cr/tinyclunx_dev_docker/hw/gen/SpinexWithClock.ipx"
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_set_strategy_value -strategy Strategy1 {syn_pipelining_retiming=Pipelining and Retiming}
+prj_set_strategy_value -strategy Strategy1 par_pathbased_place=On
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_add_source "/home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo/source/impl_1/constraints.ldc"
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_disable_source "/home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo/source/impl_1/constraints.ldc"
+prj_enable_source "/home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo/source/impl_1/constraints.ldc"
+prj_run Synthesis -impl impl_1
+prj_run Synthesis -impl impl_1
+prj_save 
+prj_close
+#Stop recording: 10/24/2025 21:27:33
+
+
+
+<A name="pn251025165150"></A><B><U><big>pn251025165150</big></U></B>
+#Start recording tcl command: 10/24/2025 21:27:37
+#Project Location: /home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo; Project name: spinex_demo
+prj_open "/home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo/spinex_demo.rdf"
+prj_run Synthesis -impl impl_1
+prj_run Synthesis -impl impl_1
+prj_run Synthesis -impl impl_1
+prj_run Synthesis -impl impl_1
+prj_disable_source "/home/justin/source/cr/tinyclunx_dev_docker/hw/gen/SpinexWithClock.ipx"
+prj_run Synthesis -impl impl_1
+prj_set_impl_opt -impl "impl_1" "top" "spinex_top"
+prj_run Synthesis -impl impl_1
+prj_remove_source "/home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo/source/impl_1/constraints.ldc"
+prj_add_source "/home/justin/source/cr/tinyclunx_dev_docker/SpinalHDLExtras/radiant/spinex_demo/source/impl_1/constraints.sdc"
+prj_run Export -impl impl_1
+prj_enable_source "/home/justin/source/cr/tinyclunx_dev_docker/hw/gen/SpinexWithClock.ipx"
+prj_run Synthesis -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_set_device -part LIFCL-33U-7CTG104C -performance "7_High-Performance_1.0V"
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Synthesis -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_run Export -impl impl_1
+prj_save 
+prj_close
+#Stop recording: 10/25/2025 16:51:50
+
+
+
 </PRE></DIV>
 
 <DIV id="toc" class="radiant"><span onmousemove="showTocList()">Contents</span>
 <UL id="toc_list">
 <LI><A href=#pn250411134434>pn250411134434</A></LI>
+<LI><A href=#pn251024212733>pn251024212733</A></LI>
+<LI><A href=#pn251025165150>pn251025165150</A></LI>
 </UL>
 </DIV>
 

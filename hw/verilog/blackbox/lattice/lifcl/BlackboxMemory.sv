@@ -11,7 +11,8 @@ module Ram_1w_1rs #(
     parameter wrMaskWidth = 1,
     parameter wrMaskEnable = 1'b0,
     parameter rdAddressWidth = 10,
-    parameter rdDataWidth = 128
+    parameter rdDataWidth = 128,
+	parameter rdLatency = 1
 )(
     input wr_clk,
     input wr_en,
@@ -21,6 +22,7 @@ module Ram_1w_1rs #(
     input rd_clk,
     input rd_en,
     input [rdAddressWidth-1:0] rd_addr,
+	input rd_dataEn,
     output [rdDataWidth-1:0] rd_data
 );
 

@@ -168,6 +168,10 @@ object WishboneStage {
       PipelinedMemoryBusToWishbone(adapter_pmb.cmdM2sPipe(), 1, bus.config)
   }
 
+  /**
+   * Takes in / returns a master-driven signal
+   * @return
+   */
   def apply(bus: Wishbone, m2s_stage: Boolean, s2m_stage: Boolean = false): Wishbone = {
     {
       if(!m2s_stage && !s2m_stage)

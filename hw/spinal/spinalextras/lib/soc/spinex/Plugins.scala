@@ -32,11 +32,11 @@ object ExternalInterrupts {
   }
 }
 
-case class SystemRam(mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes)) extends SpinexPlugin {
+case class SystemRam(name : String = "spinex_ram", mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes)) extends SpinexPlugin {
   override def apply(som: Spinex): Unit = {
     val mem = Memories(MemoryRequirement(Bits(32 bits), mapping.size / 4,
       numReadWritePorts = 2,
-      needsMask = true, label = "spinex_ram"))
+      needsMask = true, label =name))
     val mem_pmbs = mem.pmbs()
     som.add_slave(mem_pmbs(1).resizeAddress(32), "ram", mapping, "dBus")
     som.add_slave(mem_pmbs(0).resizeAddress(32), "ram", mapping, "iBus")
@@ -50,8 +50,8 @@ case class PrintAPBMapping() extends SpinexPlugin {
       println(s"\t - ${m._2}: \t${m._1}")
     }
     println("Interrupts: ")
-    for(i <- som.system.interruptInfos) {
-      println(s"\t - ${i._2}: \t${i._1}")
+    for(i <- som.system.interruptInfos.keys.toSeq.sorted) {
+      println(s"\t - ${i}: \t${som.system.interruptInfos(i)}")
     }
   }
 }

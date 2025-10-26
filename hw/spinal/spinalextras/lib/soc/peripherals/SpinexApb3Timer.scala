@@ -1,9 +1,11 @@
 package spinalextras.lib.soc.peripherals
 
-import spinal.core.{Bool, Bundle, Component, False, IntToBuilder, Reg, RegNextWhen, True, UInt, out, when}
+import spinal.core._
+import spinal.lib._
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3SlaveFactory}
-import spinal.lib.{CounterFreeRun, EndiannessSwap, slave}
 import spinalextras.lib.soc.{CSREventManager, EventSourceProcess}
+
+import scala.language.postfixOps
 
 class SpinexApb3Timer(val baseAddress: BigInt) extends Component {
   val io = new Bundle {
@@ -15,7 +17,7 @@ class SpinexApb3Timer(val baseAddress: BigInt) extends Component {
   }
 
   val busCtrl = Apb3SlaveFactory(io.apb)
-  val busCtrlWrapped = busCtrl // new BusSlaveFactoryAddressWrapper(busCtrl, baseAddress)
+  val busCtrlWrapped = busCtrl
 
   val load_value = busCtrlWrapped.createReadAndWrite(UInt(32 bits), address = 0, documentation = "load value") init (0)
   val reload_value = busCtrlWrapped.createReadAndWrite(UInt(32 bits), address = 4, documentation = "reload value") init (0)

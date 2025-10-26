@@ -37,15 +37,12 @@ WDT wdt(
 	.WDT_RST(0)
 );
 
-
-
-
 SpinexWithClock spinal_top(
+    .clk(clk_2),
 	.reset(!button_n),
 	 .led(camera_led0),
 	.i2c0_scl(scl),
 	.i2c0_sda(sda),
-	.externalInterrupts_0(0),
 				 
 	 //.serial_tx(uart_txd),
 	 //.serial_rx(uart_rxd),

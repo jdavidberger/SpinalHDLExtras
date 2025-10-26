@@ -9,7 +9,7 @@ object Config {
     targetDirectory = "hw/gen",
     defaultConfigForClockDomains = ClockDomainConfig(
       resetActiveLevel = HIGH,
-      resetKind = SYNC
+      resetKind = ASYNC
     ),
     onlyStdLogicVectorAtTopLevelIo = false,
     oneFilePerComponent = false,
@@ -22,6 +22,7 @@ object Config {
     privateNamespace = false,
     inlineRom = true,
     romReuse = true,
+    noRandBoot = true,
     device = Device(vendor = "lattice", family = "lifcl"),
     //nameWhenByFile = true
   )//.addStandardMemBlackboxing(policy = blackboxAll)

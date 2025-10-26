@@ -26,7 +26,15 @@ case class WishboneTx(config : WishboneConfig) extends Bundle {
   val WE        = Bool()
   val DAT  = Bits(config.dataWidth bits)
   val SEL       = if(config.useSEL)   Bits(config.selWidth bits) else null
+
+  override def toString(): String = {
+    if(name == null)
+      "anon_wb_tx"
+    else
+      super.toString()
+  }
 }
+
 object WishboneBusLogger {
   def flows(addressMapping: AddressMapping, address_width : Int, wishbone: Wishbone*): Seq[(Data, Flow[Bits])] = {
     wishbone.map(wb => {

@@ -1,7 +1,7 @@
 package spinalextras.lib
 
 import spinal.core._
-import spinal.lib.{BufferCC, StreamCCByToggle, StreamFifoCC}
+import spinal.lib.{BufferCC, FlowCCByToggle, FlowCCUnsafeByToggle, StreamCCByToggle, StreamFifoCC}
 
 import java.io.PrintWriter
 import scala.collection.mutable
@@ -18,12 +18,16 @@ class Constraints {
   def write_file[T <: Component](report: SpinalReport[T], path : String): Unit = {
     val file = new PrintWriter(path)
 
+    val defaultClock = report.globalData.config.defaultClockDomainFrequency.getValue
+    file.println(s"# clk ${defaultClock.decompose}")
+    file.println(s"create_clock -name {clk} -period ${defaultClock.toTime.toDouble * 1e9} [get_nets clk]")
+
     for ((data, freq) <- clocks) {
-      if(data.getComponents().nonEmpty) {
+      //if(data.getComponents().nonEmpty) {
         file.println(s"# ${data.name} ${freq.decompose}")
         file.println(s"create_clock -name {${data.name}} -period ${freq.toTime.toDouble * 1e9} [get_ports ${data.getRtlPath()}]")
         //file.println(s"set_false_path -from [get_clocks ${data.name}]")
-      }
+      //}
     }
 
     //    for ((clks, async) <- clock_groups) {
@@ -46,6 +50,9 @@ class Constraints {
         file.println(s"set_false_path -through [get_nets ${c.getRtlPath()}/*]")
       }
       case c: StreamCCByToggle[_] => {
+        file.println(s"set_false_path -through [get_nets ${c.getRtlPath()}/*]")
+      }
+      case c: FlowCCUnsafeByToggle[_] => {
         file.println(s"set_false_path -through [get_nets ${c.getRtlPath()}/*]")
       }
       case c: Component => {}

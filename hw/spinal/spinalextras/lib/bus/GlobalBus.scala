@@ -6,13 +6,14 @@ import spinal.lib.bus.misc._
 import spinal.lib.bus.regif._
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone._
+import spinalextras.lib.bus.general.BusSlaveProvider
 import spinalextras.lib.bus.simple.PipelinedMemoryBusInterface
 import spinalextras.lib.logging.{GlobalLogger, PipelinedMemoryBusLogger, SignalLogger, WishboneBusLogger}
 import spinalextras.lib.testing.test_funcs
 
 import scala.collection.mutable
 
-trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
+trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] extends BusSlaveProvider {
   var masters = mutable.ArrayBuffer[(T, Set[String])]()
   var slaves = mutable.ArrayBuffer[(T, AddressMapping, Set[String])]()
 
@@ -134,7 +135,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     busIf.regPtrReAnchorAt(mapping.base)
     busIf
   }
-  def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
+  override def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
     add_bus_interface(name, mapping, false, false, tags:_*)
   }
 
@@ -182,10 +183,6 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] {
     rtn
   }
 
-  val preBuildTasks = new mutable.ArrayBuffer[() => Unit]()
-  def addPreBuildTask(task : () => Unit) {
-    preBuildTasks.append(task)
-  }
   def build(): Unit = {
     built = true
     preBuildTasks.foreach(_())

@@ -2,10 +2,22 @@ package spinalextras.lib.bus.general
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, SizeMapping}
+import spinal.lib.bus.regif.BusIf
 
 import scala.collection.mutable
 import scala.reflect.runtime.universe.typeOf
 import scala.reflect.{ClassTag, classTag}
+
+trait BusSlaveProvider {
+  def add_slave_factory(name: String, mapping: SizeMapping, m2s_stage : Boolean, s2m_stage : Boolean, tags: String*): BusSlaveFactory
+  def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = ???
+
+  val preBuildTasks = new mutable.ArrayBuffer[() => Unit]()
+  def addPreBuildTask(task : () => Unit) {
+    preBuildTasks.append(task)
+  }
+}
 
 object GeneralBusInterface {
   val outstandingRspRegisters = new mutable.WeakHashMap[Any, UInt]()

@@ -24,7 +24,7 @@ case class TimerPlugin(mapping: SizeMapping = SizeMapping(0x2800, 256 Bytes)) ex
     timer.io.apb <> apb
     _regs = busCtrlToRegs(timer.busCtrl)
 
-    interrupt = som.system.addInterrupt(timer.io.interrupt)
+    interrupt = som.system.addInterrupt(timer.io.interrupt, 1)
 
     super.apply(som)
   }

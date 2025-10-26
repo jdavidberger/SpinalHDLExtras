@@ -7,6 +7,7 @@ import spinalextras.lib.blackbox.lattice.lifcl.{GSR, OSCD, OSCDConfig}
 import spinalextras.lib.blackbox.memories.W25Q128JVxIM_quad
 import spinalextras.lib.misc.ClockSpecification
 import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
+import spinalextras.lib.soc.spinex.plugins.JTagPlugin
 
 case class SpinexSim(memoryFile : String = "") extends Component {
 
@@ -21,7 +22,7 @@ case class SpinexSim(memoryFile : String = "") extends Component {
   val reset = RegInit(True) clearWhen resetTimer
   ClockDomain.push(oscd.hf_clk().get.copy(reset = reset))
 
-  val som = new Spinex(SpinexConfig.default.copy(withWishboneBus = false))
+  val som = new Spinex(SpinexConfig.default)
   val flash = new W25Q128JVxIM_quad(memoryFile)
 
   val flashPlugin = som.getPlugin[XipFlashPlugin].get
@@ -29,9 +30,11 @@ case class SpinexSim(memoryFile : String = "") extends Component {
   flash.io.spiflash_cs_n <> flashPlugin.spiflash_cs_n
   flash.io.spiflash_clk <> flashPlugin.spiflash_clk
 
-  som.io.jtag.tdi := False
-  som.io.jtag.tms := False
-  som.io.jtag.tck := False
+  som.getPlugin[JTagPlugin].foreach(j => {
+    j.jtag.tdi := False
+    j.jtag.tms := False
+    j.jtag.tck := False
+  })
 
   som.getPlugin[UartCtrlPlugin].foreach(_.uart.rxd := True)
 //  som.io.wb.DAT_MISO.clearAll()

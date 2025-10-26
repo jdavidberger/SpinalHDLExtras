@@ -52,7 +52,7 @@ def decode_log_stream(stream, event_def_metadata):
     syscnt_padding = event_def_metadata["log_bits"] - index_size - 64
 
     while True:
-        raw = next(stream)#.read(12)  # 3 * uint32_t
+        raw = next(stream)
         if raw is None:
             break
 
@@ -77,19 +77,21 @@ def decode_log_stream(stream, event_def_metadata):
                     "event": "time_sync",
                     "cycle": gtime,
                     "timestamp": gtime * clock_scale,
+                    "data": hex(tx[0] | (tx[1] << 32) | (tx[2] << 64))
                 }
             elif reserved_usage_id == 1:
                 yield {
                     "event_id": index + 1,
                     "event": "metadata",
                     "stream_cnt": global_logger_parse_field(tx, 1 + index_size + 8, 10),
-                    "signature": global_logger_parse_field(tx, 1 + index_size + 18, 32)
+                    "signature": global_logger_parse_field(tx, 1 + index_size + 18, 32),
+                    "data": hex(tx[0] | (tx[1] << 32) | (tx[2] << 64))
                 }
             else:
                 yield {
                     "event_id": index + reserved_usage_id,
                     "event": "unknown_meta",
-                    "data": list(map(hex, tx))
+                    "data": hex(tx[0] | (tx[1] << 32) | (tx[2] << 64))
                 }
 
             continue

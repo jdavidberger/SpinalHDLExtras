@@ -95,7 +95,11 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
 
   val write_counter = Counter(depthInWords, writeBus.cmd.fire)
 
-  val full = CombInit(occupancy.willOverflowIfInc)// CombInit(occupancy.value === (depthInWords - 1))
+  val naiveFull = CombInit(occupancy.mayOverflow)// CombInit(occupancy.value === (depthInWords - 1))
+  val nextMayOverflow = RegNext(occupancy.valueNext === (occupancy.stateCount - 1) && !io.flush) init(False)
+  val full = nextMayOverflow
+  assert(occupancy.mayOverflow === nextMayOverflow)
+  assert(full === naiveFull)
 
   val push = io.push.continueWhen(!isFlushing).addFormalException(isFlushing)
 
@@ -189,7 +193,6 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     when(RegNext(io.occupancy > highwater)) {
       highwater := io.occupancy
     }
-
   }
 
   override def formalComponentInputProperties(): Seq[FormalProperty] = new FormalProperties(this) {

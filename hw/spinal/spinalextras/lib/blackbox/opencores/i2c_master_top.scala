@@ -6,6 +6,14 @@ import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
 
 case class i2c_master_top() extends BlackBox {
+  addRTLPath("hw/verilog/opencores_i2c/rtl/verilog")
+  addRTLPath("hw/verilog/opencores_i2c/rtl/verilog/timescale.v")
+  addRTLPath("hw/verilog/opencores_i2c/rtl/verilog/i2c_master_top.v")
+  addRTLPath("hw/verilog/opencores_i2c/rtl/verilog/i2c_master_bit_ctrl.v")
+  addRTLPath("hw/verilog/opencores_i2c/rtl/verilog/i2c_master_byte_ctrl.v")
+  addRTLPath("hw/verilog/opencores_i2c/rtl/verilog/i2c_master_defines.v")
+
+
   addGeneric("ARST_LVL", 1)
 
   val io = new Bundle {

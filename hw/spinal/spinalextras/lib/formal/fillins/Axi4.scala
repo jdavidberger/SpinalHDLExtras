@@ -231,7 +231,7 @@ object Axi4Formal {
     awCompletesMatched.freeRun()
 
     when(awCompletesMatched.fire) {
-      writeLastCountersInc(awComplete.id) := True
+      writeLastCountersInc(awCompletesMatched.payload.id) := True
     }
 
     val lastCounterVerify = Flow(writeLastCounters.dataType).setIdle()

@@ -12,7 +12,7 @@ import scala.reflect.{ClassTag, classTag}
 
 package object StreamFormal {
 
-  def formalIsProducerValid[T <: Data](stream: Stream[T], payloadInvariance : Boolean = true, formalExceptionalState : Bool): Seq[FormalProperty] = new FormalProperties(stream) {
+  def formalIsProducerValid[T <: Data](stream: Stream[T], formalPayloadInvarianceExceptionalState : Bool, formalExceptionalState : Bool): Seq[FormalProperty] = new FormalProperties(stream) {
     val wasStall = past(stream.isStall) init(False)
     val checkValidHandshake = Mux(wasStall, stream.valid, True)
 
@@ -20,12 +20,11 @@ package object StreamFormal {
       addFormalProperty(checkValidHandshake, f"Dropped valid before saw ready")
 
       val priorValidPayload = RegNextWhen(stream.payload, stream.valid)
-      if (payloadInvariance) {
-        val checkValidPayloadInvariance = Mux(wasStall,
-          EquivalenceRegistry.Check(priorValidPayload, stream.payload),
-          True)
-        addFormalProperty(checkValidPayloadInvariance, s"Payload should not change while transfer is stalled")
-      }
+
+      val checkValidPayloadInvariance = Mux(wasStall,
+        EquivalenceRegistry.Check(priorValidPayload, stream.payload),
+        True)
+      addFormalProperty(formalPayloadInvarianceExceptionalState || checkValidPayloadInvariance, s"Payload should not change while transfer is stalled")
 
       when(stream.valid) {
         addFormalProperties(FormalData.formalIsStateValid(stream.payload))
@@ -34,12 +33,18 @@ package object StreamFormal {
   }
 
   class StreamContract(n : Nameable) {
-    val _formalExceptionalState = Bool()
+    val _formalExceptionalState, _formalPayloadInvarianceExceptionalState = Bool()
     _formalExceptionalState := False
+    _formalPayloadInvarianceExceptionalState := False
 
-    val payloadInvariance = true
+    val exceptions, payloadInvarianceExceptions = new ArrayBuffer[Bool]()
 
-    val exceptions = new ArrayBuffer[Bool]()
+    def addFormalPayloadInvarianceException(b : Bool): Unit = {
+      payloadInvarianceExceptions.append(b)
+      when(b) {
+        _formalPayloadInvarianceExceptionalState := True
+      }
+    }
 
     def addFormalException(b : Bool): Unit = {
       exceptions.append(b)
@@ -49,12 +54,19 @@ package object StreamFormal {
     }
 
     def formalExceptionalState : Bool = {
-      Vec(exceptions).orR.setWeakName(f"${n.name}_formalExceptionalState")
+      Vec(exceptions).orR.setWeakName(f"stream_${n.name}_formalExceptionalState")
+    }
+
+    def formalPayloadInvarianceExceptionalState : Bool = {
+      Vec(payloadInvarianceExceptions).orR.setWeakName(f"stream_${n.name}_formalPayloadInvarianceExceptionalState")
     }
 
     def formalAssertEquivalence(that: StreamContract): Unit = {
       this.exceptions.appendAll(that.exceptions)
       that.exceptions.appendAll(this.exceptions)
+
+      this.payloadInvarianceExceptions.appendAll(that.payloadInvarianceExceptions)
+      that.payloadInvarianceExceptions.appendAll(this.payloadInvarianceExceptions)
     }
   }
 
@@ -64,6 +76,10 @@ package object StreamFormal {
 
     lazy val contract = contracts.getOrElseUpdate(stream, new StreamContract(stream))
 
+    def addFormalPayloadInvarianceException(b : Bool = True) = {
+      contract.addFormalPayloadInvarianceException(b)
+      stream
+    }
 
     def addFormalException(b : Bool) = {
       contract.addFormalException(b)
@@ -73,7 +89,8 @@ package object StreamFormal {
     /**
      * @return True if and only if the driving signals are valid
      */
-    override def formalIsProducerValid(): Seq[FormalProperty] = StreamFormal.formalIsProducerValid(stream, contract.payloadInvariance, contract.formalExceptionalState)
+    override def formalIsProducerValid(): Seq[FormalProperty] = StreamFormal.formalIsProducerValid(stream,
+      contract.formalPayloadInvarianceExceptionalState, contract.formalExceptionalState)
 
 
     override def asIMasterSlave: IMasterSlave = stream
