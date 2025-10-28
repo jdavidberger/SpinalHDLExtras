@@ -1,8 +1,11 @@
 import yaml
 import struct
 import sys
+import time
 
 from jtag_tap import *
+
+time_sync = None
 
 # ---- Bitfield helpers translated from your C ----
 
@@ -149,11 +152,16 @@ def decode_log_stream(stream, event_def_metadata):
 
         fields, _ = parse_type(event_def["type"], bit_offset)
 
+        global time_sync
+        if time_sync is None:
+            time_sync = time.time() - timestamp * clock_scale
+
         yield {
             "event_id": index,
             "event": event_def["name"],
             "cycle": timestamp,
             "timestamp": timestamp * clock_scale,
+            "time": time_sync + timestamp * clock_scale,
             "value": fields,
             #"data": list(map(hex, tx))
         }

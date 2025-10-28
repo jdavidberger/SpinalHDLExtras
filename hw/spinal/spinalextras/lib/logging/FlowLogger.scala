@@ -187,11 +187,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
     logger_port.createReadOnly(Bits(32 bits), address + 24) := io.sysclk.resize(32).asBits
     logger_port.createReadOnly(UInt(32 bits), address + 28) := RegNext(loggerFifo.io.occupancy, init = U(0)).resized
 
-    val pendingFlush = RegInit(False) setWhen(logger_port.isWriting(address + 28)) clearWhen(loggerFifo.io.flush)
-    when(pendingFlush) {
-      memoryStream.ready := True
-    }
-    //loggerFifo.io.flush := pendingFlush && !loggerFifo.io.pop.isStall
+    loggerFifo.io.flush := RegNext(logger_port.isWriting(address + 28))
 
     val manual_trigger = io.manual_trigger.clone()
     logger_port.driveFlow(manual_trigger, address + 32)
@@ -205,6 +201,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
 
     logger_port.createReadOnly(Bits(32 bits), address + 48) := signature
     logger_port.createReadOnly(UInt(32 bits), address + 52) := RegNext(io.dropped_events, init=U(0))
+    io.flush_dropped := RegNext(logger_port.isWriting(address + 52)) init(False)
 
     io.flowFires.zipWithIndex.foreach(x => {
       val flowCnt = RegInit(U(0, 32 bits))

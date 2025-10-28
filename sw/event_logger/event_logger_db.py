@@ -216,7 +216,7 @@ class EventDB:
 
         stmts = []
         for table in tables:
-            stmt = f"SELECT event_id, timestamp, '{table[0]}' as label"
+            stmt = f"SELECT event_id, time, timestamp, '{table[0]}' as label"
             for field in all_fields:
                 if field in table_fields[table[0]]:
                     stmt = stmt + ", " + field
@@ -266,8 +266,17 @@ class EventDB:
                 self.create_flat_join(prefix, x[prefix].items())
             self.create_flat_join('axi4', all_tables)
 
+        def create_pmb_view(x):
+            all_tables = []
+            for prefix in x.keys():
+                for table in x[prefix].items():
+                    all_tables.append((f"{table[0]}", table[1]))
+                self.create_flat_join(prefix, x[prefix].items())
+            self.create_flat_join('pmb', all_tables)
+
         registry = AggregationRegistry()
         registry.register(["ar", "aw", "w", "r", "b"], create_axi_view)
+        registry.register(["cmd", "rsp"], create_pmb_view)
         registry.process_event_definitions(event_defs)
 
         return data
@@ -278,6 +287,7 @@ class EventDB:
             CREATE TABLE IF NOT EXISTS ALL_EVENTS (
                 event_id INTEGER NOT NULL,
                 event_name TEXT NOT NULL,
+                time REAL NOT NULL,
                 timestamp REAL NOT NULL,
                 json_data TEXT NOT NULL
             )
@@ -289,7 +299,7 @@ class EventDB:
         cols = schema.iter_sql_columns()
 
         # add timestamp column at front
-        sql_cols = [("event_id", "INTEGER"), ("timestamp", "REAL")] + cols
+        sql_cols = [("event_id", "INTEGER"), ("time", "REAL"), ("timestamp", "REAL")] + cols
         # build create statement
         col_defs = ",\n  ".join(f"{cname} {ctype}" for cname, ctype in sql_cols)
         sql = f"CREATE TABLE IF NOT EXISTS \"{table_name}\" (\n  {col_defs}\n)"
@@ -302,8 +312,8 @@ class EventDB:
             return self.insert_statements[schema_name]
 
         schema = self.schemas[schema_name]
-        sql_cols = ["event_id", "timestamp"]
-        placeholders = ["?", "?"]
+        sql_cols = ["event_id", "time", "timestamp"]
+        placeholders = ["?", "?", "?"]
 
         for col in schema.cols:
             if col[1] == "ENUM":
@@ -328,15 +338,30 @@ class EventDB:
 
         return insert_sql
 
+    def _flatten_dict(self, d, parent_key='', sep='_'):
+        if not isinstance(d, dict):
+            return d
+
+        items = []
+        for k, v in d.items():
+            new_key = parent_key + sep + k if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self._flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
     def _get_values(self, schema_name, event):
         ev_id = event.get("event_id")
         ev_name = event.get("event")
         if ev_name is None:
             raise ValueError("Event missing 'event' name")
 
-        value = event.get("value", {})
+        value = self._flatten_dict(event.get("value", {}))
+        time = event.get("time", 0)
         timestamp = event.get("timestamp", 0)
-        values = [ev_id, timestamp]
+
+        values = [ev_id, time, timestamp]
         schema = self.schemas[schema_name]
         for col in schema.cols:
             if col[1] == "ENUM":
@@ -392,7 +417,7 @@ class EventDB:
         if ev_name is None:
             raise ValueError("Event missing 'event' name")
 
-        if ev_name == "time_sync":
+        if ev_name == "time_sync" or ev_name == "metadata":
             return
 
         if ev_name not in self.schemas:
@@ -409,10 +434,11 @@ class EventDB:
             raise e
 
         timestamp = event.get("timestamp", 0)
+        time = event.get("time", 0)
         # Also insert into ALL_EVENTS: store value JSON (the original dict), plus event_name and timestamp
         all_json = json.dumps(event["value"], default=str)
-        cur.execute("INSERT INTO ALL_EVENTS (event_id, event_name, timestamp, json_data) VALUES (?, ?, ?, ?)",
-                    (ev_id, ev_name, timestamp, all_json))
+        cur.execute("INSERT INTO ALL_EVENTS (event_id, event_name, time, timestamp, json_data) VALUES (?, ?, ?, ?, ?)",
+                    (ev_id, ev_name, time, timestamp, all_json))
 
         self.conn.commit()
 
@@ -448,6 +474,12 @@ if __name__ == "__main__":
     db = EventDB(args.db)
     event_config = db.create_tables_from_yaml(args.yaml)
     print("Created tables for event definitions in", db.db_path)
+    try:
+        os.remove("EventLogger.latest.sqlite")
+    except:
+        pass
+
+    os.symlink(db.db_path, "EventLogger.latest.sqlite")
 
     print_time = time.time()
     row_idx = 0

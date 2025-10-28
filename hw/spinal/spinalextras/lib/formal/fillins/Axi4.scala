@@ -95,7 +95,7 @@ object Axi4Formal {
       addFormalProperty(!noArForRead, s"No AR for read")
       addFormalProperty(!mismatchedLength, s"Mismatched length for read")
 
-      addFormalProperty(!counter.willOverflow, "Should not be able to overflow counter")
+      addFormalProperty(!counter.willOverflow || counter.willClear, "Should not be able to overflow counter")
     }
 
     def formalAssertEquivalence(that: Axi4ReadStreamContract) = new FormalProperties() {

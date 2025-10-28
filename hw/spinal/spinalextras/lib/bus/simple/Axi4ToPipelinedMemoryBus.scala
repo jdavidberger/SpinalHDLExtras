@@ -12,6 +12,7 @@ import spinalextras.lib.formal.fillins.Axi4Formal.Axi4FormalExt
 import spinalextras.lib.{Config, Memories, MemoryRequirement}
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty, HasFormalProperties}
+import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut} // StateMachine is part of this package
 
 /**
@@ -77,8 +78,10 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
     val aw_reg = Reg(cloneOf(io.axi.aw))
     val current_write_addr = Reg(config.axiConfig.addressType) // Address for current beat
 
-    val writeMode = False
-    io.axi.w.stage().continueWhen(writeMode).map(axi_w => {
+    val writeMode = Bool()
+    writeMode := False
+
+    io.axi.w.continueWhen(writeMode).map(axi_w => {
       val write = cloneOf(io.pmb.cmd.payload)
       write.address := current_write_addr
       write.data := axi_w.data
@@ -161,20 +164,19 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
         assert(io.axi.aw.payload.burst === Axi4.burst.INCR)//, "Bridge only supports INCR bursts for writes")
         assume(io.axi.aw.payload.burst === Axi4.burst.INCR)//, "Bridge only supports INCR bursts for writes")
         goto(sWriteBurstReceiveW)
+      }.elsewhen(io.axi.ar.fire) { // Read Address received
+        read_area.ar_reg := io.axi.ar
+        addr_increment := get_addr_increment(io.axi.aw.size)
+
+        read_area.read_beats_remaining := io.axi.ar.len +^ 1
+        read_area.rsp_beats_remaining := io.axi.ar.len +^ 1
+
+        read_area.current_read_addr  := io.axi.ar.payload.addr
+        read_area.read_pmb_cmds_sent := 0
+        assert(io.axi.ar.payload.burst === Axi4.burst.INCR)//, "Bridge only supports INCR bursts for reads")
+        assume(io.axi.ar.payload.burst === Axi4.burst.INCR)//, "Bridge only supports INCR bursts for reads")
+        goto(sReadBurstSendPmb)
       }
-        .elsewhen(io.axi.ar.fire) { // Read Address received
-          read_area.ar_reg := io.axi.ar
-          addr_increment := get_addr_increment(io.axi.aw.size)
-
-          read_area.read_beats_remaining := io.axi.ar.len +^ 1
-          read_area.rsp_beats_remaining := io.axi.ar.len +^ 1
-
-          read_area.current_read_addr  := io.axi.ar.payload.addr
-          read_area.read_pmb_cmds_sent := 0
-          assert(io.axi.ar.payload.burst === Axi4.burst.INCR)//, "Bridge only supports INCR bursts for reads")
-          assume(io.axi.ar.payload.burst === Axi4.burst.INCR)//, "Bridge only supports INCR bursts for reads")
-          goto(sReadBurstSendPmb)
-        }
     }
 
     // State: S_WRITE_BURST_RECEIVE_W
@@ -264,6 +266,16 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
       addFormalProperty(read_area.read_pmb_cmds_sent === 0)
     }
   }
+
+  fsm.build()
+
+  GlobalLogger(
+    Set("axi4-to-pmb"),
+    SignalLogger.concat("Axi4ToPmb",
+      RegNext(fsm.stateReg, init = fsm.stateReg.clone().clearAll()).setName("stateReg"),
+      addr_increment
+    )
+  )
 }
 
 object Axi4ToPipelinedMemoryBus {
@@ -343,26 +355,29 @@ class Axi4ToPipelinedMemoryBusTester extends AnyFunSuite {
 
       dut.io.axi.w.strb #= 0xff
 
-      for(i <- Array.range(0, 8)) {
-        dut.io.axi.aw.addr #= (32 * i) * 8
-        dut.io.axi.aw.len #= 31
-        dut.io.axi.aw.size #= 3
-        dut.io.axi.aw.burst #= 1
-        dut.io.axi.aw.valid #= true
+      for(len <- Seq(32, 1)) {
+        for (i <- Array.range(0, 8)) {
+          dut.io.axi.aw.addr #= (32 * i) * 8
+          dut.io.axi.aw.len #= len - 1
+          dut.io.axi.aw.size #= 3
+          dut.io.axi.aw.burst #= 1
+          dut.io.axi.aw.valid #= true
 
-        dut.clockDomain.waitSamplingWhere(dut.io.axi.aw.ready.toBoolean)
-        dut.io.axi.aw.valid #= false
+          dut.clockDomain.waitSamplingWhere(dut.io.axi.aw.ready.toBoolean)
+          dut.io.axi.aw.valid #= false
 
-        for(j <- Array.range(0, 32)) {
-          dut.io.axi.w.valid #= true
-          dut.io.axi.w.payload.data #= j + i * 32
-          dut.io.axi.w.last #= j == 31
-          dut.clockDomain.waitSamplingWhere(dut.io.axi.w.ready.toBoolean)
+          for (j <- Array.range(0, len)) {
+            dut.io.axi.w.valid #= true
+            dut.io.axi.w.payload.data #= j + i * 32
+            dut.io.axi.w.last #= j == (len - 1)
+            dut.clockDomain.waitSamplingWhere(dut.io.axi.w.ready.toBoolean)
+          }
+
+          dut.clockDomain.waitSamplingWhere(dut.io.axi.b.valid.toBoolean)
+          dut.io.axi.b.ready #= true
+          dut.clockDomain.waitSampling()
+          dut.io.axi.b.ready #= false
         }
-
-        dut.io.axi.b.ready #= true
-        dut.clockDomain.waitSamplingWhere(dut.io.axi.b.valid.toBoolean)
-        dut.io.axi.b.ready #= false
       }
 
       for(i <- Array.range(0, 8)) {
@@ -386,6 +401,61 @@ class Axi4ToPipelinedMemoryBusTester extends AnyFunSuite {
     }
   }
 
+  test("aw-write-same-time") {
+    Config.sim.doSim(new Axi4ToPipelinedMemoryBusTestbench()) { dut =>
+      SimTimeout(5000 us)
+
+      dut.clockDomain.forkStimulus(100 MHz)
+
+      Seq(dut.io.axi.aw, dut.io.axi.ar, dut.io.axi.w).foreach(x => {
+        x.valid #= false
+      })
+      Seq(dut.io.axi.r, dut.io.axi.b).foreach(x => {
+        x.ready #= false
+      })
+      dut.clockDomain.waitSampling(10)
+
+      dut.io.axi.w.strb #= 0xff
+
+      var wait_aw, wait_w, wait_b = true
+      def check_flags(): Unit = {
+        if( dut.io.axi.aw.valid.toBoolean && dut.io.axi.aw.ready.toBoolean) {
+          dut.io.axi.aw.valid #= false
+          wait_aw = false
+        }
+        if(dut.io.axi.w.valid.toBoolean && dut.io.axi.w.ready.toBoolean) {
+          dut.io.axi.w.valid #= false
+          wait_w = false
+        }
+        if(dut.io.axi.b.valid.toBoolean && dut.io.axi.b.ready.toBoolean) {
+          dut.io.axi.b.valid #= false
+          wait_b = false
+        }
+      }
+
+      dut.io.axi.aw.addr #= 4
+      dut.io.axi.aw.len #= 0
+      dut.io.axi.aw.size #= 3
+      dut.io.axi.aw.burst #= 1
+
+      dut.io.axi.w.valid #= true
+      dut.io.axi.w.payload.data #= 0x1234
+      dut.io.axi.w.last #= true
+
+      dut.io.axi.b.ready #= true
+      check_flags()
+
+      dut.clockDomain.waitSampling()
+      dut.io.axi.aw.valid #= true
+
+      while(wait_aw || wait_w || wait_b) {
+        check_flags()
+        dut.clockDomain.waitSamplingWhere(dut.io.axi.aw.ready.toBoolean || dut.io.axi.w.ready.toBoolean || dut.io.axi.b.valid.toBoolean)
+      }
+
+      dut.clockDomain.waitSampling(10)
+    }
+  }
 }
 
 class Axi4ToPipelinedMemoryBusFormalTester extends AnyFunSuite with FormalTestSuite {

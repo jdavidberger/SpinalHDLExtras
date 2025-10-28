@@ -48,7 +48,19 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] extends BusSlavePro
   }
   def stage_bus(bus : T) : T
 
-  def add_interface(name : String, dir : T => T ): (T, T) = {
+  val names = new mutable.HashMap[String, Int]()
+  def unique_name(name : String): String = {
+    val idx = names.getOrElse(name, 0)
+    names.update(name, idx + 1)
+    if(idx == 0) {
+      name
+    } else {
+      s"${name}${idx}"
+    }
+  }
+
+  def add_interface(rawName : String, dir : T => T ): (T, T) = {
+    val name = unique_name(rawName)
     if(Component.current == Component.toplevel || Component.current == topComponent) {
       var new_bus = create_bus().setName(name)
       return (new_bus,new_bus)
