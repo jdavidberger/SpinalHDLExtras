@@ -79,7 +79,7 @@ class Jtag:
         self.jtag.shift_and_update_register(ir_shift)
         self.jtag.change_state('shift_dr')
 
-        buffer_size = 8 * 4096
+        buffer_size = 256 # 8 * 4096
         buffer = BitSequence('0' * buffer_size)
 
         counter = 0
