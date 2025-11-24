@@ -13,6 +13,7 @@ class Constraints {
   val clock_groups = new mutable.ArrayBuffer[(Seq[Data], Boolean)]()
   val constraints = new mutable.ArrayBuffer[(Seq[Data], Map[String, String])]()
   val false_paths = new ArrayBuffer[Data]()
+  val min_delay = new ArrayBuffer[(Seq[Data], TimeNumber)]()
 
 
   def write_file[T <: Component](report: SpinalReport[T], path : String): Unit = {
@@ -36,6 +37,10 @@ class Constraints {
 
     for ((datas, skew) <- max_skews) {
       file.println(s"set_max_skew [get_nets {${datas.map(_.getRtlPath() + "*").mkString(" ")}}] ${skew.toDouble * 1e9}")
+    }
+
+    for ((datas, delay) <- min_delay) {
+      file.println(s"set_min_delay -through [get_nets {${datas.map(_.getRtlPath() + "*").mkString(" ")}}] ${delay.toDouble * 1e9}")
     }
 
     for(false_path <- false_paths) {
@@ -104,5 +109,9 @@ object Constraints {
   def set_constraints(tags: Map[String, String], ports: Data*): Unit = {
     check()
     constraints.constraints.append((ports, tags))
+  }
+  def set_min_delay(delay: TimeNumber, d: Data*): Unit = {
+    check()
+    constraints.min_delay.append((d, delay))
   }
 }

@@ -58,6 +58,8 @@ object FlowLoggerYaml {
       val idx = d_clk._2
 
       emit(s"   - name: ${flows()(idx)._1.name}")
+      emit(s"     index: ${idx}")
+      emit(s"     path: ${flowLogger.datas(idx)._1.getRtlPath()}")
       emit(s"     time_bits: ${logBits - d.getBitsWidth - index_size}")
       emit(s"     type: ")
       emit_type(d, 2)

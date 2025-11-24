@@ -47,6 +47,46 @@ PrimitiveCol = Tuple[str, str]  # (colname, sqlite_type)
 EnumCol = Tuple[str, str, List[str]]  # (colname, sqlite_type, enum_list) - sqlite_type is TEXT for enum
 
 
+def create_union_view(conn, view_name, sources):
+    """
+    Create a view that unions multiple tables or views in SQLite,
+    padding missing columns with NULL and adding a 'source' column.
+    """
+    all_cols = []
+    cols_per_table = {}
+
+    # 1. Get all columns for each table/view
+    cur = conn.cursor()
+    for table in sources:
+        cur.execute(f"PRAGMA table_info('{table}')")
+        cols = [row[1] for row in cur.fetchall()]  # row[1] is column name
+        all_cols = all_cols + cols
+        cols_per_table[table] = set(cols)
+
+    all_cols = [*dict.fromkeys(all_cols)]  # deterministic order
+
+    # 2. Build SELECTs for each table/view
+    selects = []
+    for table in sources:
+        select_cols = []
+        for col in all_cols:
+            if col in cols_per_table[table]:
+                select_cols.append(f'"{col}"')
+            else:
+                select_cols.append(f'NULL AS "{col}"')
+        select_cols.append(f"'{table}' AS source")
+        selects.append(f"SELECT {', '.join(select_cols)} FROM '{table}'")
+
+    union_sql = " UNION ALL ".join(selects)
+
+    # 3. Build CREATE VIEW SQL
+    view_sql = f'CREATE VIEW IF NOT EXISTS "{view_name}" AS {union_sql} ORDER BY cycle;'
+
+    # 4. Execute
+    cur.execute(view_sql)
+    conn.commit()
+    print(f"View '{view_name}' created successfully.")
+
 class EventSchema:
     """
     Holds the flattened schema for an event type.
@@ -206,6 +246,9 @@ class EventDB:
             self.conn.execute("PRAGMA temp_store = MEMORY;")
 
     def create_flat_join(self, prefix, tables):
+        if len(tables) == 0:
+            return
+
         all_fields = set()
         table_fields = defaultdict(set)
 
@@ -216,7 +259,7 @@ class EventDB:
 
         stmts = []
         for table in tables:
-            stmt = f"SELECT event_id, time, timestamp, '{table[0]}' as label"
+            stmt = f"SELECT cycle, event_id, time, timestamp, '{table[0]}' as label"
             for field in all_fields:
                 if field in table_fields[table[0]]:
                     stmt = stmt + ", " + field
@@ -258,14 +301,6 @@ class EventDB:
             self._create_event_table(schema)
             self.schemas[name] = schema
 
-        def create_axi_view(x):
-            all_tables = []
-            for prefix in x.keys():
-                for table in x[prefix].items():
-                    all_tables.append((f"{table[0]}", table[1]))
-                self.create_flat_join(prefix, x[prefix].items())
-            self.create_flat_join('axi4', all_tables)
-
         def create_pmb_view(x):
             all_tables = []
             for prefix in x.keys():
@@ -274,10 +309,94 @@ class EventDB:
                 self.create_flat_join(prefix, x[prefix].items())
             self.create_flat_join('pmb', all_tables)
 
+        def create_axi_read_view(x):
+            for prefix in x.keys():
+                cur = self.conn.cursor()
+                cur.execute(
+                f"""
+                CREATE VIEW {prefix}reads AS
+                SELECT d.*, '{prefix[:-1]}' as label, a.addr, a.len, a.size, a.burst, a.id, a.rowid as request_id
+                FROM {prefix}r d
+                LEFT JOIN {prefix}ar a
+                  ON a.cycle = (
+                    SELECT MAX(a2.cycle)
+                    FROM {prefix}ar a2
+                    WHERE a2.cycle <= d.cycle
+                  )
+                ORDER BY d.cycle;
+                """)
+
+        def create_axi_write_view(x):
+            for prefix in x.keys():
+                cur = self.conn.cursor()
+                cur.execute(
+                    f"""
+                CREATE VIEW {prefix}writes AS
+                SELECT d.*, '{prefix[:-1]}' as label, a.addr, a.id, a.burst, a.size, a.len, a.rowid as request_id,
+                 (
+                    SELECT b.resp
+                    FROM {prefix}b b
+                    WHERE b.cycle >= d.cycle
+                    ORDER BY b.cycle ASC, b.rowid ASC
+                    LIMIT 1
+                ) AS resp
+                FROM {prefix}w d
+                LEFT JOIN {prefix}aw a
+                  ON a.cycle = (
+                    SELECT MAX(a2.cycle)
+                    FROM {prefix}aw a2
+                    WHERE a2.cycle <= d.cycle
+                  )
+                ORDER BY d.cycle;
+                """)
+
+        def create_axi_view(x):
+            if len(x) == 0:
+                return
+
+            all_tables = []
+            for prefix in x.keys():
+                # for table in x[prefix].items():
+                #     all_tables.append((f"{table[0]}", table[1]))
+                synth_tables = [
+                    (prefix + "reads", {"type": [{"request_id": {"UInt": 32}}] + x[prefix][prefix + "ar"]['type'] + x[prefix][prefix + "r"]['type']}),
+                    (prefix + "writes", {"type": [{"request_id": {"UInt": 32}}] + x[prefix][prefix + "aw"]['type'] + x[prefix][prefix + "w"]['type'] + x[prefix][prefix + "b"]['type']})
+                ]
+                all_tables += synth_tables
+                self.create_flat_join(prefix, synth_tables)
+            self.create_flat_join('AXI4_BUSSES', all_tables)
+
+        def create_joint_wishbone_view(wbs):
+            if len(wbs) == 0:
+                return
+
+            stmts = []
+            for table in wbs:
+                stmts.append(f"SELECT cycle, event_id, time, timestamp, CASE WHEN WE THEN '{table['name']}_write' ELSE '{table['name']}_read' END as label, ADR as addr, DAT as data, SEL as strb FROM {table['name']}")
+            select_stmt = f"CREATE VIEW WB_BUSSES AS " + " UNION ".join(stmts) + " order by timestamp"
+
+            cur = self.conn.cursor()
+
+            cur.execute(select_stmt)
+
+
         registry = AggregationRegistry()
+
+        wishbone_tables = []
+        for event in event_defs:
+            if isinstance(event["type"], list):
+                fields = list(map(lambda x: list(x.keys())[0], event["type"]))
+                if 'ADR' in fields:
+                    wishbone_tables.append(event)
+        create_joint_wishbone_view(wishbone_tables)
+
+        registry.register(["aw", "w", "b"], create_axi_write_view)
+        registry.register(["ar", "r"], create_axi_read_view)
         registry.register(["ar", "aw", "w", "r", "b"], create_axi_view)
         registry.register(["cmd", "rsp"], create_pmb_view)
         registry.process_event_definitions(event_defs)
+
+        create_union_view(self.conn, "ALL_BUSSES", ["WB_BUSSES", "AXI4_BUSSES"])
 
         return data
 
@@ -287,6 +406,7 @@ class EventDB:
             CREATE TABLE IF NOT EXISTS ALL_EVENTS (
                 event_id INTEGER NOT NULL,
                 event_name TEXT NOT NULL,
+                cycle INT NOT NULL,            
                 time REAL NOT NULL,
                 timestamp REAL NOT NULL,
                 json_data TEXT NOT NULL
@@ -299,7 +419,7 @@ class EventDB:
         cols = schema.iter_sql_columns()
 
         # add timestamp column at front
-        sql_cols = [("event_id", "INTEGER"), ("time", "REAL"), ("timestamp", "REAL")] + cols
+        sql_cols = [("event_id", "INTEGER"), ("cycle", "INTEGER"), ("time", "REAL"), ("timestamp", "REAL")] + cols
         # build create statement
         col_defs = ",\n  ".join(f"{cname} {ctype}" for cname, ctype in sql_cols)
         sql = f"CREATE TABLE IF NOT EXISTS \"{table_name}\" (\n  {col_defs}\n)"
@@ -312,8 +432,8 @@ class EventDB:
             return self.insert_statements[schema_name]
 
         schema = self.schemas[schema_name]
-        sql_cols = ["event_id", "time", "timestamp"]
-        placeholders = ["?", "?", "?"]
+        sql_cols = ["event_id", "cycle", "time", "timestamp"]
+        placeholders = ["?", "?", "?", "?"]
 
         for col in schema.cols:
             if col[1] == "ENUM":
@@ -361,7 +481,7 @@ class EventDB:
         time = event.get("time", 0)
         timestamp = event.get("timestamp", 0)
 
-        values = [ev_id, time, timestamp]
+        values = [ev_id, event.get("cycle", 0), time, timestamp]
         schema = self.schemas[schema_name]
         for col in schema.cols:
             if col[1] == "ENUM":
@@ -415,7 +535,7 @@ class EventDB:
         ev_id = event.get("event_id")
         ev_name = event.get("event")
         if ev_name is None:
-            raise ValueError("Event missing 'event' name")
+            raise ValueError(f"Event missing 'event' name {event}")
 
         if ev_name == "time_sync" or ev_name == "metadata":
             return
@@ -437,8 +557,8 @@ class EventDB:
         time = event.get("time", 0)
         # Also insert into ALL_EVENTS: store value JSON (the original dict), plus event_name and timestamp
         all_json = json.dumps(event["value"], default=str)
-        cur.execute("INSERT INTO ALL_EVENTS (event_id, event_name, time, timestamp, json_data) VALUES (?, ?, ?, ?, ?)",
-                    (ev_id, ev_name, time, timestamp, all_json))
+        cur.execute("INSERT INTO ALL_EVENTS (event_id, event_name, cycle, time, timestamp, json_data) VALUES (?, ?, ?, ?, ?, ?)",
+                    (ev_id, ev_name, event.get("cycle", 0), time, timestamp, all_json))
 
         self.conn.commit()
 

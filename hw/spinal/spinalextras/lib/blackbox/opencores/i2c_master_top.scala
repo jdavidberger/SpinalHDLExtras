@@ -42,16 +42,9 @@ case class i2c_master_top() extends BlackBox {
   noIoPrefix()
   mapCurrentClockDomain(io.wb_clk_i, io.wb_rst_i)
 
-  def log_signals(): Unit = {
-    GlobalLogger(
-      SignalLogger.concat("i2c",
-        io.scl_pad_i, io.scl_pad_o, io.scl_padoen_o,
-        io.sda_pad_i, io.sda_pad_o, io.sda_padoen_o
-      )
-    )
-  }
-
   def attachi2c(i2c0_scl : Bool, i2c0_sda : Bool): Unit = {
+    io.arst_i := io.wb_rst_i
+
     io.scl_pad_i := i2c0_scl
     when(~io.scl_padoen_o) {
       i2c0_scl := io.scl_pad_o
@@ -60,5 +53,12 @@ case class i2c_master_top() extends BlackBox {
     when(~io.sda_padoen_o) {
       i2c0_sda := io.sda_pad_o
     }
+
+    GlobalLogger(
+      SignalLogger.concat("i2c",
+        io.scl_pad_i, io.scl_pad_o, io.scl_padoen_o,
+        io.sda_pad_i, io.sda_pad_o, io.sda_padoen_o, io.wb_inta_o
+      )
+    )
   }
 }

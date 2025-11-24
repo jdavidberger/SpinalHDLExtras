@@ -9,10 +9,10 @@ import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4R, Axi4W}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.fsm._
 import spinalextras.lib.formal.fillins.Axi4Formal.Axi4FormalExt
-import spinalextras.lib.{Config, Memories, MemoryRequirement}
+import spinalextras.lib.{Config, Memories, MemoryRequirement, logging}
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty, HasFormalProperties}
-import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
+import spinalextras.lib.logging.{GlobalLogger, PipelinedMemoryBusLogger, SignalLogger}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut} // StateMachine is part of this package
 
 /**
@@ -273,7 +273,9 @@ class Axi4ToPipelinedMemoryBus(config: Axi4ToPipelinedMemoryBusConfig) extends C
     Set("axi4-to-pmb"),
     SignalLogger.concat("Axi4ToPmb",
       RegNext(fsm.stateReg, init = fsm.stateReg.clone().clearAll()).setName("stateReg"),
-      addr_increment
+      addr_increment,
+      io.pmb.cmd.isStall.setName("pmb_stall"),
+      io.axi.b.isStall.setName("axi_b_stall")
     )
   )
 }

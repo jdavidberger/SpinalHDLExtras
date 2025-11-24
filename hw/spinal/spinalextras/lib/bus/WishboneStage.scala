@@ -177,7 +177,7 @@ object WishboneStage {
       if(!m2s_stage && !s2m_stage)
         return bus
 
-      val adapter_pmb = WishboneToPipelinedMemoryBus(bus, 1)
+      val adapter_pmb = WishboneToPipelinedMemoryBus(bus, 1, wishboneIsMaster = true)
       val out_bus = PipelinedMemoryBusToWishbone(
         (m2s_stage, s2m_stage) match {
           case (true, true) => adapter_pmb.cmdM2sPipe().cmdS2mPipe().rspPipe()

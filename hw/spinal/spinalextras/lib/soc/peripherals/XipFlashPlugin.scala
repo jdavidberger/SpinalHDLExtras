@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.com.spi.ddr.{Apb3SpiXdrMasterCtrl, SpiXdrMasterCtrl, SpiXdrParameter}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.MemoryMappingParameters
+import spinalextras.lib.Constraints
 import spinalextras.lib.io.TristateBuffer
 import spinalextras.lib.soc.spinex.{Spinex, SpinexPlugin}
 
@@ -66,5 +67,7 @@ case class XipFlashPlugin(config: MemoryMappingParameters = XipFlashPlugin.defau
     som.io.valCallbackRec(spiflash_clk, s"${name}_clk")
     som.io.valCallbackRec(spiflash_cs_n, s"${name}_cs_n")
     som.io.valCallbackRec(spiflash_dq, s"${name}_dq")
+
+    Constraints.set_max_skew(1 ns, spiflash_clk, spiflash_cs_n, spiflash_dq)
   }
 }

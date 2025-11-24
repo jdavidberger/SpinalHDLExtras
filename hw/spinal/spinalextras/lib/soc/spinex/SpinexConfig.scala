@@ -8,7 +8,7 @@ import spinal.lib.com.uart.{UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemory
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.soc.bus.WishbonePlugin
 import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
-import spinalextras.lib.soc.spinex.plugins.{IdentificationPlugin, JTagPlugin, OpenCoresI2CPlugin, TimerPlugin}
+import spinalextras.lib.soc.spinex.plugins.{I2CPlugin, IdentificationPlugin, JTagPlugin, OpenCoresI2CPlugin, TimerPlugin, Uart16550CtrlPlugin}
 import vexriscv.ip.InstructionCacheConfig
 import vexriscv.{VexRiscv, plugin}
 import vexriscv.plugin.CsrAccess.WRITE_ONLY
@@ -263,6 +263,7 @@ object SpinexConfig{
       UartCtrlPlugin(),
 
       OpenCoresI2CPlugin(),
+      //I2CPlugin(),
       SystemRam(),
       new JTagPlugin(),
       PrintAPBMapping()

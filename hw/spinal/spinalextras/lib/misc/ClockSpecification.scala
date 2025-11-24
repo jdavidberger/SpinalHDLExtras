@@ -7,6 +7,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import spinal.core.ClockDomain.ClockFrequency
 import spinal.core.{ClockDomain, FixedFrequency, HertzNumber}
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
 
 case class HertzDeserializer() extends StdDeserializer[HertzNumber](classOf[HertzNumber]) {
   override def deserialize(p: JsonParser, ctxt: DeserializationContext) = {
@@ -28,5 +31,11 @@ object ClockSpecification {
   }
   def fromFrequency(f: ClockFrequency): ClockSpecification = {
     ClockSpecification(f.getValue, tolerance = math.max((f.getMax / f.getValue).toDouble - 1, 1 - (f.getMin / f.getValue).toDouble))
+  }
+  def removeRedundant(specs : Seq[ClockSpecification]): Seq[ClockSpecification] = {
+    val allTolerances = new mutable.HashMap[(HertzNumber, Double), mutable.ArrayBuffer[Double]]()
+    specs.foreach(x => allTolerances.getOrElseUpdate((x.freq, x.phaseOffset), new ArrayBuffer[Double]()).append(x.phaseOffset))
+    val minTolerances = allTolerances.mapValues(_.min)
+    minTolerances.map(x => ClockSpecification(x._1._1, x._1._2, x._2)).toSeq
   }
 }

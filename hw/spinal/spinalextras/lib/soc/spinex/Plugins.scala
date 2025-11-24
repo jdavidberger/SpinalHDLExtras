@@ -1,30 +1,25 @@
 package spinalextras.lib.soc.spinex
 
 import spinal.core._
-import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config, Apb3SlaveFactory}
 import spinal.lib.bus.misc.SizeMapping
-import spinal.lib.com.jtag.{Jtag, JtagTapInstructionCtrl}
-import spinal.lib.slave
-import spinalextras.lib.{Memories, MemoryRequirement}
-import spinalextras.lib.blackbox.opencores.i2c_master_top
 import spinalextras.lib.bus.PipelinedMemoryBusExt
-import spinalextras.lib.misc.{RandomNumberGenerator, RandomNumberGeneratorApb3}
-import spinalextras.lib.soc.DeviceTree
-import spinalextras.lib.soc.peripherals.SpinexApb3Timer
+import spinalextras.lib.misc.RandomNumberGeneratorApb3
+import spinalextras.lib.{Memories, MemoryRequirement}
 
 import scala.language.postfixOps
 
-case class ExternalInterrupts(externalInterruptBits : Int) extends SpinexPlugin {
+class ExternalInterrupts(name : String, externalInterruptBits : Int, requestIdx : Int = -1) extends SpinexPlugin {
   lazy val externalInterrupts = in(Bits(externalInterruptBits bits)) default(0)
   override def apply(som: Spinex): Unit = {
     som.io.valCallback(externalInterrupts, s"externalInterrupts")
-    som.system.addInterrupt(externalInterrupts)
+    som.system.addNamedInterrupt(name, externalInterrupts, requestIdx)
   }
 }
 
 object ExternalInterrupts {
-  def apply(interrupt : Data) = {
-    val plugin = new ExternalInterrupts(interrupt.getBitsWidth)
+  def apply(interrupt : Data, requestIdx : Int = -1) = {
+    val plugin = new ExternalInterrupts(interrupt.name, interrupt.getBitsWidth, requestIdx)
+
     Component.current.addPrePopTask(() => {
       plugin.externalInterrupts := interrupt.asBits
     })
@@ -38,8 +33,8 @@ case class SystemRam(name : String = "spinex_ram", mapping : SizeMapping = SizeM
       numReadWritePorts = 2,
       needsMask = true, label =name))
     val mem_pmbs = mem.pmbs()
-    som.add_slave(mem_pmbs(1).resizeAddress(32), "ram", mapping, "dBus")
-    som.add_slave(mem_pmbs(0).resizeAddress(32), "ram", mapping, "iBus")
+    som.add_slave(mem_pmbs(1).resizeAddress(32), "ram", mapping, direct = true, "dBus")
+    som.add_slave(mem_pmbs(0).resizeAddress(32), "ram", mapping, direct = true, "iBus")
   }
 }
 

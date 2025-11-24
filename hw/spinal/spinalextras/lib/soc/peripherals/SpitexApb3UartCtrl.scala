@@ -1,10 +1,11 @@
 package spinalextras.lib.soc.peripherals
 
-import spinal.core.{Area, Bits, Bundle, Component, False, IntToBuilder, Reg, RegNext, UInt, log2Up, out, widthOf}
+import spinal.core.{Area, Bits, Bundle, CombInit, Component, False, IntToBuilder, Reg, RegNext, UInt, log2Up, out, widthOf}
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config, Apb3SlaveFactory}
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, BusSlaveFactoryAddressWrapper, SizeMapping}
 import spinal.lib.com.uart.{Apb3UartCtrl, Uart, UartCtrl, UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemoryMappedConfig, UartParityType, UartStopType}
 import spinal.lib.{StreamFifo, master, slave}
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.soc.spinex.{Spinex, SpinexPlugin, SpinexRegisterFileApbPlugin}
 import spinalextras.lib.soc.{CSREventManager, DeviceTree, EventSourceProcess}
 
@@ -17,6 +18,11 @@ case class SpinexApb3UartCtrl(config: UartCtrlMemoryMappedConfig) extends Compon
 
   val uartCtrl = new UartCtrl(config.uartCtrlConfig)
   io.uart <> uartCtrl.io.uart
+
+  GlobalLogger(
+    Set("uart"),
+    FlowLogger.streams(uartCtrl.io.read.setName("uart_read"), uartCtrl.io.write.setName("uart_write"))
+  )
 
   val busCtrl = Apb3SlaveFactory(io.apb)
   val bridge = driveFrom(busCtrl, config)
@@ -136,9 +142,15 @@ case class UartCtrlPlugin(config: UartCtrlMemoryMappedConfig = UartCtrlPlugin.de
     uartCtrl.io.uart <> uart
     uartCtrl.io.apb <> apb
 
-    interruptIdx = som.system.addInterrupt(uartCtrl.io.interrupt, 2)
+    interruptIdx = som.system.addInterrupt(CombInit(uartCtrl.io.interrupt).setName("uart_int", weak = true), 2)
 
     _regs = busCtrlToRegs(uartCtrl.busCtrl)
+
+    GlobalLogger(
+      Set("uart_io"),
+      SignalLogger.concat("uart_io", uart.rxd, uart.txd, uart.cts, uart.rts, uartCtrl.io.interrupt.setName("uart_irq"))
+    )
+
     super.apply(som)
   }
 

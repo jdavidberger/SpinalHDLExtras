@@ -3,7 +3,7 @@ package spinalextras.lib.bus
 import spinal.core.{Bool, Component, MultiData, log2Up}
 import spinal.lib.{IMasterSlave, master, slave}
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, DefaultMapping, MaskMapping, NeverMapping, SizeMapping}
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig, PipelinedMemoryBusDecoder}
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig, PipelinedMemoryBusDecoder, PipelinedMemoryBusSlaveFactory}
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig, WishboneSlaveFactory}
 import spinalextras.lib.bus
 import spinalextras.lib.bus.bus.WishboneMultiBusInterface
@@ -131,14 +131,14 @@ class MultiInterconnect {
   }
 }
 
-class MultiInterconnectByTag extends MultiInterconnect with BusSlaveProvider {
+class MultiInterconnectByTag(name : String = "multiinterconnect") extends MultiInterconnect with BusSlaveProvider {
   val component = Component.current
 
   val tags = new mutable.HashMap[MultiBusInterface, mutable.Set[String]]()
 
   override def addSlave(bus: MultiBusInterface, mapping: AddressMapping) : this.type = {
     for((sbus, s) <- slaves) {
-      if(tags(sbus).intersect(tags(bus)).size > 0) {
+      if(tags(sbus).intersect(tags(bus)).size > 0 && mapping != DefaultMapping && s.mapping != DefaultMapping) {
         val intersection = s.mapping.intersect(mapping)
         //assert(!s.mapping.hit(mapping.lowerBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
         //assert(!s.mapping.hit(mapping.highestBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
@@ -188,7 +188,7 @@ class MultiInterconnectByTag extends MultiInterconnect with BusSlaveProvider {
     buildConnections()
     super.build()
 
-    println("Multi-interconnect System Bus Masters")
+    println(s"${name} System Bus Masters")
     for(m <- masters) {
       println(s"\t${m} ${tags(m)}")
       val connected_slaves = connections.filter(_.m == m).map(_.s)
@@ -205,20 +205,19 @@ class MultiInterconnectByTag extends MultiInterconnect with BusSlaveProvider {
   }
 
   override def add_slave_factory(name: String, mapping: SizeMapping, m2s_stage: Boolean, s2m_stage: Boolean, tags: String*): BusSlaveFactory = {
-    val config = WishboneConfig(log2Up(mapping.end), 32, addressGranularity = AddressGranularity.BYTE)
+    val config = PipelinedMemoryBusConfig(log2Up(mapping.end), 32)
 
     val bus = if(component != Component.current) {
       val restore = Component.push(component)
-      val bus = master(new Wishbone(config))
+      val bus = master(new PipelinedMemoryBus(config))
       restore.restore()
       bus
     } else {
-      WishboneStage(new Wishbone(WishboneConfig(log2Up(mapping.end), 32, addressGranularity = AddressGranularity.BYTE)),
-        m2s_stage, s2m_stage)
+      new PipelinedMemoryBus(config)
     }
     bus.setName(name)
 
-    addSlave(new WishboneMultiBusInterface(bus), mapping = mapping, tags = tags:_*)
-    WishboneSlaveFactory(WishboneStage(bus, m2s_stage, s2m_stage))
+    addSlave(new PipelinedMemoryBusMultiBus(bus), mapping = mapping, tags = tags:_*)
+    new PipelinedMemoryBusSlaveFactory(bus.cmdS2mPipe().cmdS2mPipe().rspPipe())
   }
 }

@@ -90,7 +90,7 @@ class GlobalLogger {
     built = true;
     val loggerName = name
     new ClockingArea(clockDomain) {
-      if (signals.nonEmpty) {
+      if (signals.nonEmpty && depth > 0) {
         val ctx = Component.push(Component.toplevel)
         val logger = FlowLogger(signals)
         logger.setName(loggerName)
@@ -102,7 +102,9 @@ class GlobalLogger {
 
         ctx.restore()
       } else {
+        val ctx = Component.push(Component.toplevel)
         outputStream.foreach(_.setIdle())
+        ctx.restore()
       }
     }
     output_path = null

@@ -21,7 +21,7 @@ import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
 
 case class PipelinedMemoryBusMultiBus(bus : PipelinedMemoryBus,
-                                      pendingMax : Int = 3,
+                                      pendingMax : Int = 1,
                                       pendingRspMax : Int = 1, rspRouteQueue : Boolean = false, transactionLock : Boolean = true) extends MultiBusInterface {
   override def address_width = bus.config.addressWidth
   override def create_decoder(mappings:  Seq[AddressMapping]) = new Composite(bus, "") {
@@ -330,7 +330,7 @@ package object bus {
 
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: WishboneMultiBusInterface) => {
     val wb = PipelinedMemoryBusToWishbone(m.bus, s.bus.config)
-    wb <> s.bus
+    wb >> s.bus
   }}
 
   def toWishbone(dbus: DBusSimpleBus) = {

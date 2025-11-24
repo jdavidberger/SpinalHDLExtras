@@ -3,6 +3,7 @@ package spinalextras.lib.soc
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.BusSlaveFactory
+import spinal.lib.bus.regif.{BusIf, SymbolName}
 
 import scala.collection.mutable
 
@@ -35,12 +36,13 @@ class CSREventManager extends Area {
     val pendingAddr = 0x04 + addr
     val enableAddr = 0x08 + addr
     val interrupt = Vec(sources.zipWithIndex.map{ case (s, idx) => {
-      busCtrl.read(s.status.setName(s"${s.name}_status"), address = statusAddr, bitOffset = idx, documentation = s.description)
-      busCtrl.readAndClearOnSet(s.pending.setName(s"${s.name}_pending"), address = pendingAddr, bitOffset = idx)
-      busCtrl.readAndWrite(s.enable.setName(s"${s.name}_enable"), enableAddr, bitOffset = idx, documentation = s.description + " enable")
+      busCtrl.read(s.status.setName(s"${s.name}_status", true), address = statusAddr, bitOffset = idx, documentation = s.description)
+      busCtrl.readAndClearOnSet(s.pending.setName(s"${s.name}_pending", true), address = pendingAddr, bitOffset = idx)
+      busCtrl.readAndWrite(s.enable.setName(s"${s.name}_enable", true), enableAddr, bitOffset = idx, documentation = s.description + " enable")
       s.irq
     }}).orR
   }.interrupt
+
 }
 
 object CSREventManager {

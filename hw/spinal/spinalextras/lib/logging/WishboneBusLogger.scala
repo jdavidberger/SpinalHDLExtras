@@ -107,8 +107,9 @@ object SignalLogger {
       }
     }
 
-    val signal_elments = signals.flatMap(process_signal)
+    val signal_elments = signals.filter(_ != null).flatMap(process_signal)
     signal_elments.foreach(x => assert(x._1.nonEmpty))
+    signal_elments.foreach(_._2.addTag(crossClockDomain))
 
     val bundle = new Bundle {
       elements.append(signal_elments:_*)

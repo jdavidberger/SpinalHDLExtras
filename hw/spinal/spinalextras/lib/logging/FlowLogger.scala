@@ -11,7 +11,6 @@ import spinalextras.lib.bus.WishboneGlobalBus
 import spinalextras.lib.bus.general.BusSlaveProvider
 import spinalextras.lib.formal.StreamFormal.StreamExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
-import spinalextras.lib.logging.FlowLoggerUtils.{FlowLoggerCCode, FlowLoggerSqlite, FlowLoggerYaml}
 import spinalextras.lib.memory.MemoryBackedFifo
 import spinalextras.lib.misc.RateLimitFlow
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
@@ -23,7 +22,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
-class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val gtimeTimeout : BigInt = 0xFFFFFFFFL) extends ComponentWithFormalProperties {
+class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val gtimeTimeout : BigInt = 0xFFFFFFFFL, val stageAllFlows : Boolean = true) extends ComponentWithFormalProperties {
   val signature = datas.map(_.toString()).hashCode().abs
   val io = new Bundle {
     val flows = datas.map(b => slave Flow (Bits(b._1.getBitsWidth bits)))
@@ -94,11 +93,13 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
   metadata_stream.valid := RegInit(False) setWhen(time_since_syscnt) clearWhen(metadata_stream.fire)
 
   val encoded_streams =
-    for ((stream, idx) <- flows()) yield {
+    for ((flow, idx) <- flows()) yield {
 
-      val data_log_capture = FlowLoggerDataCapture(this, Bits(stream.payload.getBitsWidth bits), datas(idx), idx)
-      data_log_capture.setName(s"data_tap_${stream.name}_${idx}")
-      data_log_capture.io.flow <> stream
+      val isSameCD = datas(idx)._2 == ClockDomain.current
+      val data_log_capture = FlowLoggerDataCapture(this, Bits(flow.payload.getBitsWidth bits), datas(idx), idx)
+
+      data_log_capture.setName(s"data_tap_${flow.name}_${idx}")
+      data_log_capture.io.flow <> (if(stageAllFlows && isSameCD) flow.stage() else flow)
       data_log_capture.io.flow_fire <> io.flowFires(idx)
       data_log_capture.io.manual_trigger := io.manual_trigger.fire && io.manual_trigger.payload(idx) === True
       data_log_capture.io.channel_active := ~(io.inactive_channels(idx))
@@ -152,7 +153,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
     loggerFifo.setName(s"loggerFifo_${depth}")
     loggerFifo.io.push <> io.log.stage()
 
-    val stream = loggerFifo.io.pop.stage()
+    val stream = loggerFifo.io.pop.s2mPipe().m2sPipe()
 
     val checksum = RegInit(B(0, 32 bits))
 
@@ -337,6 +338,10 @@ object FlowLogger {
     when(evt) {
       counter := counter + 1
       arm := True
+    }
+
+    when(eventsPerDuration.fire && counter === 0) {
+      arm := False
     }
 
     when(timeout) {

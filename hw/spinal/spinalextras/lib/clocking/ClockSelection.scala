@@ -74,7 +74,7 @@ object fpga_reset {
   }
 }
 
-case class ClockSelection(inputClock: ClockFrequency, outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false) extends Component {
+class ClockSelection(inputClock: ClockFrequency, outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false) extends Component {
   val io = new Bundle {
     val clks = outputClocks.map(_ => out(Bool()))
     val resets = outputClocks.map(_ => out(Bool()))
@@ -99,7 +99,14 @@ case class ClockSelection(inputClock: ClockFrequency, outputClocks: Seq[ClockSpe
 
   val dcs_out = bootstrap generate DCS(osc.hf_clk().get, pll.ClockDomains.head, pll.lock)
 
-  val pll_reset = RegInit(True) clearWhen (io.pll_lock)
+  val pll_count = Counter(128)
+  when(io.pll_lock) {
+    pll_count.increment()
+  } otherwise {
+    pll_count.clear()
+  }
+
+  val pll_reset = RegInit(True) clearWhen (pll_count.willOverflow)
 
   for ((clk, idx) <- pll.ClockDomains.zipWithIndex) {
     io.clks(idx) := {
@@ -110,14 +117,14 @@ case class ClockSelection(inputClock: ClockFrequency, outputClocks: Seq[ClockSpe
     io.resets(idx) := {
       val rawReset = if(bootstrap) reset else pll_reset
       ClockUtils.createAsyncReset(io.clks(idx), rawReset)
-    }.setName(s"rst_sync_${name}")
+    }.setName(s"rst_sync_${name}", true)
 
     if (pll.outputSpectifications(idx).phaseOffset != 0) {
       name += s"_${pll.outputSpectifications(idx).phaseOffset.round}deg"
     }
 
-    io.clks(idx).setName(s"clk_${name}")
-    io.resets(idx).setName(s"clk_${name}_reset")
+    io.clks(idx).setName(s"clk_${name}", true)
+    io.resets(idx).setName(s"clk_${name}_reset", true)
   }
 
   lazy val ClockDomains = pll.ClockDomains.zipWithIndex.map(cd_idx => {
@@ -126,9 +133,18 @@ case class ClockSelection(inputClock: ClockFrequency, outputClocks: Seq[ClockSpe
   })
 }
 
-object ClockSelection extends App {
-  Config.spinal.generateVerilog(
-    ClockSelection(FixedFrequency(24 MHz),
-      Seq(ClockSpecification(60 MHz), ClockSpecification(100 MHz), ClockSpecification(50 MHz), ClockSpecification(120 MHz))),
-  )
+object ClockSelection {
+  def apply(inputClock: ClockFrequency, outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false, requirePLL : Boolean = true) = {
+    if(!requirePLL && inputClock.getValue == outputClocks.head.freq && outputClocks.size == 1) {
+      val reset = ResetCtrl.asyncAssertSyncDeassert(
+        input = ClockDomain.current.reset,
+        clockDomain = ClockDomain.current
+      ).setCompositeName(Component.current, "filteredReset")
+
+      (True, Seq(ClockDomain.current.copy(reset = reset)))
+    } else {
+      val selection = new ClockSelection(inputClock, outputClocks, bootstrap)
+      (selection.io.pll_lock, selection.ClockDomains)
+    }
+  }
 }

@@ -4,17 +4,17 @@ import spinal.core._
 import spinal.core.sim.{SimClockDomainHandlePimper, SimClockDomainPimper, sleep}
 import spinal.lib._
 import spinal.lib.bus.amba3.apb._
-import spinal.lib.bus.misc.{AddressMapping, SizeMapping}
+import spinal.lib.bus.misc.{AddressMapping, DefaultMapping, SizeMapping}
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.jtag.JtagTapInstructionCtrl
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBus
 import spinal.lib.cpu.riscv.debug._
 import spinalextras.lib.Config
-import spinalextras.lib.bus.{MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
+import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
 import spinalextras.lib.clocking.rst_sync
 import spinalextras.lib.lattice.IPX
-import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
 import spinalextras.lib.soc.DeviceTree
 import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
@@ -36,37 +36,28 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
   }
   noIoPrefix()
 
-  val jtagNative = withNativeJtag generate new ClockingArea(debugClockDomain){
-    val jtagCtrl = JtagTapInstructionCtrl()
-    val tap = jtagCtrl.fromXilinxBscane2(userId = 2)
-  }
-
   val mainClockDomain = ClockDomain.current
 
   val resetCtrlClockDomain = mainClockDomain.copy(
     reset = null,
-    config = ClockDomainConfig(
-      resetKind = BOOT
-    )
+    config = ClockDomainConfig(resetKind = BOOT)
   )
 
   val resetCtrl = new ClockingArea(resetCtrlClockDomain) {
     val mainClkResetUnbuffered  = False
 
-    val systemClkResetCounter = Reg(UInt(6 bits)) init(0)
-    when(systemClkResetCounter =/= U(systemClkResetCounter.range -> true)){
+    val systemClkResetCounter = Reg(UInt(4 bits)) init(0)
+    when(systemClkResetCounter.andR === False) {
       systemClkResetCounter := systemClkResetCounter + 1
       mainClkResetUnbuffered := True
     }
 
-    when(BufferCC(mainClockDomain.readResetWire)){
+    when(mainClockDomain.readResetWire) {
       systemClkResetCounter := 0
       mainClkResetUnbuffered := True
     }
 
-    //Create all reset used later in the design
-    val mainClkReset = RegNext(mainClkResetUnbuffered, init = True)
-      val systemReset  = RegNext(mainClkResetUnbuffered, init = True)
+    val systemReset  = RegNext(mainClkResetUnbuffered, init = True)
   }
 
 
@@ -74,72 +65,18 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     reset = resetCtrl.systemReset,
   )
 
-  val debugClockDomain = mainClockDomain.copy(
-    reset = resetCtrl.mainClkReset,
-  )
-
-  var interconnect: MultiInterconnectByTag = null
-
-  import spinalextras.lib.bus.bus._
-
-  def add_master(bus: IBusSimpleBus): Unit = {
-    interconnect.addMaster(bus, "iBus")
-
-    assert(!bus.cmd.valid.isUnknown, "Invalid ibus valid")
-    when(bus.cmd.valid) {
-      assert(!bus.cmd.payload.asBits.isUnknown, "Invalid sbus address")
-    }
-
-    GlobalLogger(Set("iBus"),
-      FlowLogger.streams(bus.cmd.setName("iBus_cmd")),
-      FlowLogger.flows(bus.rsp.setName("iBus_rsp"))
-    )
+  val debugClockDomain = systemClockDomain
+  val jtagNative = withNativeJtag generate new ClockingArea(debugClockDomain){
+    val jtagCtrl = JtagTapInstructionCtrl()
+    val tap = jtagCtrl.fromXilinxBscane2(userId = 2)
   }
 
-  def add_master(bus: InstructionCacheMemBus): Unit = {
-    interconnect.addMaster(bus, "iBus")
-    GlobalLogger(Set("iBus"),
-      FlowLogger.streams(bus.cmd.setName("iBus_cmd")),
-      FlowLogger.flows(bus.rsp.setName("iBus_rsp"))
-    )
-  }
-
-  def add_master(bus: DBusSimpleBus): Unit = new Composite(this, "add_master") {
-    interconnect.addMaster(bus, "dBus")
-    val dbusRspFlow = Flow(cloneOf(bus.rsp))
-    dbusRspFlow.valid := bus.rsp.ready
-    dbusRspFlow.payload := bus.rsp
-
-    assert(!bus.cmd.valid.isUnknown, "Invalid dbus valid")
-    when(bus.cmd.valid) {
-      assert(!bus.cmd.payload.address.asBits.isUnknown, "Invalid dbus address")
-      assert(!bus.cmd.payload.wr.isUnknown, "Invalid dbus wr")
-      when(bus.cmd.payload.wr) {
-        assert(!bus.cmd.payload.data.asBits.isUnknown, "Invalid dbus data")
-      }
-    }
-
-    GlobalLogger(Set("dBus"),
-      FlowLogger.streams(bus.cmd.setName("dBus")),
-      FlowLogger.flows(dbusRspFlow.setName("dbusRspFlow"))
-    )
-  }
-
-  def add_slave(bus: PipelinedMemoryBus, name : String, mapping : AddressMapping, tags : String*): Unit = {
-    bus.setWeakName(name)
-    interconnect.addSlave(PipelinedMemoryBusMultiBus(bus), mapping = mapping, tags:_*)
-  }
-
-  def add_slave(bus: XipBus, name : String, mapping : AddressMapping, tags : String*): Unit = {
-    interconnect.addSlave(bus, mapping = mapping, tags:_*)
-  }
-
-  def add_slave(bus: Wishbone, name : String, mapping : AddressMapping, tags : String*): Unit = {
-    interconnect.addSlave(bus, mapping = mapping, tags:_*)
-  }
+  var interconnect, directInterconnect: MultiInterconnectByTag = null
 
   val system = new ClockingArea(systemClockDomain) {
-    interconnect = new MultiInterconnectByTag()
+    interconnect = new MultiInterconnectByTag("spinex_interconnect")
+    directInterconnect = new MultiInterconnectByTag("spinex_directInterconnect")
+
 
     val pipelinedMemoryBusConfig = PipelinedMemoryBusConfig(
       addressWidth = 32,
@@ -182,6 +119,10 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       rtn
     }
 
+    def addNamedInterrupt(name : String, signal : Data, requestedIrq : Int = -1) = {
+      addInterrupt(CombInit(signal).setName(name, weak = true), requestedIrq)
+    }
+
     for(plugin <- cpu.plugins) plugin match{
       case plugin : IBusCachedPlugin =>
         add_master(plugin.iBus)
@@ -189,7 +130,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
         add_master(plugin.iBus)
       case plugin : DBusSimplePlugin => {
         add_master(plugin.dBus.cmdHalfPipe().setName("dBus_staged"))
-        //add_master(plugin.dBus)
+        //add_master(plugin.dBus.cmdS2mPipe().setName("dBus_staged"))
       }
       case plugin : CsrPlugin        => {
         plugin.timerInterrupt := timerInterrupt
@@ -247,10 +188,95 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       slaves = apbMapping
     )
 
+    val stagedBridge = PipelinedMemoryBus(32, 32).setName("interconnect")
+    interconnect.addMaster(PipelinedMemoryBusMultiBus(stagedBridge.cmdM2sPipe().cmdS2mPipe().rspPipe().setName("interconnect_staged")), "dBus")
+    directInterconnect.addSlave(PipelinedMemoryBusMultiBus(stagedBridge), DefaultMapping, "dBus")
+
+    GlobalLogger(Set("soc"),
+      SignalLogger.concat("interrupts", interruptInfos.values.toSeq)
+    )
+
     Component.toplevel.addPrePopTask(() => {
+      directInterconnect.build()
       interconnect.build()
     })
   }
+
+
+  import spinalextras.lib.bus.bus._
+
+  def add_master(bus: IBusSimpleBus): Unit = {
+    interconnect.addMaster(bus, "iBus")
+
+    assert(!bus.cmd.valid.isUnknown, "Invalid ibus valid")
+    when(bus.cmd.valid) {
+      assert(!bus.cmd.payload.asBits.isUnknown, "Invalid sbus address")
+    }
+
+    GlobalLogger(Set("iBus"),
+      FlowLogger.streams(bus.cmd.setName("iBus_cmd")),
+      FlowLogger.flows(bus.rsp.setName("iBus_rsp"))
+    )
+  }
+
+  def add_master(bus: InstructionCacheMemBus): Unit = {
+    directInterconnect.addMaster(bus, "iBus")
+    GlobalLogger(Set("iBus"),
+      FlowLogger.streams(bus.cmd.setName("iBus_cmd")),
+      FlowLogger.flows(bus.rsp.setName("iBus_rsp"))
+    )
+  }
+
+  def add_master(bus: DBusSimpleBus): Unit = new Composite(this, "add_master") {
+    directInterconnect.addMaster(bus, "dBus")
+    val dbusRspFlow = Flow(cloneOf(bus.rsp))
+    dbusRspFlow.valid := bus.rsp.ready
+    dbusRspFlow.payload := bus.rsp
+
+    assert(!bus.cmd.valid.isUnknown, "Invalid dbus valid")
+    when(bus.cmd.valid) {
+      assert(!bus.cmd.payload.address.asBits.isUnknown, "Invalid dbus address")
+      assert(!bus.cmd.payload.wr.isUnknown, "Invalid dbus wr")
+      when(bus.cmd.payload.wr) {
+        assert(!bus.cmd.payload.data.asBits.isUnknown, "Invalid dbus data")
+      }
+    }
+
+    GlobalLogger(Set("dBus"),
+      FlowLogger.streams(bus.cmd.setName("dBus")),
+      FlowLogger.flows(dbusRspFlow.setName("dbusRspFlow"))
+    )
+  }
+
+  def add_slave(bus: PipelinedMemoryBus, name : String, mapping : AddressMapping, direct : Boolean, tags : String*): Unit = {
+    bus.setWeakName(name)
+    if(direct) {
+      directInterconnect.addSlave(PipelinedMemoryBusMultiBus(bus), mapping = mapping, tags: _*)
+    } else {
+      interconnect.addSlave(PipelinedMemoryBusMultiBus(bus), mapping = mapping, tags: _*)
+    }
+  }
+
+  def add_slave(bus: PipelinedMemoryBus, name : String, mapping : AddressMapping, tags : String*): Unit = {
+    add_slave(bus, name, mapping, false, tags:_*)
+  }
+
+  def add_slave(bus: XipBus, name : String, mapping : AddressMapping, tags : String*): Unit = {
+    directInterconnect.addSlave(bus, mapping = mapping, tags:_*)
+  }
+
+  def add_slave(bus: MultiBusInterface, name : String, mapping : AddressMapping, direct : Boolean, tags : String*): Unit = {
+    if(direct) {
+      directInterconnect.addSlave(bus, mapping, tags = tags:_*)
+    } else {
+      interconnect.addSlave(bus, mapping, tags = tags:_*)
+    }
+  }
+
+  def add_slave(bus: Wishbone, name : String, mapping : AddressMapping, tags : String*): Unit = {
+    add_slave(bus, name, mapping, false, tags:_*)
+  }
+
 }
 
 

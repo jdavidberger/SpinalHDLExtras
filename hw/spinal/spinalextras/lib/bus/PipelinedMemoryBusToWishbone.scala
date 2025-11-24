@@ -90,17 +90,36 @@ object WishboneToPipelinedMemoryBus {
     WishboneToPipelinedMemoryBus(bus, rspQueue, config)
   }
 
-  def apply(bus: Wishbone, rspQueue : Int, config : PipelinedMemoryBusConfig): PipelinedMemoryBus = {
-    if(bus.isMasterInterface ^ (bus.component == Component.current)) {
+  def apply(bus: Wishbone, rspQueue : Int, wishboneIsMaster : Boolean): PipelinedMemoryBus = {
+    val config = PipelinedMemoryBusConfig(addressWidth = bus.byteAddress().getWidth, dataWidth = bus.config.dataWidth)
+    WishboneToPipelinedMemoryBus(bus, rspQueue, config, wishboneIsMaster)
+  }
+
+  def apply(bus: Wishbone, rspQueue : Int, config : PipelinedMemoryBusConfig, wishboneIsMaster : Boolean): PipelinedMemoryBus = {
+
+    def setNaming(adapter : Component, newBus : PipelinedMemoryBus) = {
+      if(bus.name != null) {
+        adapter.setPartialName(s"${bus.name}ToPipelinedMemoryBus", weak = true)
+        adapter.setDefinitionName(s"${bus.name}ToPipelinedMemoryBus")
+        newBus.setName(s"from_${bus.name}")
+      }
+      newBus
+    }
+
+    if(wishboneIsMaster) {
       val adapter = new WishboneToPipelinedMemoryBus(config, bus.config, rspQueue)
       adapter.io.wb <> bus
-      adapter.io.pmb
+      setNaming(adapter, adapter.io.pmb)
     } else {
       val adapter = new PipelinedMemoryBusToWishbone(bus.config, config, rspQueue)
       adapter.io.wb <> bus
-      adapter.io.pmb
+      setNaming(adapter, adapter.io.pmb)
     }
   }
+
+  def apply(bus: Wishbone, rspQueue : Int, config : PipelinedMemoryBusConfig): PipelinedMemoryBus = {
+    apply(bus, rspQueue, config, bus.isMasterInterface ^ (bus.component == Component.current))
+    }
 }
 
 case class PipelinedMemoryBusToWishbone(wbConfig: WishboneConfig, pipelinedMemoryBusConfig : PipelinedMemoryBusConfig, rspQueue : Int = 8) extends ComponentWithFormalProperties {
@@ -154,12 +173,14 @@ object PipelinedMemoryBusToWishbone {
       val adapter = new PipelinedMemoryBusToWishbone(config, bus.config, rspQueue)
       adapter.io.pmb <> bus
       adapter.io.wb <> wb
+      adapter.setPartialName(s"pmb2wb_${bus.name}2${wb.name}")
       //bus.assertBusEquivalence(adapter.io.pmb)
       //wb.formalAssertEquivalence(adapter.io.wb)
     } else new Composite(bus, "wb2pmb") {
       val adapter = new WishboneToPipelinedMemoryBus(bus.config, config, rspQueue, addressMap = addressMap)
       adapter.io.pmb <> bus
       adapter.io.wb <> wb
+      adapter.setPartialName(s"wb2pmb_${wb.name}2${bus.name}")
       //bus.assertBusEquivalence(adapter.io.pmb)
       //wb.formalAssertEquivalence(adapter.io.wb)
     }
