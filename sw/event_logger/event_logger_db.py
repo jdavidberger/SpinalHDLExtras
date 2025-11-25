@@ -1,16 +1,3 @@
-"""
-event_db.py
-
-Create SQLite tables from YAML event definitions and insert decoded event dictionaries.
-
-Usage:
-    db = EventDB("events.db")
-    db.create_tables_from_yaml("spec.yaml")
-    db.insert_event(decoded_event_dict)  # decoded_event_dict is the dict produced by your decoder
-
-Author: generated
-"""
-
 import sqlite3
 import yaml
 import json
@@ -289,6 +276,7 @@ class EventDB:
 
         # create ALL_EVENTS first
         self._create_all_events_table()
+        self._create_metadata_table()
 
         for ev in event_defs:
             name = ev["name"]
@@ -332,14 +320,16 @@ class EventDB:
                 cur.execute(
                     f"""
                 CREATE VIEW {prefix}writes AS
-                SELECT d.*, '{prefix[:-1]}' as label, a.addr, a.id, a.burst, a.size, a.len, a.rowid as request_id,
+                SELECT d.*, '{prefix[:-1]}' as label, 
+                a.addr as addr,                
+                a.id, a.burst, a.size, a.len, a.rowid as request_id,
                  (
                     SELECT b.resp
                     FROM {prefix}b b
                     WHERE b.cycle >= d.cycle
                     ORDER BY b.cycle ASC, b.rowid ASC
                     LIMIT 1
-                ) AS resp
+                ) AS resp                
                 FROM {prefix}w d
                 LEFT JOIN {prefix}aw a
                   ON a.cycle = (
@@ -399,6 +389,20 @@ class EventDB:
         create_union_view(self.conn, "ALL_BUSSES", ["WB_BUSSES", "AXI4_BUSSES"])
 
         return data
+
+    def _create_metadata_table(self):
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS METADATA (
+                event_id INTEGER NOT NULL,
+                cycle INT NOT NULL,            
+                time REAL NOT NULL,
+                timestamp REAL NOT NULL,
+                signature INT NOT NULL,
+                dropped_events INT NOT NULL                
+            )
+        """)
+        self.conn.commit()
 
     def _create_all_events_table(self):
         cur = self.conn.cursor()
@@ -536,6 +540,18 @@ class EventDB:
         ev_name = event.get("event")
         if ev_name is None:
             raise ValueError(f"Event missing 'event' name {event}")
+
+        if ev_name == "metadata":
+            timestamp = event.get("timestamp", 0)
+            time = event.get("time", 0)
+            all_json = json.dumps(event)
+            self.cursor.execute("INSERT INTO METADATA (event_id, cycle, time, timestamp, signature, dropped_events) VALUES (?, ?, ?, ?, ?, ?)",
+                        (ev_id, event.get("cycle", 0), time, timestamp, event.get('signature'), event.get('dropped_events')))
+            self.cursor.execute("INSERT INTO ALL_EVENTS (event_id, event_name, cycle, time, timestamp, json_data) VALUES (?, ?, ?, ?, ?, ?)",
+                    (ev_id, ev_name, event.get("cycle", 0), time, timestamp, all_json))
+            self.conn.commit()
+
+            return
 
         if ev_name == "time_sync" or ev_name == "metadata":
             return

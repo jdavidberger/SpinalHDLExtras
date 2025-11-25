@@ -15,10 +15,7 @@ import spinalextras.lib.memory.MemoryBackedFifo
 import spinalextras.lib.misc.RateLimitFlow
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
-import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
-import java.io.PrintWriter
-import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
@@ -89,8 +86,13 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
   syscnt_stream.valid := needs_syscnt // We combine with ready here so we can change payload when needs_syscnt is true
   syscnt_stream.addFormalPayloadInvarianceException()
 
-  metadata_stream.payload := (U(signature, 32 bits) ## U(datas.size, 10 bits) ## B(1, meta_id_width bits) ## ~B(0, index_size bits)).resize(logBits)
-  metadata_stream.valid := RegInit(False) setWhen(time_since_syscnt) clearWhen(metadata_stream.fire)
+  val eventDropped = CombInit(False)
+  when(eventDropped) {
+    dropped_events := dropped_events + 1
+  }
+
+  metadata_stream.payload := (dropped_events ## U(signature, 32 bits) ## U(datas.size, 10 bits) ## B(1, meta_id_width bits) ## ~B(0, index_size bits)).resize(logBits)
+  metadata_stream.valid := RegInit(False) setWhen(time_since_syscnt || eventDropped) clearWhen(metadata_stream.fire)
 
   val encoded_streams =
     for ((flow, idx) <- flows()) yield {
@@ -110,7 +112,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
 
       data_log_capture.io.syscnt := syscnt.value
       when(data_log_capture.io.overflow) {
-        dropped_events := dropped_events + 1
+        eventDropped := True
       }
       data_log_capture.io.stamped_stream
     }
@@ -124,8 +126,8 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
   io.log <> StreamArbiterFactory.lowerFirst.noLock.on(
     Seq(
       syscnt_stream.m2sPipe().s2mPipe(),
-      metadata_stream.m2sPipe().s2mPipe()
-    ) ++ encoded_streams
+    ) ++ encoded_streams ++
+      Seq(metadata_stream)
   ).addFormalPayloadInvarianceException()
 
   def getTypeName(d: Data): String = {

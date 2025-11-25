@@ -86,8 +86,10 @@ def decode_log_stream(stream, event_def_metadata):
                 yield {
                     "event_id": index + 1,
                     "event": "metadata",
+                    "cycle": gtime,
                     "stream_cnt": global_logger_parse_field(tx, 1 + index_size + 8, 10),
                     "signature": global_logger_parse_field(tx, 1 + index_size + 18, 32),
+                    "dropped_events": global_logger_parse_field(tx, 1 + index_size + 18 + 32, 32),
                     "data": hex(tx[0] | (tx[1] << 32) | (tx[2] << 64))
                 }
             else:
