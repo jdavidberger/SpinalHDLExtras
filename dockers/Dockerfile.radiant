@@ -1,0 +1,39 @@
+FROM ubuntu:focal AS radiant-base
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture i386 && apt update && apt install -y --no-install-recommends --no-install-suggests sudo locales adduser apt aptdaemon aptdaemon-data base-files base-passwd bash bash-completion binutils binutils-common:amd64 binutils-x86-64-linux-gnu bzip2 ca-certificates coreutils  emacs-bin-common emacs-nox zlib1g:amd64 zlib1g:i386 libgl1                  libnss3 libxcomposite1 libxdamage1 libxrender1 libxrandr2 libfreetype6 libfontconfig libxcursor1 libxi6 libxtst6 libxkbcommon0 libxss1 libxcb-cursor0 xcb libxcb1 qt5dxcb-plugin libgssapi-krb5-2 gstreamer1.0-plugins-base libxext6:i386 libxft2:i386 libstdc++6:i386 && apt clean
+RUN DEBIAN_FRONTEND=noninteractive sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen &&     dpkg-reconfigure --frontend=noninteractive locales &&     update-locale LANG=en_US.UTF-8
+
+ENV LANG=en_US.UTF-8
+
+RUN useradd -rm -d /home/user -s /bin/bash -g root -G sudo -u 1000 user
+RUN echo 'user:user' | chpasswd
+
+ARG RADIANT_BASE=/data/lscc/radiant
+
+ENV LM_LICENSE_FILE="/data/license.dat"
+
+RUN mkdir -p /etc/profile.d
+RUN echo "#!/bin/sh" > entrypoint.sh
+RUN echo "" >> entrypoint.sh
+RUN echo "export RADIANT_ROOT=${RADIANT_BASE}/\$RADIANT_VERSION" >> /entrypoint.sh && \
+    echo "export LD_LIBRARY_PATH=\$RADIANT_ROOT/modeltech/linuxloem/:\$RADIANT_ROOT/bin/lin64/:\$RADIANT_ROOT/ispfpga/bin/lin64" >> /entrypoint.sh && \
+    echo "export PATH=\$RADIANT_ROOT/modeltech/linuxloem/:\$RADIANT_ROOT/bin/lin64/:\$PATH" >> /entrypoint.sh && \
+    echo "exec \"\$@\"" >> /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
+USER user
+WORKDIR /home/user
+
+FROM radiant-base AS radiant2023.2
+ENV RADIANT_VERSION=2023.2
+
+FROM radiant-base AS radiant2024.1
+ENV RADIANT_VERSION=2024.1
+
+FROM radiant-base AS radiant2025.1
+ENV RADIANT_VERSION=2025.1
+
