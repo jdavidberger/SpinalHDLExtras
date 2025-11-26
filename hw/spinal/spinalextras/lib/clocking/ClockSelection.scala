@@ -74,7 +74,12 @@ object fpga_reset {
   }
 }
 
-class ClockSelection(inputClock: ClockFrequency, outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false) extends Component {
+class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false) extends Component {
+  val inputClockFrequency = ClockDomain.current.frequency.getValue
+  val outputClocksRefIdx = outputClocks.indexWhere(c => c.phaseOffset == 0 && c.freq == inputClockFrequency)
+  val refClockIsOutput = outputClocksRefIdx != -1
+  val outputClocksWithoutRef = if (outputClocksRefIdx == -1) outputClocks else outputClocks.patch(outputClocksRefIdx, Nil, 1)
+
   val io = new Bundle {
     val clks = outputClocks.map(_ => out(Bool()))
     val resets = outputClocks.map(_ => out(Bool()))
@@ -92,7 +97,7 @@ class ClockSelection(inputClock: ClockFrequency, outputClocks: Seq[ClockSpecific
   )
 
   var pll = new ClockingArea(clockDomain = external_clock_domain) {
-    val pll = PLLs(ClockSpecification.fromClock(external_clock_domain), outputClocks)
+    val pll = PLLs(ClockSpecification.fromClock(external_clock_domain), outputClocksWithoutRef)
     assert(pll != null, "Must be able to generate a pll")
   }.pll
   io.pll_lock := pll.lock
@@ -107,35 +112,39 @@ class ClockSelection(inputClock: ClockFrequency, outputClocks: Seq[ClockSpecific
   }
 
   val pll_reset = RegInit(True) clearWhen (pll_count.willOverflow)
+  var clockDomains = pll.ClockDomains
+  if(refClockIsOutput)
+    clockDomains = clockDomains ++ Seq(ClockDomain.current)
 
-  for ((clk, idx) <- pll.ClockDomains.zipWithIndex) {
-    io.clks(idx) := {
-      if (bootstrap) dcs_out.readClockWire else clk.readClockWire
+  for (out_idx <- outputClocks.indices) {
+    val cd = if(out_idx == outputClocksRefIdx) {
+      ClockDomain.current
+    } else if(out_idx < outputClocksRefIdx || outputClocksRefIdx == -1) {
+      pll.ClockDomains(out_idx)
+    } else {
+      pll.ClockDomains(out_idx + 1)
     }
 
-    var name = s"${(clk.frequency.getValue.toDouble / 1e6).round.toInt}mhz"
-    io.resets(idx) := {
+    io.clks(out_idx) := {
+      if (out_idx == 0 && bootstrap) dcs_out.readClockWire else cd.readClockWire
+    }
+
+    var name = s"${(cd.frequency.getValue.toDouble / 1e6).round.toInt}mhz"
+    io.resets(out_idx) := {
       val rawReset = if(bootstrap) reset else pll_reset
-      ClockUtils.createAsyncReset(io.clks(idx), rawReset)
+      ClockUtils.createAsyncReset(io.clks(out_idx), rawReset)
     }.setName(s"rst_sync_${name}", true)
 
-    if (pll.outputSpectifications(idx).phaseOffset != 0) {
-      name += s"_${pll.outputSpectifications(idx).phaseOffset.round}deg"
-    }
-
-    io.clks(idx).setName(s"clk_${name}", true)
-    io.resets(idx).setName(s"clk_${name}_reset", true)
+    io.clks(out_idx).setName(s"clk_${name}", true)
+    io.resets(out_idx).setName(s"clk_${name}_reset", true)
   }
 
-  lazy val ClockDomains = pll.ClockDomains.zipWithIndex.map(cd_idx => {
-    val (cd, idx) = cd_idx
-    new ClockDomain(io.clks(idx), reset = io.resets(idx), frequency = cd.frequency, config = ClockDomain.current.config.copy(resetKind = ASYNC))
-  })
+  lazy val ClockDomains = clockDomains
 }
 
 object ClockSelection {
-  def apply(inputClock: ClockFrequency, outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false, requirePLL : Boolean = true) = {
-    if(!requirePLL && inputClock.getValue == outputClocks.head.freq && outputClocks.size == 1) {
+  def apply(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false, requirePLL : Boolean = true) = {
+    if(!requirePLL && ClockDomain.current.frequency.getValue == outputClocks.head.freq && outputClocks.size == 1) {
       val reset = ResetCtrl.asyncAssertSyncDeassert(
         input = ClockDomain.current.reset,
         clockDomain = ClockDomain.current
@@ -143,7 +152,7 @@ object ClockSelection {
 
       (True, Seq(ClockDomain.current.copy(reset = reset)))
     } else {
-      val selection = new ClockSelection(inputClock, outputClocks, bootstrap)
+      val selection = new ClockSelection(outputClocks, bootstrap)
       (selection.io.pll_lock, selection.ClockDomains)
     }
   }

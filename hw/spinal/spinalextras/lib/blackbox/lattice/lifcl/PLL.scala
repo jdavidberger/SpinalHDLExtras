@@ -1100,7 +1100,7 @@ object PLLConfig {
   }
 
   def valid_frac_vcos(inputClock : ClockSpecification) : Seq[(Rational, Int, Int, Int)] = {
-    val rtn = mutable.ArrayBuffer[(Rational, Int, Int, Int)]()
+    val rtn = mutable.HashSet[(Rational, Int, Int, Int)]()
 
     val valid_clki_div = clki_div_range
       .filter(clki_div => {
@@ -1116,11 +1116,12 @@ object PLLConfig {
           for (clkfb_div <- clkfb_frac_div_range) {
             for (clkfb_frac_value <- 0 until 4096) {
               val vco = phase_clk * Rational(clkfb_frac_value + clkfb_div * 4096, 4096)
-              if ((vco.toDouble Hz) > ((1600 MHz))) {
+              val vco_hz = (vco.toBigDecimal Hz)
+              if (vco_hz > (1600 MHz)) {
                 break
               }
-              if ((vco.toDouble Hz) >= ((800 MHz))) {
-                rtn.append((vco, clki_div, clkfb_div, clkfb_frac_value))
+              if (vco_hz >= (800 MHz)) {
+                rtn.add((vco, clki_div, clkfb_div, clkfb_frac_value))
               }
             }
           }
@@ -1129,7 +1130,7 @@ object PLLConfig {
       }
     }
 
-    rtn.distinct.sortBy[Double](-_._1.toDouble)
+    rtn.toSeq.sortBy[Double](-_._1.toDouble)
   }
 
   // Clk #, idiv, fbdiv, fractional

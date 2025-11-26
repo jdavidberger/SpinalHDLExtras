@@ -204,7 +204,7 @@ trait FormalDataWithEquivalnce[T <: FormalData] extends FormalData {
     //println(s"Looking for single source for ${this.underlyingData}")
     val singleSource = getAssignmentBundle(this.underlyingData)
     if(singleSource.nonEmpty) {
-      println(s"Associating ${singleSource.get.underlyingData} with ${this.underlyingData}")
+      //println(s"Associating ${singleSource.get.underlyingData} with ${this.underlyingData}")
       formalAssertEquivalence(singleSource.get)
     }
 
