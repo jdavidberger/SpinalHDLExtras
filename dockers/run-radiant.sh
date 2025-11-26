@@ -10,6 +10,8 @@ if [ ! -n "$(docker images -q "$RADIANT_IMAGE" 2> /dev/null)" ]; then
 fi
 
 RADIANT_HOSTNAME=$HOSTNAME
+
+RADIANT_BASE=/opt/lattice/radiant/
 for env_file in $HOME/.config/radiant.env $HOME/.config/radiant-$RADIANT_IMAGE.env $SCRIPT_DIR/../radiant.env $SCRIPT_DIR/../radiant-$RADIANT_IMAGE.env; do
   if [ -f $env_file ]; then
     source $env_file
@@ -21,7 +23,7 @@ done
 if [[ ! $FOUND_RADIANT_CONFIG ]]; then
   echo "No radiant config file found. One needs to exist that looks like:"
   echo "export LICENSE_MAC=02:03:04:05:06:07"
-  echo "export DATA_PATH=/path/to/lscc"
+  echo "export RADIANT_BASE=/path/to/lscc"
   exit -1
 fi
 
@@ -41,5 +43,5 @@ $DOCKER_ENGINE run -it --rm \
        -e DISPLAY=$DISPLAY        \
        -h $RADIANT_HOSTNAME \
        -v $HOME/.Xauthority:/home/user/.Xauthority \
-       -v $DATA_PATH:/data \
+       -v $RADIANT_BASE:$RADIANT_BASE \
        $RADIANT_IMAGE $@

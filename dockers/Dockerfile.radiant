@@ -10,9 +10,9 @@ ENV LANG=en_US.UTF-8
 RUN useradd -rm -d /home/user -s /bin/bash -g root -G sudo -u 1000 user
 RUN echo 'user:user' | chpasswd
 
-ARG RADIANT_BASE=/data/lscc/radiant
+ARG RADIANT_BASE=/opt/lattice/radiant/
 
-ENV LM_LICENSE_FILE="/data/license.dat"
+ENV LM_LICENSE_FILE="$RADIANT_BASE/license.dat"
 
 RUN mkdir -p /etc/profile.d
 RUN echo "#!/bin/sh" > entrypoint.sh
