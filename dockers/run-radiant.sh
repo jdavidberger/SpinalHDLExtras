@@ -3,14 +3,14 @@
 DOCKER_ENGINE=${DOCKER_ENGINE:-docker}
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-RADIANT_IMAGE=${RADIANT_IMAGE:-radiant2024.1}
+RADIANT_VERSION=${RADIANT_VERSION:-2024.1}
+RADIANT_IMAGE=${RADIANT_IMAGE:-radiant$RADIANT_VERSION}
 
 if [ ! -n "$(docker images -q "$RADIANT_IMAGE" 2> /dev/null)" ]; then
     $DOCKER_ENGINE build $SCRIPT_DIR -f $SCRIPT_DIR/Dockerfile.radiant --target $RADIANT_IMAGE -t $RADIANT_IMAGE
 fi
 
 RADIANT_HOSTNAME=$HOSTNAME
-
 RADIANT_BASE=/opt/lattice/radiant/
 for env_file in $HOME/.config/radiant.env $HOME/.config/radiant-$RADIANT_IMAGE.env $SCRIPT_DIR/../radiant.env $SCRIPT_DIR/../radiant-$RADIANT_IMAGE.env; do
   if [ -f $env_file ]; then
@@ -20,16 +20,11 @@ for env_file in $HOME/.config/radiant.env $HOME/.config/radiant-$RADIANT_IMAGE.e
   fi
 done
 
-if [[ ! $FOUND_RADIANT_CONFIG ]]; then
-  echo "No radiant config file found. One needs to exist that looks like:"
-  echo "export LICENSE_MAC=02:03:04:05:06:07"
-  echo "export RADIANT_BASE=/path/to/lscc"
-  exit -1
-fi
+LM_LICENSE_FILE="$RADIANT_BASE/$RADIANT_VERSION/license/license.dat"
+LICENSE_MAC=$(grep -m1 -oE 'HOSTID=[0-9a-fA-F]+' "$LM_LICENSE_FILE" | cut -d= -f2)
+LICENSE_MAC=$(echo "$LICENSE_MAC" | sed 's/../&:/g; s/:$//')
 
-if [[ -v LICENSE_MAC ]]; then
-  MAC_OPTION=--mac-address=$LICENSE_MAC
-fi
+MAC_OPTION=--mac-address=$LICENSE_MAC
 
 $DOCKER_ENGINE run -it --rm \
        $MAC_OPTION \
@@ -42,6 +37,8 @@ $DOCKER_ENGINE run -it --rm \
        -v /tmp/.X11-unix:/tmp/.X11-unix \
        -e DISPLAY=$DISPLAY        \
        -h $RADIANT_HOSTNAME \
+       -v $LM_LICENSE_FILE:$LM_LICENSE_FILE \
+       --env LM_LICENSE_FILE=$LM_LICENSE_FILE \
        -v $HOME/.Xauthority:/home/user/.Xauthority \
-       -v $RADIANT_BASE:$RADIANT_BASE \
+       -v $RADIANT_BASE:/opt/lattice/radiant/ \
        $RADIANT_IMAGE $@
