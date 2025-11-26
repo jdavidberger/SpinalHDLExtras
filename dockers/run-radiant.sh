@@ -1,11 +1,12 @@
 #!/bin/bash
 
+DOCKER_ENGINE=${DOCKER_ENGINE:-docker}
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 RADIANT_IMAGE=${RADIANT_IMAGE:-radiant2024.1}
 
 if [ ! -n "$(docker images -q "$RADIANT_IMAGE" 2> /dev/null)" ]; then
-    DOCKER_ENGINE build . -f Dockerfile.radiant --target $RADIANT_IMAGE -t $RADIANT_IMAGE
+    $DOCKER_ENGINE build $SCRIPT_DIR -f $SCRIPT_DIR/Dockerfile.radiant --target $RADIANT_IMAGE -t $RADIANT_IMAGE
 fi
 
 RADIANT_HOSTNAME=$HOSTNAME
@@ -28,7 +29,7 @@ if [[ -v LICENSE_MAC ]]; then
   MAC_OPTION=--mac-address=$LICENSE_MAC
 fi
 
-docker run -it --rm \
+$DOCKER_ENGINE run -it --rm \
        $MAC_OPTION \
        -l \
        -v$HOME/.config/LatticeSemi:/home/user/.config/LatticeSemi \
