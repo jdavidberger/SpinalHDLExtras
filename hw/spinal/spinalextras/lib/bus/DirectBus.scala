@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
+import spinalextras.lib.formal.fillins.EquivalenceRegistry
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalMasterSlave, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
@@ -42,10 +43,13 @@ case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMas
   override def formalIsProducerValid() = new FormalProperties(this) {
     val wasStall = RegNext(isStall) init(False)
     val steadyValid = valid || !wasStall
-    val lastPayload = RegNextWhen(cmd, valid)
-    val payloadInvariant = (lastPayload === cmd) || !wasStall
+    val priorValidPayload = RegNextWhen(cmd, valid)
+    val checkValidPayloadInvariance = Mux(wasStall,
+      EquivalenceRegistry.Check(priorValidPayload, cmd),
+      True)
+
     addFormalProperty(steadyValid, "Valid was not steady")
-    addFormalProperty(payloadInvariant, "Payload was not invariant")
+    addFormalProperty(checkValidPayloadInvariance, "Payload was not invariant")
   }
 
   def write(address: UInt, data: Bits) = {

@@ -5,6 +5,7 @@ import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly, Axi4Shared, Axi4WriteOnly}
 import spinal.lib.{Counter, Fragment, IMasterSlave, Stream}
 import spinal.lib.bus.simple.PipelinedMemoryBus
 import spinal.lib.bus.wishbone.Wishbone
+import spinal.lib.fsm.{StateFsm, StateMachine}
 
 import scala.collection.mutable
 
@@ -73,5 +74,6 @@ package object fillins {
   fillins.AddHandler { case bus: Axi4Shared => Axi4Formal.Axi4SharedFormalExt(bus) }
   fillins.AddHandler { case bus: Axi4ReadOnly => Axi4Formal.Axi4ReadOnlyExt(bus) }
   fillins.AddHandler { case bus: Axi4WriteOnly => Axi4Formal.Axi4WriteOnlyExt(bus) }
-
+  fillins.AddHandler { case fsm: StateMachine => new StateMachineFormal(fsm) }
+  fillins.AddHandler { case fsm: StateFsm[_] => new StateFsmFormal(fsm) }
 }
