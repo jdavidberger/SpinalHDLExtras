@@ -14,3 +14,5 @@ project
 target
 .bsp
 radiant/*/impl_1/
+**/#*
+**/.#*
