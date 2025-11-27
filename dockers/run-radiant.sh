@@ -1,14 +1,16 @@
 #!/bin/bash
 
+set -x
+
 DOCKER_ENGINE=${DOCKER_ENGINE:-docker}
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-RADIANT_VERSION=${RADIANT_VERSION:-2024.1}
+RADIANT_VERSION=${RADIANT_VERSION:-2024.2}
 RADIANT_IMAGE=${RADIANT_IMAGE:-radiant$RADIANT_VERSION}
 
-if [ ! -n "$(docker images -q "$RADIANT_IMAGE" 2> /dev/null)" ]; then
-    $DOCKER_ENGINE build $SCRIPT_DIR -f $SCRIPT_DIR/Dockerfile.radiant --target $RADIANT_IMAGE -t $RADIANT_IMAGE
-fi
+#if [ ! -n "$(docker images -q "$RADIANT_IMAGE" 2> /dev/null)" ]; then
+$DOCKER_ENGINE build --build-arg USER_UID=$(id -u ${USER}) --build-arg GROUP_GID=$(id -g ${USER}) $SCRIPT_DIR -f $SCRIPT_DIR/Dockerfile.radiant --target $RADIANT_IMAGE -t $RADIANT_IMAGE
+#fi
 
 RADIANT_HOSTNAME=$HOSTNAME
 RADIANT_BASE=/opt/lattice/radiant/
@@ -35,10 +37,11 @@ $DOCKER_ENGINE run -it --rm \
        -v`pwd`:`pwd` \
        -w `pwd` \
        -v /tmp/.X11-unix:/tmp/.X11-unix \
-       -e DISPLAY=$DISPLAY        \
        -h $RADIANT_HOSTNAME \
-       -v $LM_LICENSE_FILE:$LM_LICENSE_FILE \
+       -e DISPLAY="$DISPLAY"        \
+       -v `dirname $LM_LICENSE_FILE`:`dirname $LM_LICENSE_FILE` \
        --env LM_LICENSE_FILE=$LM_LICENSE_FILE \
+       --env LIBGL_ALWAYS_SOFTWARE=1 \
        -v $HOME/.Xauthority:/home/user/.Xauthority \
        -v $RADIANT_BASE:/opt/lattice/radiant/ \
        $RADIANT_IMAGE $@
