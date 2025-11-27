@@ -38,8 +38,4 @@ lazy val SpinalHDLExtras = (project in file("."))
     )
   ).dependsOn(vexRiscv)
 
-testOptions in Test ++= Seq(
-  Tests.Argument(TestFrameworks.ScalaTest, "-h", "target/scalatest-html")
-)
-
 fork := true
