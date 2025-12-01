@@ -51,17 +51,12 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
 
   val pll_reset = RegInit(True) clearWhen (pll_count.willOverflow)
   var clockDomains = pll.ClockDomains
-  if(refClockIsOutput)
-    clockDomains = clockDomains ++ Seq(ClockDomain.current)
+  if(refClockIsOutput) {
+    clockDomains = clockDomains.patch(outputClocksRefIdx, Seq(ClockDomain.current), 0)
+  }
 
   for (out_idx <- outputClocks.indices) {
-    val cd = if(out_idx == outputClocksRefIdx) {
-      ClockDomain.current
-    } else if(out_idx < outputClocksRefIdx || outputClocksRefIdx == -1) {
-      pll.ClockDomains(out_idx)
-    } else {
-      pll.ClockDomains(out_idx + 1)
-    }
+    val cd = clockDomains(out_idx)
 
     io.clks(out_idx) := {
       if (out_idx == 0 && bootstrap) dcs_out.readClockWire else cd.readClockWire

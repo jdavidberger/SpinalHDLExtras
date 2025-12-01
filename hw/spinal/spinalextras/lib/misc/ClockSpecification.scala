@@ -20,6 +20,7 @@ case class HertzDeserializer() extends StdDeserializer[HertzNumber](classOf[Hert
 
 case class ClockSpecification(freq: HertzNumber,
                               phaseOffset: Double = 0, tolerance: Double = 0.01) {
+  assert(tolerance < 1, "Tolerance is specified between 0 and 1; 0.5 for instance means 50% tolerance")
   def toClockFrequency() = {
     FixedFrequency(freq)
   }
@@ -34,7 +35,7 @@ object ClockSpecification {
   }
   def removeRedundant(specs : Seq[ClockSpecification]): Seq[ClockSpecification] = {
     val allTolerances = new mutable.HashMap[(HertzNumber, Double), mutable.ArrayBuffer[Double]]()
-    specs.foreach(x => allTolerances.getOrElseUpdate((x.freq, x.phaseOffset), new ArrayBuffer[Double]()).append(x.phaseOffset))
+    specs.foreach(x => allTolerances.getOrElseUpdate((x.freq, x.phaseOffset), new ArrayBuffer[Double]()).append(x.tolerance))
     val minTolerances = allTolerances.mapValues(_.min)
     minTolerances.map(x => ClockSpecification(x._1._1, x._1._2, x._2)).toSeq
   }
