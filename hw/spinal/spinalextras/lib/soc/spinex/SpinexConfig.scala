@@ -263,7 +263,6 @@ object SpinexConfig{
       UartCtrlPlugin(),
 
       OpenCoresI2CPlugin(),
-      //I2CPlugin(),
       SystemRam(),
       new JTagPlugin(),
       PrintAPBMapping()

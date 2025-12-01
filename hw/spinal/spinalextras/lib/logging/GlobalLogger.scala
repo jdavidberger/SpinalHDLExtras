@@ -95,8 +95,6 @@ class GlobalLogger {
         val logger = FlowLogger(signals)
         logger.setName(loggerName)
         logger.add_comments(comments)
-        FlowLoggerCCode(logger, output_path)
-        FlowLoggerSqlite(logger, output_path)
         FlowLoggerYaml(logger, output_path)
         logger.create_logger_port(sysBus, address, depth, outputStream)
 

@@ -338,6 +338,7 @@ module i2c_master_byte_ctrl (
 	                // generate command acknowledge signal
 	                cmd_ack  <= #1 1'b1;
 	            end
+	      default: ;
 
 	      endcase
 	  end

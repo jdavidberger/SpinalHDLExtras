@@ -12,10 +12,11 @@ import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBus
 import spinal.lib.cpu.riscv.debug._
 import spinalextras.lib.Config
 import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
-import spinalextras.lib.clocking.rst_sync
+import spinalextras.lib.clocking.{ClockSelection}
 import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
+import spinalextras.lib.misc.ClockSpecification
 import spinalextras.lib.soc.DeviceTree
 import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
 import vexriscv.ip.InstructionCacheMemBus
@@ -52,7 +53,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       mainClkResetUnbuffered := True
     }
 
-    when(mainClockDomain.readResetWire) {
+    when(mainClockDomain.isResetActive) {
       systemClkResetCounter := 0
       mainClkResetUnbuffered := True
     }
@@ -294,9 +295,9 @@ class SpinexWithClock extends Component {
   noIoPrefix()
   withAutoPull()
 
-  //val clocks = new ClockSelection(ClockDomain.current.frequency, Seq(ClockSpecification(80 MHz)))
-  //val spinexClockDomain = clocks.ClockDomains.last
-  val spinexClockDomain = rst_sync(ClockDomain.current)
+  val clocks = new ClockSelection(Seq(ClockSpecification(100 MHz)))
+  val spinexClockDomain = clocks.ClockDomains.last
+  //val spinexClockDomain = rst_sync(ClockDomain.current)
 
   var connectionArea = new ClockingArea(clockDomain = spinexClockDomain) {
     val som = Spinex(SpinexConfig.default.withPlugins(EventLoggerPlugin()))
@@ -315,7 +316,10 @@ class SpinexWithClock extends Component {
 
 object SpinexWithClock{
   def main(args: Array[String]) {
-    val report = Config.spinal.copy(defaultClockDomainFrequency = FixedFrequency(60 MHz)).generateVerilog(new SpinexWithClock())
+    val report = Config.spinal.copy(
+      targetDirectory = s"hw/gen/SpinexWithClock",
+      defaultClockDomainFrequency = FixedFrequency(60 MHz)
+    ).generateVerilog(new SpinexWithClock())
 
     IPX.generate_ipx(report)
     DeviceTree.generate(report)

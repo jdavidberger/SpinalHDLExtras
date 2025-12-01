@@ -94,7 +94,7 @@ object SignalLogger {
         case v : Vector[Data] =>
           v.map(d => (d.getName(), d))
         case b : Bundle =>
-          b.elements
+          b.elements.map(x => (f"${b.name}_${x._1}", x._2))
         case d : Data =>
           Seq((d.getName(), d))
         case e : Seq[_] =>

@@ -58,9 +58,9 @@ class OSCD(cfg: OSCDConfig) extends BlackBox {
 
   noIoPrefix()
 
-  def hf_clk() = cfg.hf_frequency.map(f => ClockDomain(io.HFCLKOUT, reset = ClockDomain.current.readResetWire, frequency = f))
-  def hf_sed_clk() = cfg.hf_sed_frequency.map(f => ClockDomain(io.HFSDCOUT, reset = ClockDomain.current.readResetWire, frequency = f))
-  def lf_clk() = cfg.lf_frequency.map(f => ClockDomain(io.LFCLKOUT, reset = ClockDomain.current.readResetWire, frequency = f))
+  def hf_clk() = cfg.hf_frequency.map(f => ClockDomain(io.HFCLKOUT, reset = ClockDomain.current.isResetActive, frequency = f))
+  def hf_sed_clk() = cfg.hf_sed_frequency.map(f => ClockDomain(io.HFSDCOUT, reset = ClockDomain.current.isResetActive, frequency = f))
+  def lf_clk() = cfg.lf_frequency.map(f => ClockDomain(io.LFCLKOUT, reset = ClockDomain.current.isResetActive, frequency = f))
   def clocks = Seq(hf_clk(), hf_sed_clk(), lf_clk()).flatten
 
   addPrePopTask( () => {

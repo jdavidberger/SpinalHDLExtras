@@ -73,14 +73,14 @@ case class USB23(GSR: Boolean = false) extends BlackBox {
     // Clocks, resets
     val USB3_MCUCLK         = in Bool() default(ClockDomain.current.readClockWire)
     val USB_SUSPENDCLK      = in Bool() default(ClockDomain.current.readClockWire)
-    val USB3_SYSRSTN        = in Bool() default(~ClockDomain.current.readResetWire)
-    val USB_RESETN          = in Bool() default(~ClockDomain.current.readResetWire)
-    val USB2_RESET          = in Bool() default(ClockDomain.current.readResetWire)
+    val USB3_SYSRSTN        = in Bool() default(~ClockDomain.current.isResetActive)
+    val USB_RESETN          = in Bool() default(~ClockDomain.current.isResetActive)
+    val USB2_RESET          = in Bool() default(ClockDomain.current.isResetActive)
     val INTERRUPT           = out Bool()
 
     // LMMI
     val LMMICLK             = in Bool() default(ClockDomain.current.readClockWire)
-    val LMMIRESETN          = in Bool() default(~ClockDomain.current.readResetWire)
+    val LMMIRESETN          = in Bool() default(~ClockDomain.current.isResetActive)
     val LMMIREQUEST         = in Bool() default(False)
     val LMMIWRRD_N          = in Bool() default(False)
     val LMMIOFFSET          = in Bits(15 bits)

@@ -30,20 +30,11 @@ case class AsyncResetSynchronizer(stages: Int = 3) extends Component {
 }
 
 object ClockUtils {
-  def asSyncReset(clockDomain: ClockDomain): ClockDomain = {
-    if (clockDomain.config.resetKind == ASYNC) {
-      new ClockDomain(clock = clockDomain.readClockWire,
-        reset = rst_sync(clockDomain.readClockWire, clockDomain.readResetWire),
-        config = clockDomain.config.copy(resetKind = SYNC), frequency = clockDomain.frequency)
-    } else {
-      clockDomain
-    }
-  }
 
   def asAsyncReset(clockDomain: ClockDomain): ClockDomain = {
     if (clockDomain.config.resetKind == SYNC) {
       clockDomain.copy(
-        reset = BufferCC(clockDomain.readResetWire),
+        reset = BufferCC(clockDomain.isResetActive),
         config = clockDomain.config.copy(resetKind = ASYNC))
     } else {
       clockDomain

@@ -106,8 +106,8 @@ class byte2pixel(cfg : MIPIConfig, enable_misc_signals : Boolean = true, byte_cd
 
     if(pixel_cd != null) {
       io.clk_pixel_i := pixel_cd.readClockWire
-      io.reset_pixel_n_i := ~pixel_cd.readResetWire
-      io.reset_byte_n_i := ~pixel_cd.readResetWire
+      io.reset_pixel_n_i := ~pixel_cd.isResetActive
+      io.reset_byte_n_i := ~pixel_cd.isResetActive
     }
   }
 

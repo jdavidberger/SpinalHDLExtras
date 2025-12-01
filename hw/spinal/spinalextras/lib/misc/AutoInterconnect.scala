@@ -6,7 +6,7 @@ import spinal.lib.{IMasterSlave, growableAnyPimped}
 import scala.collection.mutable
 
 object AutoInterconnect {
-  def buildInterconnect(components_iterable: Iterable[Component], io : Bundle, renames: Map[String, String] = Map.empty, include_used_outputs : Boolean = true): Unit = {
+  def buildInterconnect(components_iterable: Iterable[Component], io : Bundle, renames: Map[String, String] = Map.empty, externalSignals : Seq[Data] = Seq.empty, include_used_outputs : Boolean = true): Unit = {
     val unhandled_ios = new mutable.HashMap[String, Data]()
     val components = components_iterable.toSeq.filter(_ != null)
     for (c <- components) {
@@ -38,6 +38,10 @@ object AutoInterconnect {
           unhandled_ios.addRet(name, io)
         }
       }
+    }
+
+    for(s <- externalSignals) {
+      unhandled_ios.addRet((s.name, s))
     }
 
     for (unhandled_io <- unhandled_ios.toList.sortBy(_._1).map(_._2)) {

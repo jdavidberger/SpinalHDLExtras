@@ -45,12 +45,17 @@ def create_union_view(conn, view_name, sources):
     # 1. Get all columns for each table/view
     cur = conn.cursor()
     for table in sources:
-        cur.execute(f"PRAGMA table_info('{table}')")
+        try:
+            cur.execute(f"PRAGMA table_info('{table}')")
+        except:
+            continue
         cols = [row[1] for row in cur.fetchall()]  # row[1] is column name
         all_cols = all_cols + cols
         cols_per_table[table] = set(cols)
 
     all_cols = [*dict.fromkeys(all_cols)]  # deterministic order
+    if len(all_cols) == 0:
+        return
 
     # 2. Build SELECTs for each table/view
     selects = []

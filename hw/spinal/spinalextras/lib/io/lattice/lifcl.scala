@@ -69,7 +69,7 @@ case class LatticeDelayController(var static_delay : TimeNumber) extends Compone
 
   io.COARSE0 := False
   io.COARSE1 := target.msb
-  io.LOAD_N := ~ClockDomain.current.readResetWire
+  io.LOAD_N := ~ClockDomain.current.isResetActive
   io.DIRECTION := direction
   io.MOVE := move
 
@@ -123,7 +123,7 @@ case class LatticeDelay(var static_delay : TimeNumber) extends Component {
 
   delay_block.io.COARSE0 := False
   delay_block.io.COARSE1 := target.msb
-  delay_block.io.LOAD_N := ~ClockDomain.current.readResetWire
+  delay_block.io.LOAD_N := ~ClockDomain.current.isResetActive
   delay_block.io.DIRECTION := RegNext(current_delay > target.resize(7 bits)) init(False)
 
   val needs_change = RegNext(current_delay =/= target.resize(7 bits))
@@ -163,7 +163,7 @@ class LatticeODDR(reqs : DDRRequirements) extends ODDR(reqs) with ComponentWithK
     case 2 => {
       val oddr = ODDRX1()
       oddr.io.SCLK := io.ECLK
-      oddr.io.RST := ClockDomain.current.readResetWire
+      oddr.io.RST := ClockDomain.current.isResetActive
       (oddr.io.Q, oddr.io.D) // 3
     }
     case 4 => {

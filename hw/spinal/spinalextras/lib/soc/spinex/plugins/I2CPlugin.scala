@@ -1,39 +1,34 @@
 package spinalextras.lib.soc.spinex.plugins
 
-import spinal.core.{Analog, Bool, IntToBuilder, inout, when}
+import spinal.core.{Analog, Bool, CombInit, IntToBuilder, inout}
 import spinal.lib.bus.misc.SizeMapping
-import spinal.lib.com.i2c.{I2cSlaveGenerics, I2cSlaveIo, I2cSlaveMemoryMappedGenerics}
-import spinal.lib.io.{InOutWrapper, ReadableOpenDrain, TriState}
-import spinal.lib.{master, slave}
+import spinal.lib.bus.wishbone.Wishbone
 import spinalextras.lib.blackbox.opencores.i2c_master_top
+import spinalextras.lib.peripherals.i2c.I2cMaster
 import spinalextras.lib.soc.DeviceTree
-import spinalextras.lib.soc.peripherals.{I2cOpencoresCompat, SpinexI2cCtrl}
 import spinalextras.lib.soc.spinex.{Spinex, SpinexRegisterFilePlugin}
 
 import scala.language.postfixOps
 
 case class I2CPlugin(mapping: SizeMapping = SizeMapping(0xe0005000L, 32 Bytes), name: String = "i2c0") extends SpinexRegisterFilePlugin(name, mapping) {
-//  lazy val scl = inout(Analog(Bool()))
-//  lazy val sda = inout(Analog(Bool()))
-  lazy val sda = slave (ReadableOpenDrain(Bool()))
-  lazy val scl = slave (ReadableOpenDrain(Bool()))
+  lazy val scl = inout(Analog(Bool()))
+  lazy val sda = inout(Analog(Bool()))
 
   override val compatible: Seq[String] = Seq("spinex,i2c", "opencores,i2c")
 
   override def apply(som: Spinex): Unit = {
-    val io = new I2cSlaveIo(I2cSlaveGenerics())
-
-    I2cOpencoresCompat.driveI2cSlaveIo(
-      io,
-      busCtrl = som.interconnect.add_slave_factory(name, mapping, false, false),
-      0
-    )(I2cSlaveMemoryMappedGenerics(io.g))
-
-    sda <> io.i2c.sda
-    scl <> io.i2c.scl
+    val i2cCtrl = new I2cMaster()
+    i2cCtrl.attachi2c(scl, sda)
 
     som.io.valCallback(scl, s"${name}_scl")
     som.io.valCallback(sda, s"${name}_sda")
+
+    som.system.addInterrupt(CombInit(i2cCtrl.io.interrupt).setName("i2c_int", weak = true), 3)
+
+    val wb32 = new Wishbone(i2cCtrl.io.wb.config.copy(dataWidth = 32))
+    wb32.connectTo(i2cCtrl.io.wb, allowDataResize = true, allowAddressResize = true)
+
+    som.add_slave(wb32, name, mapping, "dBus")
   }
 
   override def appendDeviceTree(dt: DeviceTree): Unit = {

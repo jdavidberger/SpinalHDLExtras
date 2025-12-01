@@ -1,8 +1,7 @@
 package spinalextras.lib.formal
 
-import spinal.core.internals.{AssertStatement, AssertStatementKind}
-import spinal.core.{Bool, Component, DslScopeStack, ScopeProperty, SpinalTag, True, cover, in, when}
-import spinalextras.lib.formal.ComponentWithFormalProperties.DefaultProperties
+import spinal.core.internals.AssertStatementKind
+import spinal.core.{Bool, Component, SpinalTag, True, cover, when}
 
 import scala.collection.mutable
 

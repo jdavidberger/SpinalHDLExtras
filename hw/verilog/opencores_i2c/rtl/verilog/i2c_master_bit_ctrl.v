@@ -354,6 +354,9 @@ module i2c_master_bit_ctrl (
           al <= #1 (sda_chk & ~sSDA & sda_oen) | (|c_state & sto_condition & ~cmd_stop);
 
 
+    initial begin
+        dout = 0;
+    end
     // generate dout signal (store SDA on rising edge of SCL)
     always @(posedge clk)
       if (sSCL & ~dSCL) dout <= #1 sSDA;
@@ -565,6 +568,7 @@ module i2c_master_bit_ctrl (
                         sda_chk <= #1 1'b0; // don't check SDA output (SCL low)
                     end
 
+                    default: ;
               endcase
       end
 

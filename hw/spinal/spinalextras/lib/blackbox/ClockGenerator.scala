@@ -11,7 +11,7 @@ class ClockGenerator(freqHz: HertzNumber, phaseNs: Double = 0.0) extends BlackBo
 
   // Define IO
   val io = new Bundle {
-    val async_reset = in Bool() default(ClockDomain.current.readResetWire)
+    val async_reset = in Bool() default(ClockDomain.current.isResetActive)
     val clk = out Bool()
   }
 

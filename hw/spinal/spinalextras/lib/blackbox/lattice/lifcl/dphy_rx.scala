@@ -365,20 +365,20 @@ class dphy_rx(cfg : MIPIConfig,
 
   def attachClockDomains(sync_cd: ClockDomain, byte_cd: ClockDomain): Unit = {
     if(sync_cd != null) {
-      io.reset_n_i := ~sync_cd.readResetWire
+      io.reset_n_i := ~sync_cd.isResetActive
       io.sync_clk_i := sync_cd.readClockWire
-      io.sync_rst_i := sync_cd.readResetWire
+      io.sync_rst_i := sync_cd.isResetActive
     }
 
     if(byte_cd != null) {
-      io.reset_byte_fr_n_i := ~byte_cd.readResetWire
+      io.reset_byte_fr_n_i := ~byte_cd.isResetActive
       io.clk_byte_fr_i := byte_cd.readClockWire
       if(io.clk_lp_ctrl_i != null)
         io.clk_lp_ctrl_i := byte_cd.readClockWire
       if(io.reset_lp_n_i != null)
-        io.reset_lp_n_i := ~byte_cd.readResetWire
+        io.reset_lp_n_i := ~byte_cd.isResetActive
     } else {
-      io.reset_byte_fr_n_i := ~AsyncToSyncReset(io.clk_byte_hs_o, sync_cd.readResetWire)
+      io.reset_byte_fr_n_i := ~AsyncToSyncReset(io.clk_byte_hs_o, sync_cd.isResetActive)
       io.clk_byte_fr_i := io.clk_byte_hs_o
     }
   }

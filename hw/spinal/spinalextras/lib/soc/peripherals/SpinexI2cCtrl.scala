@@ -7,338 +7,323 @@ import spinal.lib.bus.misc.{BusSlaveFactory, BusSlaveFactoryAddressWrapper}
 import spinal.lib.com.i2c._
 import spinal.lib.fsm._
 
-/**
- * Drop-in replacement for driveI2cSlaveIo that generates OpenCores I2C-compatible
- * registers which work with the Linux i2c-ocores.c driver without any C code changes.
- *
- * Register Map (OpenCores I2C compatible):
- * 0x00 - PRERlo   (Prescaler Low Byte)  - R/W
- * 0x01 - PRERhi   (Prescaler High Byte) - R/W
- * 0x02 - CTR      (Control Register)    - R/W
- * 0x03 - TXR/RXR  (TX Data / RX Data)   - W/R (same address)
- * 0x04 - CR/SR    (Command / Status)    - W/R (same address)
- *
- * Compatible with: sifive,i2c0, opencores,i2c-ocores
- */
 object I2cOpencoresCompat {
 
-  def driveI2cSlaveIo(io: I2cSlaveIo, busCtrl: BusSlaveFactory, baseAddress: BigInt)
-                     (generics: I2cSlaveMemoryMappedGenerics) = new Area {
+  /**
+   * Drop-in replacement for driveI2cSlaveIo that generates an OpenCores I2C compatible register map.
+   * This is compatible with the Linux i2c-ocores driver used by SiFive FU540/FU740 SoCs.
+   *
+   * Compatible string: "sifive,fu540-c000-i2c", "sifive,i2c0"
+   *
+   * Register Map (OpenCores I2C specification):
+   * 0x00 - PRESCALER_LO (R/W) : Clock prescaler low byte
+   * 0x04 - PRESCALER_HI (R/W) : Clock prescaler high byte
+   * 0x08 - CONTROL      (R/W) : Control register
+   *        bit 7: EN  - Core enable
+   *        bit 6: IEN - Interrupt enable
+   * 0x0C - DATA         (R/W) : Transmit/Receive data
+   * 0x10 - CMD/STATUS   (W/R) : Command (write) / Status (read)
+   *        Command bits (write):
+   *          bit 7: STA  - Generate START condition
+   *          bit 6: STO  - Generate STOP condition
+   *          bit 5: RD   - Read from slave
+   *          bit 4: WR   - Write to slave
+   *          bit 3: ACK  - Acknowledge (0 = ACK, 1 = NACK)
+   *          bit 0: IACK - Interrupt acknowledge
+   *        Status bits (read):
+   *          bit 7: RxACK - Received acknowledge from slave
+   *          bit 6: BUSY  - Bus busy
+   *          bit 5: AL    - Arbitration lost
+   *          bit 1: TIP   - Transfer in progress
+   *          bit 0: IF    - Interrupt flag
+   *
+   * Usage: Simply replace the driveI2cSlaveIo call with this function to generate
+   * SiFive-compatible I2C hardware that works with the standard Linux i2c-ocores driver.
+   */
+  def driveI2cSlaveIo(io: I2cSlaveIo, busCtrl: BusSlaveFactory, baseAddress: BigInt)(generics: I2cSlaveMemoryMappedGenerics) = new Area {
 
     import generics._
     import io._
 
     val busCtrlWithOffset = new BusSlaveFactoryAddressWrapper(busCtrl, baseAddress)
 
-    // I2C buffer
+    // I2C buffer to interface with physical pins
     val i2cBuffer = I2c()
-    i2cBuffer <> io.i2c
+    i2cBuffer <> i2c
 
-    // Prescaler Register (0x00 and 0x01)
-    // prescaler = (input_clock_freq / (5 * desired_scl_freq)) - 1
-    val prescalerLo = Reg(UInt(8 bits)) init(0xFF)
-    val prescalerHi = Reg(UInt(8 bits)) init(0xFF)
-    val prescaler = prescalerHi @@ prescalerLo
+    // =========================================================================
+    // REGISTER 0x00 - PRESCALER LOW (bits 7:0)
+    // =========================================================================
+    val prescalerLow = busCtrlWithOffset.createReadAndWrite(Bits(8 bits), address = 0x00, bitOffset = 0) init(0)
 
-    busCtrlWithOffset.write(prescalerLo, address = 0x00, bitOffset = 0)
-    busCtrlWithOffset.read(prescalerLo,  address = 0x00, bitOffset = 0)
+    // =========================================================================
+    // REGISTER 0x04 - PRESCALER HIGH (bits 15:8)
+    // =========================================================================
+    val prescalerHigh = busCtrlWithOffset.createReadAndWrite(Bits(8 bits), address = 0x04, bitOffset = 0) init(0)
 
-    busCtrlWithOffset.write(prescalerHi, address = 0x01, bitOffset = 0)
-    busCtrlWithOffset.read(prescalerHi,  address = 0x01, bitOffset = 0)
+    // Combined 16-bit prescaler value
+    val prescaler = prescalerHigh ## prescalerLow
 
-    // Control Register (0x02)
-    // Bit 7: EN  - Core Enable
-    // Bit 6: IEN - Interrupt Enable
-    val coreEnable = RegInit(False)
-    val interruptEnable = RegInit(False)
+    // =========================================================================
+    // REGISTER 0x08 - CONTROL
+    // =========================================================================
+    val control = new Area {
+      val enable = busCtrlWithOffset.createReadAndWrite(Bool(), address = 0x08, bitOffset = 7) init(False)  // EN
+      val intEnable = busCtrlWithOffset.createReadAndWrite(Bool(), address = 0x08, bitOffset = 6) init(False) // IEN
+    }
 
-    busCtrlWithOffset.read(interruptEnable, address = 0x02, bitOffset = 6)
-    busCtrlWithOffset.read(coreEnable,      address = 0x02, bitOffset = 7)
-    busCtrlWithOffset.write(interruptEnable, address = 0x02, bitOffset = 6)
-    busCtrlWithOffset.write(coreEnable,      address = 0x02, bitOffset = 7)
-
-    // Transmit Register (0x03 write)
+    // =========================================================================
+    // REGISTER 0x0C - TRANSMIT/RECEIVE DATA
+    // =========================================================================
     val txData = Reg(Bits(8 bits))
-    busCtrlWithOffset.write(txData, address = 0x03, bitOffset = 0)
-
-    // Receive Register (0x03 read)
     val rxData = Reg(Bits(8 bits))
-    busCtrlWithOffset.read(rxData, address = 0x03, bitOffset = 0)
 
-    // Command Register (0x04 write)
-    // Bit 7: STA  - Generate START condition
-    // Bit 6: STO  - Generate STOP condition
-    // Bit 5: RD   - Read from slave
-    // Bit 4: WR   - Write to slave
-    // Bit 3: ACK  - ACK/NACK to be sent (0=ACK, 1=NACK)
-    // Bit 0: IACK - Interrupt acknowledge
-    val cmdStart = RegNext(False) init(False)
-    val cmdStop  = RegNext(False) init(False)
-    val cmdRead  = RegNext(False) init(False)
-    val cmdWrite = RegNext(False) init(False)
-    val cmdAck   = RegNext(True) init(True)  // Default to NACK
-    val cmdIack  = RegNext(False) init(False)
+    busCtrlWithOffset.write(txData, address = 0x0C, bitOffset = 0)
+    busCtrlWithOffset.read(rxData, address = 0x0C, bitOffset = 0)
 
-    busCtrlWithOffset.write(0x04,
-      0 -> cmdIack,
-      3 -> cmdAck,
-      4 -> cmdWrite,
-      5 -> cmdRead,
-      6 -> cmdStop,
-      7 -> cmdStart
-    )
+    // =========================================================================
+    // REGISTER 0x10 - COMMAND (Write) / STATUS (Read)
+    // =========================================================================
 
-    // Status Register (0x04 read)
-    // Bit 7: RxACK - Received ACK from slave (0=ACK, 1=NACK)
-    // Bit 6: Busy  - Bus busy
-    // Bit 5: AL    - Arbitration lost
-    // Bit 1: TIP   - Transfer in progress
-    // Bit 0: IF    - Interrupt flag
-    val statusRxAck = Reg(Bool()) init(False)
-    val statusBusy  = Reg(Bool()) init(False)
-    val statusAL    = Reg(Bool()) init(False)
-    val statusTIP   = Reg(Bool()) init(False)
-    val statusIF    = Reg(Bool()) init(False)
+    // Command register (write-only)
+    val cmd = new Area {
+      val cr = busCtrl.createWriteOnly(Bits(8 bits), 0x10, documentation = "CR reg")
 
-    busCtrlWithOffset.read(
-      address = 0x04,
-      0 -> statusIF,
-      1 -> statusTIP,
-      5 -> statusAL,
-      6 -> statusBusy,
-      7 -> statusRxAck
-    )
+      val start = cr(7)  // STA - Generate START
+      val stop = cr(6)   // STO - Generate STOP
+      val read = cr(5)   // RD  - Read from slave
+      val write = cr(4)  // WR  - Write to slave
+      val ack = cr(3)    // ACK - Send ACK (0) or NACK (1)
+      val iack = cr(0)   // IACK - Interrupt acknowledge
+    }
+
+    // Status register (read-only)
+    val status = new Area {
+      val rxAck = RegInit(False)           // RxACK - Received ACK from slave (bit 7)
+      val busy = RegInit(False)            // BUSY  - Bus busy (bit 6)
+      val arbLost = RegInit(False)         // AL    - Arbitration lost (bit 5)
+      val transferInProgress = RegInit(False) // TIP - Transfer in progress (bit 1)
+      val interruptFlag = RegInit(False)   // IF    - Interrupt pending (bit 0)
+
+      busCtrlWithOffset.read(
+        rxAck ## busy ## arbLost ## B"00" ## transferInProgress ## interruptFlag,
+        address = 0x10,
+        bitOffset = 0
+      )
+    }
 
     // Clear interrupt flag on IACK
-    when(cmdIack) {
-      statusIF := False
+    when(cmd.iack) {
+      status.interruptFlag := False
     }
 
-    // Sampling clock divider (derived from prescaler)
-    io.config.samplingClockDivider := prescaler.resized
-    io.config.timeout := 0  // Disable timeout for compatibility
-    io.config.tsuData := 0
+    // =========================================================================
+    // STATE MACHINE - I2C Core Logic
+    // =========================================================================
 
-    // Clock generation for master mode
-    val clockGen = genMaster generate new Area {
-      val counter = Reg(UInt(16 bits)) init(0)
-      val sclTick = counter === 0
-
-      when(coreEnable && (statusTIP || cmdStart || cmdRead || cmdWrite)) {
-        counter := counter - 1
-        when(sclTick) {
-          counter := prescaler
-        }
-      } otherwise {
-        counter := prescaler
-      }
-    }
-
-    // Data shift register
-    val shiftReg = Reg(Bits(8 bits))
     val bitCounter = Reg(UInt(3 bits)) init(0)
-    val inAckState = RegInit(False)
+    val shiftReg = Reg(Bits(8 bits))
+    val receivedAck = Reg(Bool())
 
-    // FSM for I2C transactions
+    // Connect sampling clock divider from prescaler
+    config.samplingClockDivider := prescaler.asUInt
+
+    // I2C bus state tracking
+    val frameReset = False
+
+    // FSM states
     val fsm = new StateMachine {
-      val IDLE: State = new State with EntryPoint {
-        whenIsActive {
-          statusTIP := False
-          statusBusy := False
-          bitCounter := 0
-          inAckState := False
+      val IDLE = new State with EntryPoint
+      val START = new State
+      val ADDRESS = new State
+      val DATA = new State
+      val ACK = new State
+      val STOP = new State
 
-          when(cmdStart && coreEnable) {
-            statusBusy := True
-            statusTIP := True
+      IDLE.whenIsActive {
+        status.busy := False
+        status.transferInProgress := False
+
+        when(control.enable) {
+          when(cmd.start) {
             goto(START)
           }
         }
       }
 
-      val START: State = new State {
-        whenIsActive {
-          // Generate START condition
-          i2cBuffer.sda.write := False
-          i2cBuffer.scl.write := True
+      START.whenIsActive {
+        status.busy := True
+        status.transferInProgress := True
 
-          when(cmdWrite) {
+        // Generate START condition via low-level interface
+        // Map to I2cSlaveCmdMode.START
+        when(internals.inFrame) {
+          when(cmd.write) {
             shiftReg := txData
-            goto(WRITE_DATA)
-          } elsewhen (cmdRead) {
-            goto(READ_DATA)
-          } otherwise {
-            goto(IDLE)
-          }
-        }
-      }
-
-      val WRITE_DATA: State = new State {
-        onEntry {
-          bitCounter := 0
-        }
-
-        whenIsActive {
-          // Clock out data bits
-          i2cBuffer.sda.write := shiftReg(7)
-          i2cBuffer.scl.write := False
-
-          when(genMaster.mux(clockGen.sclTick, True)) {
-            i2cBuffer.scl.write := True
-            shiftReg := shiftReg(6 downto 0) ## B"0"
-            bitCounter := bitCounter + 1
-
-            when(bitCounter === 7) {
-              goto(RECV_ACK)
-            }
-          }
-        }
-      }
-
-      val READ_DATA: State = new State {
-        onEntry {
-          bitCounter := 0
-        }
-
-        whenIsActive {
-          i2cBuffer.sda.write := True  // Release SDA
-          i2cBuffer.scl.write := False
-
-          when(genMaster.mux(clockGen.sclTick, True)) {
-            i2cBuffer.scl.write := True
-            shiftReg := shiftReg(6 downto 0) ## (internals.sdaRead ? B"1" | B"0")
-            bitCounter := bitCounter + 1
-
-            when(bitCounter === 7) {
-              rxData := shiftReg
-              goto(SEND_ACK)
-            }
-          }
-        }
-      }
-
-      val RECV_ACK: State = new State {
-        whenIsActive {
-          i2cBuffer.sda.write := True  // Release SDA
-          i2cBuffer.scl.write := False
-
-          when(genMaster.mux(clockGen.sclTick, True)) {
-            i2cBuffer.scl.write := True
-            statusRxAck := internals.sdaRead  // 0=ACK, 1=NACK
-            statusIF := True
-            statusTIP := False
-            goto(CMD_WAIT)
-          }
-        }
-      }
-
-      val SEND_ACK: State = new State {
-        whenIsActive {
-          i2cBuffer.sda.write := cmdAck  // Send ACK/NACK
-          i2cBuffer.scl.write := False
-
-          when(genMaster.mux(clockGen.sclTick, True)) {
-            i2cBuffer.scl.write := True
-            statusIF := True
-            statusTIP := False
-            goto(CMD_WAIT)
-          }
-        }
-      }
-
-      val CMD_WAIT: State = new State {
-        whenIsActive {
-          when(cmdStop) {
-            goto(STOP)
-          } elsewhen (cmdStart) {
-            goto(START)
-          } elsewhen (cmdWrite) {
-            shiftReg := txData
-            statusTIP := True
-            goto(WRITE_DATA)
-          } elsewhen (cmdRead) {
-            statusTIP := True
-            goto(READ_DATA)
-          }
-        }
-      }
-
-      val STOP: State = new State {
-        whenIsActive {
-          // Generate STOP condition
-          i2cBuffer.sda.write := False
-          i2cBuffer.scl.write := True
-
-          when(genMaster.mux(clockGen.sclTick, True)) {
-            i2cBuffer.sda.write := True
-            statusIF := True
-            goto(IDLE)
-          }
-        }
-      }
-    }
-
-    // Slave mode handling (simplified - monitors bus for slave operations)
-    val slaveLogic = new Area {
-      when(!Bool(genMaster) || !statusBusy) {
-        // Monitor for START condition
-        when(bus.cmd.kind === I2cSlaveCmdMode.START) {
-          statusBusy := True
-          statusIF := True
-        }
-
-        // Monitor for data
-        when(bus.cmd.kind === I2cSlaveCmdMode.READ) {
-          when(!inAckState) {
-            rxData := bus.cmd.data ## rxData(7 downto 1)
-            bitCounter := bitCounter + 1
-
-            when(bitCounter === 7) {
-              inAckState := True
-              statusIF := True
-            }
-          } otherwise {
-            statusRxAck := bus.cmd.data
-            inAckState := False
             bitCounter := 0
+            goto(ADDRESS)
+          } elsewhen(cmd.read) {
+            bitCounter := 0
+            goto(DATA)
+          } elsewhen(cmd.stop) {
+            goto(STOP)
           }
         }
+      }
 
-        // Monitor for STOP
-        when(bus.cmd.kind === I2cSlaveCmdMode.STOP) {
-          statusBusy := False
-          statusIF := True
-          inAckState := False
-        }
+      ADDRESS.whenIsActive {
+        status.transferInProgress := True
 
-        // Provide ACK/data when requested
-        when(bus.cmd.kind === I2cSlaveCmdMode.DRIVE) {
-          when(inAckState) {
-            bus.rsp.valid := True
-            bus.rsp.enable := True
-            bus.rsp.data := !cmdAck  // Inverted: 0=ACK
-          } otherwise {
-            bus.rsp.valid := cmdWrite
-            bus.rsp.enable := cmdWrite
-            bus.rsp.data := shiftReg(7)
-            when(bus.rsp.valid) {
-              shiftReg := shiftReg(6 downto 0) ## B"0"
-            }
-          }
+        // Shift out address/data bits
+        when(bitCounter === 7) {
+          bitCounter := 0
+          goto(ACK)
         } otherwise {
-          bus.rsp.valid := False
-          bus.rsp.enable := False
-          bus.rsp.data := False
+          bitCounter := bitCounter + 1
+        }
+      }
+
+      DATA.whenIsActive {
+        status.transferInProgress := True
+
+        // Shift in/out data bits
+        when(cmd.read) {
+          when(bitCounter === 7) {
+            rxData := shiftReg
+            bitCounter := 0
+            goto(ACK)
+          } otherwise {
+            bitCounter := bitCounter + 1
+          }
+        } elsewhen(cmd.write) {
+          when(bitCounter === 7) {
+            bitCounter := 0
+            goto(ACK)
+          } otherwise {
+            bitCounter := bitCounter + 1
+          }
+        }
+      }
+
+      ACK.whenIsActive {
+        status.transferInProgress := True
+
+        // Handle ACK/NACK phase
+        status.rxAck := receivedAck
+        status.interruptFlag := True
+
+        when(cmd.write) {
+          shiftReg := txData
+          bitCounter := 0
+          goto(DATA)
+        } elsewhen(cmd.read) {
+          bitCounter := 0
+          goto(DATA)
+        } elsewhen(cmd.stop) {
+          goto(STOP)
+        } otherwise {
+          goto(IDLE)
+        }
+      }
+
+      STOP.whenIsActive {
+        status.transferInProgress := True
+
+        // Generate STOP condition
+        when(!internals.inFrame) {
+          status.interruptFlag := True
+          goto(IDLE)
         }
       }
     }
 
-    // Interrupt output
-    val interrupt = statusIF && interruptEnable
+    // =========================================================================
+    // LOW-LEVEL I2C INTERFACE MAPPING
+    // =========================================================================
 
-    // Build FSM
-    if(genMaster) {
-      fsm.build()
+    // Map OpenCores commands to I2cSlaveIo bus interface
+    val inAckState = fsm.isActive(fsm.ACK)
+
+    when(fsm.isActive(fsm.START)) {
+      // Assert START condition
+      i2cBuffer.scl.write := True
+      i2cBuffer.sda.write := False
+    } elsewhen(fsm.isActive(fsm.STOP)) {
+      // Assert STOP condition
+      i2cBuffer.scl.write := True
+      i2cBuffer.sda.write := True
+    } elsewhen(fsm.isActive(fsm.ADDRESS) || fsm.isActive(fsm.DATA)) {
+      // Drive SDA with current bit during address/data phases
+      when(!inAckState) {
+        val currentBit = shiftReg(7 - bitCounter)
+        bus.rsp.valid := True
+        bus.rsp.enable := True
+        bus.rsp.data := currentBit
+      }
+    } elsewhen(inAckState) {
+      // Release SDA to receive ACK in master mode, or drive ACK in slave mode
+      bus.rsp.valid := True
+      bus.rsp.enable := cmd.ack  // Drive NACK if cmd.ack is set
+      bus.rsp.data := cmd.ack
+    } otherwise {
+      // Idle - release bus
+      bus.rsp.valid := False
+      bus.rsp.enable := False
+      bus.rsp.data := True
+    }
+
+    // Capture received bits
+    when(bus.cmd.kind === I2cSlaveCmdMode.READ) {
+      when(fsm.isActive(fsm.DATA) || fsm.isActive(fsm.ADDRESS)) {
+        shiftReg := shiftReg(6 downto 0) ## bus.cmd.data
+      } elsewhen(inAckState) {
+        receivedAck := bus.cmd.data
+      }
+    }
+
+    // Handle START/STOP/DROP events from low-level interface
+    when(bus.cmd.kind === I2cSlaveCmdMode.START) {
+      frameReset := True
+    }
+    when(bus.cmd.kind === I2cSlaveCmdMode.STOP) {
+      frameReset := True
+    }
+    when(bus.cmd.kind === I2cSlaveCmdMode.DROP) {
+      frameReset := True
+      status.arbLost := True
+      status.interruptFlag := True
+    }
+
+    when(frameReset) {
+      bitCounter := 0
+    }
+
+    // =========================================================================
+    // INTERRUPT OUTPUT
+    // =========================================================================
+
+    // Generate interrupt when enabled and flag is set
+    val interrupt = status.interruptFlag && control.intEnable
+
+    // Expose status for monitoring
+    busCtrlWithOffset.read(
+      internals.inFrame ## internals.sdaRead ## internals.sclRead,
+      address = 0x14, // Additional status register (optional)
+      bitOffset = 0
+    )
+
+    // Timeout handling
+    val timeoutClear = RegNext(False)
+    config.timeoutClear := timeoutClear
+    config.timeout := 0xFFFF // Set reasonable default
+    config.tsuData := 1 // Setup time
+
+    // Override controls (for debugging/testing)
+    val slaveOverride = new Area {
+      val sda = busCtrlWithOffset.createReadAndWrite(Bool(), 0x18, 1) init(True)
+      val scl = busCtrlWithOffset.createReadAndWrite(Bool(), 0x18, 2) init(True)
+      i2cBuffer.sda.write clearWhen(!sda)
+      i2cBuffer.scl.write clearWhen(!scl)
     }
   }
 }

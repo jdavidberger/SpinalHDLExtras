@@ -10,7 +10,7 @@ class AsyncToSyncReset extends Component {
 
   assert(ClockDomain.current.config.resetKind == ASYNC)
   io.sync_reset.setAsReg()
-  io.sync_reset := BufferCC(ClockDomain.current.readResetWire)
+  io.sync_reset := BufferCC(ClockDomain.current.isResetActive)
 }
 
 object AsyncToSyncReset {

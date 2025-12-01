@@ -154,10 +154,6 @@ module i2c_master_top(
 	// generate wishbone signals
 	wire wb_wacc = wb_we_i & wb_ack_o;
 
-	// generate acknowledge output signal
-	always @(posedge wb_clk_i)
-	  wb_ack_o <= #1 wb_cyc_i & wb_stb_i & ~wb_ack_o; // because timing is always honored
-
 	// assign DAT_O
 	always @(posedge wb_clk_i)
 	begin
@@ -180,14 +176,20 @@ module i2c_master_top(
 	        prer <= #1 16'hffff;
 	        ctr  <= #1  8'h0;
 	        txr  <= #1  8'h0;
+	        wb_ack_o <= 1'b0;
 	    end
 	  else if (wb_rst_i)
 	    begin
 	        prer <= #1 16'hffff;
 	        ctr  <= #1  8'h0;
 	        txr  <= #1  8'h0;
+	        wb_ack_o <= 1'b0;
 	    end
 	  else
+	  begin
+	  	// generate acknowledge output signal
+      	wb_ack_o <= #1 wb_cyc_i & wb_stb_i & ~wb_ack_o; // because timing is always honored
+      	
 	    if (wb_wacc)
 	      case (wb_adr_i) // synopsys parallel_case
 	         3'b000 : prer [ 7:0] <= #1 wb_dat_i;
@@ -196,6 +198,7 @@ module i2c_master_top(
 	         3'b011 : txr         <= #1 wb_dat_i;
 	         default: ;
 	      endcase
+	  end
 
 	// generate command register (special case)
 	always @(posedge wb_clk_i or negedge rst_i)

@@ -29,7 +29,7 @@ class IDDRMeta(latency : Int) extends Component {
     val OUT_valid = out(Bool())
   }
 
-  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
+  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = RISING))) {
     val valid = Reg(Bits(latency bits)) init (0) addTag(crossClockDomain)
     valid := ((valid << 1) | io.IN_valid.asBits.resized).resized
     io.OUT_valid := valid.msb
@@ -47,7 +47,7 @@ abstract class IDDR(reqs : DDRRequirements) extends Component with ComponentWith
     //var DELAY : Option[Stream[UInt]] = None
   }
 
-  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
+  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = RISING))) {
     val valid = Reg(Bits(latency() bits)) init (0) addTag(crossClockDomain)
     valid := ((valid << 1) | io.IN.valid.asBits.resized).resized
     io.OUT.valid := valid.msb
@@ -68,7 +68,7 @@ class ODDRMeta(latency : Int) extends Component {
     val LAST_SEND = out(Bool())
   }
 
-  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.readResetWire, config = ClockDomainConfig(clockEdge = RISING))) {
+  val validArea = new ClockingArea(ClockDomain(io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = RISING))) {
     val valid = DelayedSignal(latency, crossClockDomain = true)
     valid.io.input := io.IN_valid
     io.OUT_valid := valid.io.output
