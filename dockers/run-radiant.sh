@@ -28,9 +28,7 @@ MAC_OPTION="--mac-address=$LICENSE_MAC --network bridge"
 
 $DOCKER_ENGINE run --userns=keep-id -it --rm \
        $MAC_OPTION \
-       -l \
-       -v$HOME/.config/LatticeSemi:/home/user/.config/LatticeSemi \
-       -v$HOME/.config/RadiantIPLocal:/home/user/RadiantIPLocal \
+       -v$HOME/.config/:/home/user/.config/ \
        -v$HOME:$HOME \
        -v`pwd`:`pwd` \
        -w `pwd` \
