@@ -38,8 +38,16 @@ class dphy_rx(cfg : MIPIConfig,
   val _enable_fifo_misc_signals = enable_fifo_misc_signals.getOrElse(!(is_soft_phy && config_for_continous_clock))
 
   if(ip_name == null) {
-    val sync_f = if(sync_cd == null || sync_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_sync${sync_cd.frequency.getValue.decomposeString.replace(" ", "")}"
-    val byte_f = s"_byte${byte_freq.decomposeString.replace(" ", "")}"
+    def clockString(f : HertzNumber): String = {
+      val (base, units) = f.decompose
+      var baseString = f"$base%.3f"
+      while(baseString.endsWith("0"))
+        baseString = baseString.stripSuffix("0")
+      baseString = baseString.stripSuffix(".").replace(".", "p")
+      f"${baseString}${units}"
+    }
+    val sync_f = if(sync_cd == null || sync_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_sync${clockString(sync_cd.frequency.getValue)}"
+    val byte_f = s"_byte${clockString(byte_freq)}"
     val clock_suffix_str = if(clock_suffix) s"${sync_f}${byte_f}" else ""
     val cont_string = if (config_for_continous_clock) "cont_" else ""
     ip_name = s"dphy_rx_${cont_string}${cfg.NUM_RX_LANES}x${cfg.RX_GEAR}${clock_suffix_str}"
@@ -190,8 +198,8 @@ class dphy_rx(cfg : MIPIConfig,
       val ref_dt_i = in(Bits(6 bits)) default(cfg.ref_dt.id)
     }.setPartialName("")
 
-    val dphy_rxdatawidth_hs = out(Bits(cfg.NUM_RX_LANES bits))
-    val dphy_cfg_num_lanes = out(Bits(2 bits))
+    val dphy_rxdatawidth_hs_o = out(Bits(cfg.NUM_RX_LANES bits))
+    val dphy_cfg_num_lanes_o = out(Bits(2 bits))
 
     val misc_signals = enable_misc_signals generate new Bundle {
       /**
@@ -397,7 +405,7 @@ class dphy_rx(cfg : MIPIConfig,
     GlobalLogger(
       FlowLogger.flows(MIPIPacketHeader),
       SignalLogger.concat("MIPI_misc_debug" + (if (io.fifo_misc_signals != null) "_w_fifo" else ""),
-        io.dphy_cfg_num_lanes, io.dphy_rxdatawidth_hs,
+        io.dphy_cfg_num_lanes_o, io.dphy_rxdatawidth_hs_o,
         io.ready_o,
         io.misc_signals,
         if(io.fifo_misc_signals != null) io.fifo_misc_signals.elements.filterNot(_._1.contains("empty")) else Seq()

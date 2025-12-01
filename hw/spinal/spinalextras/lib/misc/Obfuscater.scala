@@ -68,7 +68,7 @@ class Obfuscater() {
 
     component match {
       case e: SpinalEnumCraft[_] => {
-        processNameable(e)
+        processNameable(e, recurseInto = false)
         e.spinalEnum.elements.foreach(el => {
           setName(el, nextName())
         })
@@ -121,14 +121,20 @@ class Obfuscater() {
     }
   }
 
-  def processNameable(nameable: Nameable): Unit = {
-    nameable.foreachReflectableNameables(that => apply (that))
+  def processNameable(nameable: Nameable, recurseInto : Boolean = true): Unit = {
+    assert(handled.contains(nameable))
+
+    if(recurseInto) {
+      nameable.foreachReflectableNameables(that => apply(that))
+    }
     if (nameable.name != null && nameable.name != "") {
       setName(nameable, nextName())
     }
   }
 
   def processBundle(component: Bundle): Unit = {
+    assert(handled.contains(component))
+
     processNameable(component.asInstanceOf[Nameable])
     component.elements.foreach(x => this (x._2))
   }
@@ -159,6 +165,8 @@ class Obfuscater() {
     } else {
       gprefix = component.name.hashCode.abs.toString
       component.getGroupedIO(true).foreach(exclude)
+
+      handled.add(component)
       processNameable(component.asInstanceOf[Nameable])
     }
     component.dslBody.walkDeclarations(x => apply(x))
