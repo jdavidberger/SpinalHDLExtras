@@ -51,12 +51,12 @@ object ClockUtils {
       clock = clockCd.clock,
       config = clockCd.config.copy(resetKind = ASYNC),
       reset = ResetCtrl.asyncAssertSyncDeassert(
-        input = resetCd.reset,
+        input = resetCd.isResetActive,
         clockDomain = clockCd,
         inputPolarity = resetCd.config.resetActiveLevel,
         outputPolarity = clockCd.config.resetActiveLevel,
         bufferDepth = bufferDepth
-      ).setCompositeName(resetCd.reset, "synchronized", true)
+      ).setCompositeName(resetCd.isResetActive, "synchronized", true)
     )
   }
 
@@ -69,5 +69,12 @@ object ClockUtils {
       input = reset,
       clockDomain = createBootClock(clk)
     )
+  }
+
+  def makeActiveHighClock(cd: ClockDomain): ClockDomain = {
+    cd.config.resetActiveLevel match {
+      case HIGH => cd
+      case LOW => cd.copy(reset = cd.isResetActive, config = cd.config.copy(resetActiveLevel = HIGH))
+    }
   }
 }

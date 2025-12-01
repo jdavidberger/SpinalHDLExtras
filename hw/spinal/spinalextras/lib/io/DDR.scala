@@ -156,7 +156,7 @@ class SynthIDDR(reqs : DDRRequirements) extends IDDR(reqs) with ComponentWithKno
   lazy val cnt = CounterFreeRun(output_per_input / 2)
 
   lazy val reqs_x2 = reqs.copy(signal_multiple = 2)
-  lazy val edge_clock_area = new ClockingArea(new ClockDomain(io.ECLK, reset = ClockDomain.current.reset)) {
+  lazy val edge_clock_area = new ClockingArea(new ClockDomain(io.ECLK, reset = ClockDomain.current.isResetActive)) {
     val iddr = IDDR(reqs_x2)
 
     iddr.io.ECLK := io.ECLK

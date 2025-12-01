@@ -16,8 +16,8 @@ import spinalextras.lib.Config
  */
 class GenericODDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends ODDR(reqs) {
   //setDefinitionName(s"GenericODDR_x${input_per_output}_l${latency}")
-  val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = RISING))
-  val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = FALLING))
+  val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = RISING))
+  val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = FALLING))
 
   val pArea = new ClockingArea(pclock) {
     var IN = io.IN
@@ -83,8 +83,8 @@ class MockODDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) ex
  * @param latency The latency in edge clk cycles from valid input to valid output
  */
 class GenericIDDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends IDDR(reqs) {
-  val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = RISING))
-  val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = FALLING))
+  val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = RISING))
+  val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = FALLING))
 
   var OUT = io.OUT.payload.clone()
 
@@ -151,8 +151,8 @@ class MockIDDR(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) ex
 class GenericIDDR1(reqs : DDRRequirements = DDRRequirements(), latency : Int = 1) extends ODDR(reqs) {
   val output_per_input = reqs.signal_multiple
   setDefinitionName(s"GenericODDR_x${input_per_output}_l${latency}")
-  val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = RISING))
-  val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.reset, config = ClockDomainConfig(clockEdge = FALLING))
+  val pclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = RISING))
+  val nclock = ClockDomain(clock = io.ECLK, reset = ClockDomain.current.isResetActive, config = ClockDomainConfig(clockEdge = FALLING))
 
   val pArea = new ClockingArea(pclock) {
     var IN = io.IN
