@@ -1,0 +1,53 @@
+FROM debian:bookworm
+
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg \
+    git unzip zip iverilog g++ libboost-dev wget make ghdl ghdl-mcode zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g $USER_GID user
+RUN useradd -rm -d /home/user -s /bin/bash -g root -G sudo -u $USER_UID user
+RUN echo 'user:user' | chpasswd
+
+USER user
+WORKDIR /home/user
+
+RUN curl -s "https://get.sdkman.io" | bash
+
+ENV HOME=/home/user
+ENV SDKMAN_DIR="$HOME/.sdkman"
+
+ENV SCALA_VERSION=2.12.18
+ENV SBT_VERSION=1.10.0
+ENV JAVA_VERSION=17.0.12-tem
+
+RUN echo "sdkman_auto_answer=true" > $SDKMAN_DIR/etc/config
+
+RUN bash -c "source $SDKMAN_DIR/bin/sdkman-init.sh && sdk install java $JAVA_VERSION && \
+    sdk install scala $SCALA_VERSION && \
+    sdk install sbt $SBT_VERSION && \
+    sdk current"
+
+RUN cd $HOME && \
+    wget https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2025-04-06/oss-cad-suite-linux-x64-20250406.tgz && \
+    tar -xf oss-cad-suite-linux-x64-20250406.tgz && \
+    rm oss-cad-suite-linux-x64-20250406.tgz
+
+RUN mkdir -p $HOME/.ssh
+RUN ssh-keyscan github.com >> $HOME/.ssh/known_hosts
+
+ENV PATH=$HOME/oss-cad-suite/bin:$HOME/.sdkman/candidates/sbt/current/bin:$HOME/.sdkman/candidates/java/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+ENV GIT_CONFIG_COUNT=1
+ENV GIT_CONFIG_KEY_0=safe.directory
+ENV GIT_CONFIG_VALUE_0="*"
+
+ENV LD_LIBRARY_PATH=/usr/lib/ghdl/mcode/
+ENV LIBRARY_PATH=/usr/lib/ghdl/mcode
+ENV CPATH=/usr/include/iverilog
+
+CMD ["bash"]

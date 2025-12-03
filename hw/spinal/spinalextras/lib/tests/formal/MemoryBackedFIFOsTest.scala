@@ -1,13 +1,12 @@
 package spinalextras.lib.tests.formal
 
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.core.formal.{FormalDut, anyseq}
 import spinal.core._
-import spinal.lib.{Counter, StreamFifo}
+import spinal.core.formal.{FormalDut, anyseq}
+import spinal.lib.StreamFifo
 import spinalextras.lib.formal.HasFormalProperties
-import spinalextras.lib._
 import spinalextras.lib.memory._
-import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
+import spinalextras.lib.testing.FormalTestSuite
 
 import scala.language.postfixOps
 
