@@ -26,5 +26,4 @@ jobs:
         with:
           name: SBT Tests
           path: target/test-reports/*.xml # Path to the generated XML reports
-          reporter: junit
-          list-tests: summary
+          reporter: java-junit
