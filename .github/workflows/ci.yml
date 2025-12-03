@@ -18,5 +18,13 @@ jobs:
 
       - name: Make tests
         run: |
-          ./dockers/run-spinal-image.sh sbt test
+          ./dockers/run-spinal-image.sh sbt --no-colors test
             
+      - name: Publish Test Results
+        uses: dorny/test-reporter@v1
+        if: success() || failure() # Always run this step
+        with:
+          name: SBT Tests
+          path: target/test-reports/*.xml # Path to the generated XML reports
+          reporter: junit
+          list-tests: summary
