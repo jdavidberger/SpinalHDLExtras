@@ -2,7 +2,7 @@ package spinalextras.lib.blackbox.lattice.lifcl
 
 import spinal.core._
 import spinal.lib._
-import spinalextras.lib.{HardwareMemory, MemoryRequirement}
+import spinalextras.lib.memory._
 import spinalextras.lib.blackbox.lattice.lifcl.PDPSC16K.DataWidth
 
 object PDPSC16K {

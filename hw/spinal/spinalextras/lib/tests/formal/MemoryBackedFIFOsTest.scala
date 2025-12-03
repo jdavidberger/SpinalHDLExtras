@@ -5,8 +5,8 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.core._
 import spinal.lib.{Counter, StreamFifo}
 import spinalextras.lib.formal.HasFormalProperties
-import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
-import spinalextras.lib.memory.MemoryPoolFIFOs
+import spinalextras.lib._
+import spinalextras.lib.memory._
 import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
 
 import scala.language.postfixOps

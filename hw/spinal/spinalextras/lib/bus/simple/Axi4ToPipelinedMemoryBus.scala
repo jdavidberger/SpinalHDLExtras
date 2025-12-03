@@ -9,7 +9,8 @@ import spinal.lib.bus.amba4.axi.{Axi4, Axi4Config, Axi4R, Axi4W}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.fsm._
 import spinalextras.lib.formal.fillins.Axi4Formal.Axi4FormalExt
-import spinalextras.lib.{Config, Memories, MemoryRequirement, logging}
+import spinalextras.lib._
+import spinalextras.lib.memory._
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty, HasFormalProperties}
 import spinalextras.lib.logging.{GlobalLogger, PipelinedMemoryBusLogger, SignalLogger}

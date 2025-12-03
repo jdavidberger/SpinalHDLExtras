@@ -1,6 +1,7 @@
 package spinalextras.lib.blackbox.lattice.lifcl
 
 import spinal.core._
+import spinalextras.lib.memory.{HardwareMemory, MemoryRequirement}
 
 // 16Kb dual port block RAM
 case class DP16K(
@@ -84,4 +85,36 @@ case class DP16K(
   }
 
   noIoPrefix()
+}
+
+
+class DP16K_Mem(target_latency : Int = 2, read_write_ports : Int = 2, initialContent : Seq[BigInt] = Seq()) extends HardwareMemory[Bits]() {
+  override val requirements = MemoryRequirement(
+    Bits(32 bits), (1 << 14), read_write_ports, 0, 0
+  )
+  override lazy val latency : Int = target_latency
+  assert(latency == 2 || latency == 1)
+  assert(read_write_ports == 2 || read_write_ports == 1)
+
+  val outreg = latency == 2
+  val mem = new DP16K()
+
+  val mem_port_a = (mem.io.DIA, mem.io.ADA, mem.io.WEA, mem.io.CEA, mem.io.CSA, mem.io.DOA)
+  val mem_port_b = (mem.io.DIB, mem.io.ADB, mem.io.WEB, mem.io.CEB, mem.io.CSB, mem.io.DOB)
+  for(port_maps <- io.readWritePorts.zip(Seq(mem_port_a, mem_port_b))) {
+    val (port, (di, adr, we, cs, benb, dout)) = port_maps
+    di := port.cmd.data
+    adr := port.cmd.address.asBits
+    we := port.cmd.write
+    cs := port.cmd.valid
+    benb := ~port.cmd.mask
+
+    port.rsp.data := dout
+
+    if(latency == 2) {
+      port.rsp.valid := RegNext(RegNext(port.readFire, False), False)
+    } else {
+      port.rsp.valid := RegNext(port.readFire, False)
+    }
+  }
 }

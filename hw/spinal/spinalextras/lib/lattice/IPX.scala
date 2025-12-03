@@ -1,12 +1,13 @@
 package spinalextras.lib.lattice
-
+import scala.io.Source
 import spinal.core._
 import spinalextras.lib.Constraints
 
-import java.io.PrintWriter
+import java.io.{File, PrintWriter}
 
 object IPX {
   def generate_ipx[T <: Component](report : SpinalReport[T]): Unit = {
+
     val file = new PrintWriter(s"${report.globalData.config.targetDirectory}/${report.toplevelName}.ipx")
 
     file.write(
@@ -16,7 +17,7 @@ object IPX {
         |""".stripMargin)
 
     for (elem <- report.generatedSourcesPaths) {
-      file.write(s"""  <File name="${elem.substring(report.globalData.config.targetDirectory.size + 1)}" type="top_level_verilog"/>""")
+      file.write(s"""  <File name="${elem.substring(report.globalData.config.targetDirectory.length + 1)}" type="top_level_verilog"/>\n""")
     }
 
     val ldc_file = s"${report.toplevelName}.ldc"

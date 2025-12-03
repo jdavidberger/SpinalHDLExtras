@@ -3,8 +3,8 @@ package spinalextras.lib.soc.spinex
 import spinal.core._
 import spinal.lib.bus.misc.SizeMapping
 import spinalextras.lib.bus.PipelinedMemoryBusExt
+import spinalextras.lib.memory.{Memories, MemoryRequirement}
 import spinalextras.lib.misc.RandomNumberGeneratorApb3
-import spinalextras.lib.{Memories, MemoryRequirement}
 
 import scala.language.postfixOps
 

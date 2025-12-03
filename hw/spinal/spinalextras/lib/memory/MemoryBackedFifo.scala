@@ -5,11 +5,12 @@ import spinal.core.{Area, Bits, Bool, BooleanPimped, Bundle, CombInit, Component
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinal.lib.{KeepAttribute, Stream, StreamFifoInterface, master, slave}
-import spinalextras.lib.HardwareMemory.HardwareMemoryReadWriteCmd
+import spinalextras.lib.memory._
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt}
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
-import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
+import spinalextras.lib._
+import spinalextras.lib.memory.HardwareMemory.HardwareMemoryReadWriteCmd
 
 class MemoryBackedFifo[T <: Data](val dataType: HardType[T],
                                   val depth: Int,

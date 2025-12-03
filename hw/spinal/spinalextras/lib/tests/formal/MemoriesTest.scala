@@ -4,7 +4,8 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib.Counter
-import spinalextras.lib.{Memories, MemoryRequirement}
+import spinalextras.lib._
+import spinalextras.lib.memory._
 import spinal.core.formal._
 import spinalextras.lib.formal.HasFormalProperties
 import spinalextras.lib.testing.FormalTestSuite
@@ -14,7 +15,7 @@ import scala.language.postfixOps
 
 class MemoriesFormal[T <: Data](reqs : MemoryRequirement[T], technologyKind: MemTechnologyKind = auto,
                                 checkResponses : Boolean = false) extends Component {
-  val dut = FormalDut(Memories.factory(reqs, technologyKind))
+  val dut = FormalDut(Memories.factory()(reqs, technologyKind))
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.io.readPorts.foreach(p => {

@@ -3,7 +3,6 @@ package spinalextras.lib.memory
 import spinal.core.{Bits, Component, Data, HardType, IntToBuilder, MemTechnologyKind, auto}
 import spinal.lib.{StreamFifo, master}
 import spinalextras.lib.misc.GlobalSignals
-import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 
 import scala.collection.mutable
 

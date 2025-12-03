@@ -3,6 +3,8 @@ package spinalextras.lib
 import spinal.core._
 import spinal.core.sim._
 
+import scala.collection.mutable.ArrayBuffer
+
 object Config {
   def spinalConfig = new SpinalConfig(
     defaultClockDomainFrequency = FixedFrequency(80 MHz),
@@ -24,7 +26,8 @@ object Config {
     romReuse = true,
     noRandBoot = true,
     device = Device(vendor = "lattice", family = "lifcl"),
-    //nameWhenByFile = true
+    //nameWhenByFile = true,
+
   )//.addStandardMemBlackboxing(policy = blackboxAll)
 
   def spinal = spinalConfig

@@ -2,7 +2,7 @@ package spinalextras.lib.blackbox.lattice.lifcl
 
 import spinal.lib._
 import spinal.core._
-import spinalextras.lib.{HardwareMemory, MemoryRequirement}
+import spinalextras.lib.memory._
 
 import scala.language.postfixOps
 

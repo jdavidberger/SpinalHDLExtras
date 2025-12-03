@@ -1,7 +1,7 @@
 package spinalextras.lib.blackbox.lattice.lifcl
 
 import spinal.core._
-import spinalextras.lib.{HardwareMemory, MemoryRequirement}
+import spinalextras.lib.memory.{HardwareMemory, MemoryRequirement}
 
 class DPSC512K(
                  OUTREG : Boolean = false,

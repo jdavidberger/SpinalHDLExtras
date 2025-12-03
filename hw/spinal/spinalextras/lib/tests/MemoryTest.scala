@@ -5,13 +5,12 @@ import spinal.core._
 import spinal.core.sim.{SimBitVectorPimper, SimBoolPimper, SimClockDomainHandlePimper, SimTimeout}
 import spinal.lib._
 import spinal.lib.bus.simple._
-import spinalextras.lib.HardwareMemory.HardwareMemoryWriteCmd
 import spinalextras.lib.blackbox.lattice.lifcl.{DPSC512K_Mem, GSR, OSCD, OSCDConfig, PDPSC512K_Mem}
 import spinalextras.lib.bus.PipelinedMemoryBusCmdExt
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
-import spinalextras.lib.memory.MemoryBackedFifo
+import spinalextras.lib.memory._
 import spinalextras.lib.misc.{AutoInterconnect, ClockSpecification}
-import spinalextras.lib.{Config, HardwareMemory, HardwareMemoryReadWriteConfig, Memories, MemoryRequirement, MemoryRequirementBits, PipelinedMemoryBusMemory, StackedHardwareMemory, WideHardwareMemory}
+import spinalextras.lib._
 
 import scala.language.{existentials, postfixOps}
 

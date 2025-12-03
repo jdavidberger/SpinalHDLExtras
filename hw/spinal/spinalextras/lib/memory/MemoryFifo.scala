@@ -3,7 +3,6 @@ package spinalextras.lib.memory
 import spinal.core.{Bundle, Component, Data, False, HardType, IntToBuilder, MemTechnologyKind, auto, in, log2Up, out}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.{master, slave}
-import spinalextras.lib.{HardwareMemory, Memories, MemoryRequirement}
 
 case class MemoryFifo[T <: Data](dataType: HardType[T], depth: Int,
                                  technologyKind: MemTechnologyKind = auto,

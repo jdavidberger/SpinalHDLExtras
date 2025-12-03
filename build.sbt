@@ -24,7 +24,10 @@ val vexRiscv = if(file(s"${gitRoot}VexRiscv/").exists())
 lazy val SpinalHDLExtras = (project in file("."))
   .settings(
     Compile / scalaSource := baseDirectory.value / "hw" / "spinal",
+    Compile / resourceDirectory := baseDirectory.value / "hw" / "verilog",
+
     Test / scalaSource := baseDirectory.value / "hw" / "spinal",
+
     libraryDependencies ++= Seq(
       spinalCore, spinalLib, spinalIdslPlugin,
       "org.scalatest" %% "scalatest" % "3.2.15",
