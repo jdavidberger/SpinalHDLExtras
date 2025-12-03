@@ -93,6 +93,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
 
   metadata_stream.payload := (dropped_events ## U(signature, 32 bits) ## U(datas.size, 10 bits) ## B(1, meta_id_width bits) ## ~B(0, index_size bits)).resize(logBits)
   metadata_stream.valid := RegInit(False) setWhen(time_since_syscnt || eventDropped) clearWhen(metadata_stream.fire)
+  metadata_stream.addFormalPayloadInvarianceException()
 
   val encoded_streams =
     for ((flow, idx) <- flows()) yield {

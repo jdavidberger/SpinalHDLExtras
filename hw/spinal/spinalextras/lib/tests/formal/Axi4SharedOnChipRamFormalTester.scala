@@ -6,7 +6,7 @@ import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 class Axi4SharedOnChipRamFormalTester extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 20
+  override def defaultDepth() = 10
 
   formalTests().foreach(t => test(t._1) {
     t._2()

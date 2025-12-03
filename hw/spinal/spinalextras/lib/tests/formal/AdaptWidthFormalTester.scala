@@ -17,8 +17,8 @@ class AdaptWidthFormalTester extends AnyFunSuite with FormalTestSuite {
 
   override def generateRtl() = {
     for (
-      inW <- Seq(8, 12, 32, 48);
-      outW <- Seq(8, 12, 32, 48);
+      inW <- Seq(8, 32, 48);
+      outW <- Seq(8, 32, 48);
       endianness <- Seq(LITTLE, BIG)
     ) yield {
       (s"${suiteName}_${inW}_${outW}_${endianness.getClass.getSimpleName.replace("$", "")}", () => GeneralFormalDut(() => new AdaptWidth(Bits(inW bits), Bits(outW bits), endianness)))

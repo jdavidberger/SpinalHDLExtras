@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  generate-artifacts:
+    runs-on: [self-hosted, linux, X64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Make make-build-dir
+        run: |
+          make make-build-dir
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Build artifacts
+          path: |
+            build
+            tinyclunx33_internal/spinal/hw
+
+
+  compile:
+    runs-on: [self-hosted, linux, X64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Make compile
+        run: |
+          make compile
+
+  test:
+    runs-on: [self-hosted, linux, X64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Make tests
+        run: |
+          make test-tinyvision
+            

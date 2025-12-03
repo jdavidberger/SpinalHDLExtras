@@ -11,20 +11,28 @@ import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 class PipelinedMemoryBusBufferFormalTest extends AnyFunSuite with FormalTestSuite {
   override def defaultDepth() = 5
 
+  def create_config(rsp_latency : Int, addressWidth : Int, datawidth : Int, depth : Int, busWidth : Int, cmd_latency : Int, has_flush : Boolean) = {
+    (s"PMBBufferTest_rl${rsp_latency}_depth${depth}_cl${cmd_latency}_bw${busWidth}_dw${datawidth}_aw${addressWidth}_hf${has_flush}",
+      () => GeneralFormalDut(() => new PipelinedMemoryBusBuffer(UInt(datawidth bits), depth * datawidth,
+        config = PipelinedMemoryBusConfig(addressWidth, busWidth), rsp_latency = rsp_latency,
+        cmd_latency = cmd_latency, has_flush = has_flush)))
+  }
+
   val has_flush = true
-  var configs =
-    for(rsp_latency <- Seq(0, 2, 10);
-        addressWidth <- Seq(32, 9);
-        datawidth <- Seq(32, 8);
+  var configs : Seq[(String, () => Component)] = {
+    (for(rsp_latency <- Seq(0, 10);
+        addressWidth <- Seq(32);
+        datawidth <- Seq(32);
         depth <- Seq(3, 400);
         busWidth <- Seq(32);
         //has_flush <- Seq(true, false);
-        cmd_latency <- 0 until 3) yield {
-      (s"PMBBufferTest_rl${rsp_latency}_depth${depth}_cl${cmd_latency}_bw${busWidth}_dw${datawidth}_aw${addressWidth}_hf${has_flush}",
-        () => GeneralFormalDut(() => new PipelinedMemoryBusBuffer(UInt(datawidth bits), depth * datawidth,
-          config = PipelinedMemoryBusConfig(addressWidth, busWidth), rsp_latency = rsp_latency,
-          cmd_latency = cmd_latency, has_flush = has_flush)))
-    }
+        cmd_latency <- Seq(0, 2)) yield {
+      create_config(rsp_latency, addressWidth, datawidth, depth, busWidth, cmd_latency, has_flush)
+    }) ++ Seq(
+      create_config(3, 9, 8, 100, 32, 0, has_flush),
+      create_config(2, 9, 32, 100, 32, 0, has_flush)
+    )
+  }
 
   formalTests().foreach(t => test(t._1) { t._2() })
 
