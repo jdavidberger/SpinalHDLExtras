@@ -53,9 +53,9 @@ class FlowLoggerDataCapture(dataWidth: Int, val index_size: Int, val logBits: In
 
   assert(time_bits > 0, s"${io.flow} has too many bits for logger ${logBits} ${output_stream.payload.getBitsWidth} ${index_size}")
 
-  val stamped_stream = output_stream.map(p => p ## B(idx, index_size bits))
+  val stamped_stream = output_stream.stage().s2mPipe().map(p => p ## B(idx, index_size bits))
 
-  stamped_stream.stage().s2mPipe()  <> io.stamped_stream
+  stamped_stream <> io.stamped_stream
 
   override def covers(): Seq[FormalProperty] = new FormalProperties(this) {
     addFormalProperty(io.manual_trigger)

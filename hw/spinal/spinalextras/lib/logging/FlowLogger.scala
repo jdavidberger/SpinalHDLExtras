@@ -174,7 +174,6 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
     val logger_port = sysBus.add_slave_factory("logger_port", SizeMapping(address, 1 KiB), true, true, "dBus", "data")
 
     val ctrlReg = logger_port.createReadAndWrite(UInt(32 bits), address + 0) init(0)
-    val inMemory = RegNext(ctrlReg(0)) init(False)
 
     logger_port.createReadOnly(UInt(32 bits), address + 4) := RegNext(io.captured_events, init = U(0))
     val memoryStream = stream.clone()
@@ -182,9 +181,15 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
     if(outputStream.isEmpty) {
       memoryStream << stream
     } else {
+      val inMemory = RegNext(ctrlReg(0)) init(False)
+
       val demux = StreamDemux(stream, inMemory.asUInt, 2)
       demux(0) >> outputStream.get
       demux(1) >> memoryStream
+
+      when(inMemory =/= RegNext(inMemory, False)) {
+        assume(!RegNext(stream.isStall, False))
+      }
     }
 
     logger_port.createReadOnly(Bits(32 bits), address + 20) := checksum
@@ -241,6 +246,9 @@ class FlowLoggerPortTestBench() extends ComponentWithFormalProperties {
 
 
   val portArea = logger.create_logger_port(sysBus, 0, 3, outputStream = Some(io.log))
+  when(portArea.loggerFifo.io.flush) {
+    assume(portArea.loggerFifo.io.pop.ready)
+  }
 
   override def covers(): Seq[FormalProperty] = Seq(portArea.loggerFifo.io.availability === 0)
 }

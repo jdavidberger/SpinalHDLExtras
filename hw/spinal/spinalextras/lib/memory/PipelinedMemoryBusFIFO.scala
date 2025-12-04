@@ -196,7 +196,7 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
   }
 
   override def formalComponentInputProperties(): Seq[FormalProperty] = new FormalProperties(this) {
-    when(io.flush) {
+    when(io.flush && !io.pop.contract.formalExceptionalState) {
       addFormalProperty(io.pop.ready, "Flush requires a ready on the pop")
     }
   }

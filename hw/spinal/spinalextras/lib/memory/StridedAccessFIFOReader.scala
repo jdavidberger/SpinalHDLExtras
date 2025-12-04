@@ -15,7 +15,20 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
-
+/***
+ * This component orchestrates reading from a PMB of a given data width, and popping out data of a different data width.
+ *
+ * The reads are done in stride bursts of `outCnt` size. The component requests up to a full stride of data, and then
+ * only requests the next stride once the former stride is all returned.
+ *
+ * @param dataType Pop datatype
+ * @param depth internal depth to buffer for
+ * @param baseAddress Address to read from
+ * @param outCnt Size of the stride. The index of the stride is also returned in the pop
+ * @param busConfig Configuration of the bus
+ * @param rsp_latency Expected response latency for the reads. So long as latency stays below or at this level, the
+ *                    reads are pipelined in such a way that constant cmd.valids gives constant pops.
+ */
 case class StridedAccessFIFOReaderAsync[T <: Data](
                                                     dataType: HardType[T],
                                                /** Depth in units of dataType */
@@ -63,6 +76,8 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
     bufferSizeInOutWords += 1
   }
   val bufferSizeInBits = bufferSizeInOutWords * outDatatype.getBitsWidth
+
+  // State that determines where we are in the cycle -- when true we have more to read for this current stride
   val armRead = RegInit(True)
 
   var roundrobin_idx_cmd, roundrobin_idx_rsp = Counter(outCnt)
@@ -226,8 +241,9 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
       }
     })
     val validFiresBitsLeftInCnt = validFiresLeftInCnt * outDatatype.getBitsWidth
-    addFormalProperty((busBitsOutstanding +^ adapterBits +^ busReadsLeftInCnt * busConfig.dataWidth) ===
-      (outBitsOutstanding +^ validFiresBitsLeftInCnt), s"Oustanding reads math failed to resolve for ${this}")
+    val outstandingReadsIn = (busBitsOutstanding +^ adapterBits +^ busReadsLeftInCnt * busConfig.dataWidth)
+    val outstandingReadsOut = (outBitsOutstanding +^ validFiresBitsLeftInCnt)
+    addFormalProperty(outstandingReadsIn === outstandingReadsOut, s"Oustanding reads math failed to resolve for ${this}")
     addFormalProperty(validFiresLeftInCnt =/= 0)
 
 //    val total_req, total_res = Counter(32 bits)

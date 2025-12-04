@@ -12,6 +12,9 @@ object GlobalSignals {
     externalize(payload, (t : T) => cloneOf(t), topComponent)
   }
 
+  /**
+   * Take a signal and pull it up through components until it gets to 'topComponent'
+   **/
   def externalize[T <: Data](payload : T, copySignal : T => T, topComponent : Component = null): T = {
     val dir = direction_function(payload)
 

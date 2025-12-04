@@ -1,9 +1,9 @@
 package spinalextras.lib.formal
 
+import spinal.core.Component.push
 import spinal.core._
 import spinal.core.formal.past
 import spinal.lib._
-import spinal.lib.bus.wishbone.Wishbone
 import spinalextras.lib.formal.fillins.EquivalenceRegistry
 
 import scala.collection.mutable
@@ -16,14 +16,14 @@ package object StreamFormal {
     val wasStall = past(stream.isStall) init(False)
     val checkValidHandshake = Mux(wasStall, stream.valid, True)
 
+    val priorValidPayload = RegNextWhen(stream.payload, stream.valid)
+    val checkValidPayloadInvariance = Mux(wasStall,
+      EquivalenceRegistry.Check(priorValidPayload, stream.payload),
+      True)
+
     when(!formalExceptionalState) {
       addFormalProperty(checkValidHandshake, f"Dropped valid before saw ready")
 
-      val priorValidPayload = RegNextWhen(stream.payload, stream.valid)
-
-      val checkValidPayloadInvariance = Mux(wasStall,
-        EquivalenceRegistry.Check(priorValidPayload, stream.payload),
-        True)
       addFormalProperty(formalPayloadInvarianceExceptionalState || checkValidPayloadInvariance, s"Payload should not change while transfer is stalled")
 
       when(stream.valid) {
@@ -32,41 +32,86 @@ package object StreamFormal {
     }
   }
 
-  class StreamContract(n : Nameable) {
-    val _formalExceptionalState, _formalPayloadInvarianceExceptionalState = Bool()
-    _formalExceptionalState := False
-    _formalPayloadInvarianceExceptionalState := False
+  class StreamContractGroup (val n : Nameable) {
+    val _formalExceptionalState, _formalPayloadInvarianceExceptionalState = {
+      val r = push(Component.toplevel)
+      val rtn = Bool()
+      rtn := False
+      r.restore()
+      rtn
+    }
+    _formalExceptionalState.setPartialName(n, "formalExceptionalState", true)
+    _formalPayloadInvarianceExceptionalState.setPartialName(n, "formalPayloadInvarianceExceptionalState", true)
+
+    var parent : StreamContractGroup = null
 
     val exceptions, payloadInvarianceExceptions = new ArrayBuffer[Bool]()
 
     def addFormalPayloadInvarianceException(b : Bool): Unit = {
       payloadInvarianceExceptions.append(b)
+      val r = push(Component.toplevel)
       when(b) {
         _formalPayloadInvarianceExceptionalState := True
       }
+      r.restore()
     }
 
     def addFormalException(b : Bool): Unit = {
       exceptions.append(b)
+      val restore = push(Component.toplevel)
       when(b) {
         _formalExceptionalState := True
       }
+      restore.restore()
     }
 
+    def setParent(r : StreamContractGroup): StreamContractGroup = {
+      parent = r
+      val restore = push(Component.toplevel)
+      when(r._formalExceptionalState) { _formalExceptionalState := True}
+      when(r._formalPayloadInvarianceExceptionalState) { _formalPayloadInvarianceExceptionalState := True}
+      restore.restore()
+      r
+    }
+
+    def root : StreamContractGroup = if (parent == null) this else {
+      setParent(parent.root)
+    }
+
+    def merge(group : StreamContractGroup): Unit = {
+      //println(s"Merging ${n.name} and ${group.n.name}")
+
+      group.exceptions.foreach(this.addFormalException)
+      group.payloadInvarianceExceptions.foreach(this.addFormalPayloadInvarianceException)
+
+      group.setParent(this)
+    }
+  }
+
+  class StreamContract(n : Nameable) {
+    var streamContractGroup : StreamContractGroup = new StreamContractGroup(n)
+
+    //def exceptions = streamContractGroup.root.exceptions
+    //def payloadInvarianceExceptions = streamContractGroup.root.payloadInvarianceExceptions
+
     def formalExceptionalState : Bool = {
-      Vec(exceptions).orR.setWeakName(f"stream_${n.name}_formalExceptionalState")
+      streamContractGroup._formalExceptionalState
     }
 
     def formalPayloadInvarianceExceptionalState : Bool = {
-      Vec(payloadInvarianceExceptions).orR.setWeakName(f"stream_${n.name}_formalPayloadInvarianceExceptionalState")
+      streamContractGroup._formalPayloadInvarianceExceptionalState
+    }
+
+    def addFormalPayloadInvarianceException(b : Bool): Unit = {
+      streamContractGroup.root.addFormalPayloadInvarianceException(b)
+    }
+
+    def addFormalException(b : Bool): Unit = {
+      streamContractGroup.root.addFormalException(b)
     }
 
     def formalAssertEquivalence(that: StreamContract): Unit = {
-      this.exceptions.appendAll(that.exceptions)
-      that.exceptions.appendAll(this.exceptions)
-
-      this.payloadInvarianceExceptions.appendAll(that.payloadInvarianceExceptions)
-      that.payloadInvarianceExceptions.appendAll(this.payloadInvarianceExceptions)
+      that.streamContractGroup.merge(this.streamContractGroup)
     }
   }
 

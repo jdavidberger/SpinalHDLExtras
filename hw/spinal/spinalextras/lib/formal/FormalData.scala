@@ -201,7 +201,6 @@ trait FormalDataWithEquivalnce[T <: FormalData] extends FormalData {
       }
     }
 
-    //println(s"Looking for single source for ${this.underlyingData}")
     val singleSource = getAssignmentBundle(this.underlyingData)
     if(singleSource.nonEmpty) {
       //println(s"Associating ${singleSource.get.underlyingData} with ${this.underlyingData}")
@@ -211,7 +210,7 @@ trait FormalDataWithEquivalnce[T <: FormalData] extends FormalData {
     this
   }
 
-  Component.current.addPrePopTask( () => {
+  Component.toplevel.addPrePopTask( () => {
     checkForEquivalance()
   })
 }
