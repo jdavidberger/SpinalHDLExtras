@@ -23,7 +23,8 @@ jobs:
 
       - name: Make tests
         run: |
-          rm target/test-reports/*.xml
+          rm -rf target/test-reports/
+          ls
           ./dockers/run-spinal-image.sh sbt --no-colors test
             
       - name: Publish Test Results
