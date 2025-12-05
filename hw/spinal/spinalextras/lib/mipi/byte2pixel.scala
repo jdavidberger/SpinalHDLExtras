@@ -121,7 +121,7 @@ case class byte2pixel(cfg : MIPIConfig,
   val byte_clk_area = new ClockingArea(byte_cd) {
     val isRefDt, fv = RegInit(False)
 
-    val watermarkReg = RegInit(fifo.io.pushOccupancy)
+    val watermarkReg = Reg(fifo.io.pushOccupancy) init(0)
     when(fifo.io.pushOccupancy > watermarkReg) {
       watermarkReg := fifo.io.pushOccupancy
     }
@@ -174,7 +174,7 @@ case class byte2pixel(cfg : MIPIConfig,
     fifo.io.pop.ready := True
     val fv = RegNextWhen(fifo.io.pop.payload._1(1), fifo.io.pop.fire)
 
-    val watermarkReg = RegInit(fifo.io.popOccupancy)
+    val watermarkReg = Reg(fifo.io.popOccupancy) init(0)
     when(fifo.io.popOccupancy > watermarkReg) {
       watermarkReg := fifo.io.popOccupancy
     }
