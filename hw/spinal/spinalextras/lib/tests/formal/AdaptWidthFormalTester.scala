@@ -26,4 +26,3 @@ class AdaptWidthFormalTester extends AnyFunSuite with FormalTestSuite {
   }
 }
 
-

@@ -164,6 +164,19 @@ trait HasFormalProperties { self =>
     this
   }
 
+  def formalAssumeChildrenPastDepth(depth : Int = 0) : this.type = {
+    if(depth < 0) return this
+
+    if(depth == 0) {
+      CurrentAssertionKind = AssertStatementKind.ASSUME
+      formalAssumeChildrensInputs()
+    }
+
+    formalChildren().foreach(_.formalAssumeChildrenPastDepth((depth - 1).max(0)))
+
+    this
+  }
+
   if(Component.toplevel != this) {
     Component.toplevel.addPrePopTask(() => {
       applyFormalProperties()

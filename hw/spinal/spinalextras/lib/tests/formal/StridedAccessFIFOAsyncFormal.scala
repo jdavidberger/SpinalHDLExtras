@@ -6,7 +6,7 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib._
 import spinal.lib.bus.simple.PipelinedMemoryBusConfig
 import spinalextras.lib.memory.{StridedAccessFIFOAsync, StridedAccessFIFOReaderAsync}
-import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
+import spinalextras.lib.testing.{FormalAnyTestSuite, FormalTestSuite, GeneralFormalDut, test_funcs}
 
 import scala.language.postfixOps
 

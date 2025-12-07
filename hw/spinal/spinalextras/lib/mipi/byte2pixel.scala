@@ -84,8 +84,8 @@ case class byte2pixel(cfg : MIPIConfig,
 
   if(!byte_clock_fast_enough || !pixel_clock_fast_enough) {
     println("Byte To pixel component configuration not viable")
-    println(s"Byte Clock: ${byte_cd_freq}")
-    println(s"Pixel Clock: ${pixel_cd.frequency.getValue}")
+    println(s"Byte Clock: ${byte_cd_freq.decomposeString} should be >= ${byte_phy_freq.decomposeString}")
+    println(s"Pixel Clock: ${pixel_cd.frequency.getValue} should be >= ${byte_phy_freq * cfg.GEARED_LANES / cfg.DT_WIDTH}")
     println(s"Byte data rate: ${byte_phy_freq * cfg.GEARED_LANES}")
     println(s"Pixel data rate: ${pixel_cd.frequency.getValue * cfg.DT_WIDTH}")
   }

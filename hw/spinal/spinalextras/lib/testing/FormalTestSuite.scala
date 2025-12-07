@@ -1,5 +1,6 @@
 package spinalextras.lib.testing
 
+import org.scalatest.funsuite.AnyFunSuite
 import spinal.core.formal._
 import spinal.core._
 import spinal.lib.{Counter, CounterFreeRun}
@@ -34,9 +35,12 @@ object ReflectionUtils {
   }
 }
 
-case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Component {
+case class GeneralFormalDut(f : () => ComponentWithFormalProperties, depth : Int = -1) extends Component {
   val top = f()
   val dut = FormalDut(top)
+
+  dut.formalAssumeChildrenPastDepth(depth)
+
   setDefinitionName("GeneralFormalDut" + top.getClass.getSimpleName)
 
   assumeInitial(ClockDomain.current.isResetActive)
@@ -47,7 +51,7 @@ case class GeneralFormalDut(f : () => ComponentWithFormalProperties) extends Com
   HasFormalProperties.printFormalAssertsReport()
 }
 
-class DefaultFormalDut(f : () => Component) extends Component {
+class DefaultFormalDut(f : () => Component, depth : Int = -1) extends Component {
   val top = f()
   val dut = FormalDut(top)
   setName("DefaultFormalDut" + top.getClass.getSimpleName)
@@ -56,6 +60,7 @@ class DefaultFormalDut(f : () => Component) extends Component {
 
   val defaultProperties = DefaultProperties(dut)
   defaultProperties.formalConfigureForTest()
+  defaultProperties.formalAssumeChildrenPastDepth(depth)
   dut.getAllIo.filter(_.isInput).filter(_.dlcIsEmpty).foreach(anyseq)
 
   HasFormalProperties.printFormalAssertsReport()
@@ -127,4 +132,8 @@ trait FormalTestSuite {
         })
       })
   }
+}
+
+abstract class FormalAnyTestSuite extends AnyFunSuite with FormalTestSuite{
+  formalTests().foreach(t => test(t._1) { t._2() })
 }
