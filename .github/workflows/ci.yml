@@ -31,12 +31,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }} #
+      - name: Set lowercase repo name as environment variable
+        run: |
+          REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "REPO_LC=$REPO_LC" >> $GITHUB_ENV
       - name: Build image with Buildah
         id: build
         uses: redhat-actions/buildah-build@v2
         with:
           image: spinal-image
-          tags: latest ${{ github.run_number }}
+          tags: latest
           containerfiles: ./dockers/Dockerfile.spinalhdl
           labels: |
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
@@ -45,7 +49,7 @@ jobs:
         with:
           image: ${{ steps.build.outputs.image }}
           tags: ${{ steps.build.outputs.tags }}
-          registry: ghcr.io/${{ github.repository }}
+          registry: ghcr.io/${{ env.REPO_LC }}
 
   test:
     runs-on: ubuntu-latest
