@@ -6,6 +6,8 @@ import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties,
 
 class StreamArbiterFormalProperties[T <: Data](val arbiter: StreamArbiter[T]) extends HasFormalProperties {
   override protected def formalProperties(): Seq[FormalProperty] = new FormalProperties(arbiter) {
+    addFormalProperty(CountOne(arbiter.maskRouted) <= 1)
+
     when(arbiter.locked) {
       addFormalProperty(arbiter.io.inputs(OHToUInt(arbiter.maskLocked)).valid)
       addFormalProperty(arbiter.io.output.valid)

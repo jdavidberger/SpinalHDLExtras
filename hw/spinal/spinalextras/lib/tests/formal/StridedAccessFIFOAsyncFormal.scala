@@ -18,20 +18,19 @@ import scala.language.postfixOps
 //}
 //
 
-class StridedAccessFIFOAsyncFormalTest extends AnyFunSuite with FormalTestSuite {
+class StridedAccessFIFOAsyncFormalTest extends FormalAnyTestSuite{
 
-  override def defaultDepth() = 20
-
-  formalTests().foreach(t => test(t._1) { t._2() })
+  override def defaultDepth() = 50
 
   override def BMCConfig() = formalConfig.withBMC(20)
   override def generateRtlCover() = Seq()
   override def generateRtlBMC(): Seq[(String, () => Component)] = generateRtl()
   override def generateRtl() = Seq(
-    (suiteName, () => new GeneralFormalDut(() => StridedAccessFIFOAsync(UInt(32 bits), UInt(8 bits), 1024 * 9, 0, 9, rsp_latency = 15))),
+    (suiteName, () => new GeneralFormalDut(() => StridedAccessFIFOAsync(UInt(32 bits), UInt(8 bits), 1024 * 9, 0, 9, rsp_latency = 15), 1)),
     ("StridedAccessFIFOAsync_from_reshape", () => new GeneralFormalDut(() => new StridedAccessFIFOAsync(UInt(48 bits), UInt(12 bits), 1920, 307200, 8,
       busConfig = PipelinedMemoryBusConfig(22, 64),
-      rsp_latency = 16, cmd_latency = 1)
+      rsp_latency = 16, cmd_latency = 1),
+      depth = 1
     ))
   )
 }

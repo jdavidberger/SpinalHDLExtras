@@ -217,6 +217,10 @@ case class StridedAccessFIFOReaderAsync[T <: Data](
   }
 
   override protected def formalProperties(): Seq[FormalProperty] = super.formalProperties() ++ new FormalProperties(this) {
+
+    addFormalProperty(io.bus.contract.outstandingReads.value <= chunk_cmd.cnt, "There should not be more outstanding reads than chunk count")
+    addFormalProperty(io.pop.formalContract.outstandingFlows.value <= outCnt)
+
     val busBitsOutstanding = io.bus.config.dataWidth * io.bus.contract.outstandingReads.value
     val outBitsOutstanding = outDatatype.getBitsWidth * io.pop.formalContract.outstandingFlows.value
     val adapterBits = CombInit(adapter.formalCounter.value)

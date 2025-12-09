@@ -5,6 +5,7 @@ import spinal.lib._
 import spinal.lib.bus.regif.BusIf
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusCmd}
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
+import spinalextras.lib.formal.StreamFormal.StreamExt
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.memory.HardwareMemory.HardwareMemoryReadWriteCmd
@@ -68,15 +69,15 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
   def create_arbiters(inputs : Seq[PipelinedMemoryBus], pendingRspMax : Int, rspRouteQueue : Boolean, transactionLock : Boolean): PipelinedMemoryBus = {
     val c = PipelinedMemoryBusArbiter(inputs.head.config, inputs.size, pendingRspMax, rspRouteQueue, transactionLock)
     (inputs, c.io.inputs).zipped.foreach {case (in, in_port) => {
-      //assert(in.formalContract.outstandingReads.value === in_port.formalContract.outstandingReads.value)
       (in <> in_port)
     }}
+
     c.io.output
   }
 
   val arbitratedBusses =
-    Seq(create_arbiters(groupedMasters.map(_(0)), 8, rspRouteQueue = true, transactionLock = false),
-      create_arbiters(groupedMasters.map(_(1)), 1, rspRouteQueue = false, transactionLock = false))
+    Seq(create_arbiters(groupedMasters.map(_(0)), 8, rspRouteQueue = true, transactionLock = true),
+      create_arbiters(groupedMasters.map(_(1)), 1, rspRouteQueue = false, transactionLock = true))
 
   mem.io.readWritePorts.zipWithIndex.foreach({case (rw, idx) => {
     val memBus = arbitratedBusses(idx)
@@ -100,9 +101,17 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
   }
 
   override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    groupedMasters.flatten.foreach(bus => {
+      when(bus.cmd.valid) {
+        addFormalProperty(bus.cmd.address <= totalDepth, f"master cmd is greater than ${totalDepth}")
+      }
+    })
     mem.io.readWritePorts.zipWithIndex.foreach({case (rw, idx) => {
       val memBus = arbitratedBusses(idx)
       addFormalProperty(memBus.contract.outstandingReads.value === mem.io.readWritePortsOutstanding(idx), s"Match read port outstanding counts ${idx}")
+      when(memBus.cmd.valid) {
+        addFormalProperty(memBus.cmd.address <= totalDepth, f"cmd ${idx} is greater than totalDepth")
+      }
     }})
   }
 }

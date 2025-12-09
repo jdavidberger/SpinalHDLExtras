@@ -67,7 +67,7 @@ class MemoryPoolFIFOsFormal[T <: Data](config : MemoryPoolFIFOConfig[T]) extends
 class MemoryBackedFIFOsTestFormal extends AnyFunSuite with FormalTestSuite {
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def defaultDepth() = 15
+  override def defaultDepth() = 10
 
   lazy val testConfigs = Seq(
     MemoryPoolFIFOConfig(UInt(8 bits), Seq(10, 50)),

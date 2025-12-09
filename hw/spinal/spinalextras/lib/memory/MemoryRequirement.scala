@@ -14,10 +14,11 @@ case class MemoryRequirement[T <: Data](dataType: HardType[T], num_elements: Big
   lazy val numPorts = numReadWritePorts + numReadPorts + numWritePorts
 
   override def toString: String = {
+    val prefix = if(label.nonEmpty) "s\"${label} - " else ""
     if (dataType.globalData != null) {
-      s"${label} - ${dataType.getBitsWidth}bits_${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
+      s"${prefix}${dataType.getBitsWidth}bits_${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
     } else {
-      s"${label} - ${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
+      s"${prefix}${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
     }
   }
 
@@ -29,7 +30,7 @@ case class MemoryRequirement[T <: Data](dataType: HardType[T], num_elements: Big
 }
 
 object MemoryRequirement {
-  def apply(topo: MemTopology) = {
+  def apply(topo: MemTopology): MemoryRequirement[Bits] = {
     MemoryRequirement[Bits](Bits(topo.mem.wordType.getBitsWidth bits), topo.mem.wordCount, topo.readWriteSync.size, topo.readsSync.size, topo.writes.size,
       needsMask = true, latencyRange = (1, 1), initialContent = topo.mem.initialContent)
   }

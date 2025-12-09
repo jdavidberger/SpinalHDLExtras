@@ -10,7 +10,7 @@ import spinalextras.lib.bus.PipelineMemoryGlobalBus
 import spinalextras.lib.bus.simple.SimpleMemoryProvider
 import spinalextras.lib.formal.HasFormalProperties
 import spinalextras.lib.memory.PipelinedMemoryBusFIFO
-import spinalextras.lib.testing.{FormalTestSuite, test_funcs}
+import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 
 import scala.collection.mutable
 
@@ -60,9 +60,6 @@ case class PipelinedMemoryBusFIFOFormal[T <: Data](dataType : HardType[T],
 
   withAutoPull()
 
-  //anyconst(dut.io.debug_fake_write)
-  dut.io.debug_fake_write := False
-
   cover(dut.full)
   cover(dut.io.push.fire)
   cover(dut.io.push.valid)
@@ -90,5 +87,8 @@ class PipelinedMemoryBusFIFOFormalTest extends AnyFunSuite with FormalTestSuite 
 
   override def generateRtlBMC() = Seq(("check_response", () => create_formal(true)))
   override def generateRtlCover() = Seq(("check_response", () => create_formal(false)))
-  override def generateRtl() = Seq(("no_check_response", () => create_formal(false)))
+  override def generateRtl() = Seq(
+    ("no_check_response", () => create_formal(false)),
+    ("Basic", () => GeneralFormalDut( () => new PipelinedMemoryBusFIFO(Bits(8 bits), SizeMapping(0, 100) )))
+  )
 }

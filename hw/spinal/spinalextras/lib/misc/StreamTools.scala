@@ -277,6 +277,10 @@ class StreamFragmentGather[T <: Data](dataType : HardType[T], gatherCount : Int)
 }
 
 object StreamTools {
+  def continueWhenUnstalled[T <: Data](s : Stream[T], cond : Bool) = {
+    s.continueWhen(cond || RegNext(s.isStall, init = False))
+  }
+
   def CreateFragment[T <: Data](v : T, last : Bool) = {
     val rtn = Fragment(cloneOf(v))
     rtn.fragment := v

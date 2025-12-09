@@ -43,5 +43,5 @@ class MemoriesFormalTest extends AnyFunSuite with FormalTestSuite {
 
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def generateRtl(): Seq[(String, () => Component)] = reqs.map(r => (r.toString, () => new MemoriesFormal(r)))
+  override def generateRtl(): Seq[(String, () => Component)] = reqs.map(r => (r.toString.replace(" ", ""), () => new MemoriesFormal(r)))
 }

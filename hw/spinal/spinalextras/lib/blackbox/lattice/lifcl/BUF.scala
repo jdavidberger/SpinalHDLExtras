@@ -14,7 +14,7 @@ case class BUF() extends BlackBox {
 
 object BUF {
   def apply(A: Bool): Bool = {
-    val buf = BUF().addAttribute("keep_hierarchy", "TRUE")
+    val buf = BUF()
     buf.setPartialName(s"${A.name}_buffer")
     buf.io.A := A
     CombInit(buf.io.Z).addAttribute("syn_keep", 1).addAttribute("nomerge", "")

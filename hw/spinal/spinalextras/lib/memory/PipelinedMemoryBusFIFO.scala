@@ -9,8 +9,9 @@ import spinal.lib.bus.simple._
 import spinal.lib.fsm.{EntryPoint, State, StateMachine}
 import spinalextras.lib.bus.{PipelineMemoryGlobalBus, PipelinedMemoryBusCmdExt, PipelinedMemoryBusConfigExt}
 import spinalextras.lib.formal.StreamFormal.StreamExt
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
-import spinalextras.lib.misc.RegisterTools
+import spinalextras.lib.misc.{RegisterTools, StreamTools}
 import spinalextras.lib.testing.test_funcs
 
 import scala.language.postfixOps
@@ -28,7 +29,7 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
 
   require(log2Up(depthInBytes + baseAddress) <= config.addressWidth)
 
-  val readBus = sysBus.get.add_master(s"pmb_fifo_read_${baseAddress.hexString()}")
+  val readBus = sysBus.map(g => g.add_master(s"pmb_fifo_read_${baseAddress.hexString()}")).getOrElse(master(PipelinedMemoryBus(config)))
   val bus = sysBus.map(g => g.add_master(s"pmb_fifo_write_${baseAddress.hexString()}")).getOrElse(master(PipelinedMemoryBus(config)))
 
   val io = new Bundle {
@@ -39,8 +40,6 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     val flush = in Bool() default(False)
     val occupancy    = out UInt (log2Up(depthInWords + 1) bits)
     val availability = out UInt (log2Up(depthInWords + 1) bits)
-
-    val debug_fake_write = in (Bool()) default(False)
   }
 
   val (writeBus, sharedBus) = sysBus.map((bus, _)).getOrElse(
@@ -50,14 +49,10 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
       (sysBus.add_master(s"pmb_fifo_write_${baseAddress.hexString()}"), sysBus)
     }
   )
-  writeBus.cmd.setIdle()
-  val isWriteBusStalled = RegNext(writeBus.cmd.isStall)
-  val writeBusStalled = RegNextWhen(writeBus.cmd.payload, writeBus.cmd.isStall)
-  writeBus.cmd.payload := writeBusStalled
 
-  when(!io.debug_fake_write) {
-    assert(!writeBus.cmd.valid || writeBus.cmd.write)
-  }
+  val isWriteBusStalled = RegNext(writeBus.cmd.isStall, init=False)
+
+  assert(!writeBus.cmd.valid || writeBus.cmd.write)
 
   val ramBackedBuffer = PipelinedMemoryBusBuffer(dataType, depthInBytes, baseAddress, sharedBus.config, rsp_latency = localPopDepth)
   ramBackedBuffer.io.bus <> readBus
@@ -101,20 +96,34 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
   assert(occupancy.mayOverflow === nextMayOverflow)
   assert(full === naiveFull)
 
-  val push = io.push.continueWhen(!isFlushing).addFormalException(isFlushing)
+
+  val push = StreamTools.continueWhenUnstalled(io.push, !isFlushing)
 
   val queuedPush = if(localPushDepth > 0) push.queue(localPushDepth) else push
   val pushToCmd = queuedPush.map(wrd => {
     val cmd = PipelinedMemoryBusCmd(writeBus.config)
     cmd.mask.setAll()
-    cmd.write := ~io.debug_fake_write
+    cmd.write := True
     val byteAddress = (write_counter.value << writeBus.config.wordAddressShift).resize(cmd.address.getBitsWidth bits) +^ baseAddress
     //assert(byteAddress.msb === False)
     cmd.assignByteAddress(byteAddress.resized)
     cmd.data := wrd.asBits
     cmd
   }).addFormalException(io.flush)
-  pushToCmd.setBlocked()
+
+  // Don't actually consume the push;
+  when(isFlushing || io.flush) {
+    push.ready := False
+  }
+
+  StreamTools.continueWhenUnstalled(
+    pushToCmd.continueWhen(!full),
+    !io.flush) >> writeBus.cmd
+
+  when(!isFlushing && writeBus.cmd.fire) {
+    occupancy.increment()
+    ramOccupancy.increment()
+  }
 
   val empty = CombInit(occupancy === 0) // && readFifo.io.occupancy === 0
   io.empty := empty
@@ -126,12 +135,6 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     val flushing = new State
 
     normal.whenIsActive {
-      pushToCmd.haltWhen(full) >> writeBus.cmd
-
-      when(writeBus.cmd.fire) {
-        occupancy.increment()
-        ramOccupancy.increment()
-      }
 
       when(ramBackedBuffer.io.memoryAvailable.fire) {
         inFlight.increment()
@@ -148,22 +151,20 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
     }
 
     flushing.whenIsActive {
+
       ramBackedBuffer.io.flush := True
       ramBackedBuffer.io.pop.ready := True
 
       isFlushing := True
 
       ramBackedBuffer.io.memoryAvailable.valid := memoryAvailableStall
-      writeBus.cmd.valid := isWriteBusStalled
-      pushToCmd.freeRun()
 
       io.pop.valid := False
-      io.push.ready := False
 
-      when(!isWriteBusStalled && !memoryAvailableStall) {
-        write_counter.clearAll()
-
+      when(!writeBus.cmd.isStall && !memoryAvailableStall) {
         when(!io.flush) {
+          write_counter.clearAll()
+
           goto(normal)
         }
       }
@@ -203,10 +204,17 @@ case class PipelinedMemoryBusFIFO[T <: Data](dataType : HardType[T],
 
   override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
     withAutoPull()
+
+    addFormalProperty(bus.contract.outstandingReads === 0)
     addFormalProperty((ramOccupancy.value +^ inFlight.value) === occupancy.value, "RamOcc + inFlight should equal occ")
     //addFormalProperty(readBus.contract.outstandingReads === ramBackedBuffer.readBus.contract.outstandingReads)
     addFormalProperty(inFlight.value === ramBackedBuffer.io.occupancy, "Inflight and occupanccy counter is off")
 
+    when(isWriteBusStalled) {
+      addFormalProperty(pushToCmd.valid)
+    }
+
+    writeBus.cmd.addFormalPayloadInvarianceException(isFlushing)
     when(isFlushing) {
       addFormalProperty(occupancy === 0, "Occupancy must be zero while flushing")
       addFormalProperty(ramOccupancy === 0, "Ram Occ must be zero while flushing")

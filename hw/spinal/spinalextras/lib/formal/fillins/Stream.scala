@@ -59,7 +59,7 @@ package object StreamFormal {
     def addFormalException(b : Bool): Unit = {
       exceptions.append(b)
       val restore = push(Component.toplevel)
-      when(b) {
+      when(b.pull()) {
         _formalExceptionalState := True
       }
       restore.restore()
