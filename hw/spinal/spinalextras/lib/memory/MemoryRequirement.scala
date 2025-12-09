@@ -14,7 +14,7 @@ case class MemoryRequirement[T <: Data](dataType: HardType[T], num_elements: Big
   lazy val numPorts = numReadWritePorts + numReadPorts + numWritePorts
 
   override def toString: String = {
-    val prefix = if(label.nonEmpty) "s\"${label} - " else ""
+    val prefix = if(label.nonEmpty) f"${label} - " else ""
     if (dataType.globalData != null) {
       s"${prefix}${dataType.getBitsWidth}bits_${num_elements}d_${numReadWritePorts}rw_${numReadPorts}r_${numWritePorts}"
     } else {

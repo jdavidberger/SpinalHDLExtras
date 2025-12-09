@@ -13,20 +13,65 @@ on:
 
 jobs:
 
-  test:
+  build-container:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write # Necessary to push to GHCR
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Log in to the Container registry
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} #
+      - name: Build image with Buildah
+        id: build
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: spinal-image
+          tags: latest ${{ github.run_number }}
+          containerfiles: ./dockers/Dockerfile.spinalhdl
+          labels: |
+            org.opencontainers.image.source=${{ github.event.repository.html_url }}
+      - name: Push to GitHub Container Registry
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build.outputs.image }}
+          tags: ${{ steps.build.outputs.tags }}
+          registry: ghcr.io/${{ github.repository }}
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build-container
+    permissions:
+      contents: read
+      packages: write # Necessary to push to GHCR
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Log in to the Container registry
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} #
 
       - name: Make tests
         run: |
           rm -rf target/test-reports/
           ls
           ./dockers/run-spinal-image.sh sbt --no-colors test
-            
+
       - name: Publish Test Results
         uses: dorny/test-reporter@v1
         if: success() || failure() # Always run this step
