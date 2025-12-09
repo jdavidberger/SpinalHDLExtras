@@ -1,12 +1,12 @@
 package spinalextras.lib.tests.formal
 
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.core.{Bits, Bundle, ClockDomain, Module, assume, when}
+import spinal.core.{Bits, Bundle, ClockDomain, IntToBuilder, Module, assume, when}
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinal.lib.{Flow, Stream, master, slave}
 import spinalextras.lib.bus.WishboneGlobalBus
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperty}
-import spinalextras.lib.logging.{FlowLogger, FlowLoggerPortTestBench, FlowLoggerTestBench}
+import spinalextras.lib.logging.{FlowLogger, FlowLoggerTestBench}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 class FlowLoggerPortTestBench() extends ComponentWithFormalProperties {
