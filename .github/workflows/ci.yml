@@ -73,7 +73,7 @@ jobs:
       - name: Make tests
         run: |
           rm -rf target/test-reports/
-          ls
+          ls -al
           PULL_IMAGE=1 ./dockers/run-spinal-image.sh sbt --no-colors test
 
       - name: Publish Test Results
