@@ -72,7 +72,7 @@ jobs:
 
       - name: Make tests
         run: |
-          rm -rf target/test-reports/
+          rm -rf .podman/target/test-reports/
           ls -al
           PULL_IMAGE=1 ./dockers/run-spinal-image.sh sbt --no-colors test
 
@@ -81,5 +81,5 @@ jobs:
         if: success() || failure() # Always run this step
         with:
           name: SBT Tests
-          path: target/test-reports/*.xml # Path to the generated XML reports
+          path: .podman/target/test-reports/*.xml # Path to the generated XML reports
           reporter: java-junit
