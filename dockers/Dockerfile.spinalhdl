@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN curl -s "https://get.sdkman.io" | bash
 
+ENV HOME=/root
 ENV SDKMAN_DIR="$HOME/.sdkman"
 
 ENV SCALA_VERSION=2.12.18
