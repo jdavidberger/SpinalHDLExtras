@@ -73,9 +73,9 @@ class GlobalLogger {
   }
 
   def build(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String,
-            outputStream: Option[Stream[Bits]] = None,
-            tags: Set[String] = Set()): Unit = {
-    val clockDomain = outputStream.map(_.valid.clockDomain).getOrElse(ClockDomain.current)
+            ctrlStreams: Option[(Stream[Bits], Flow[Bits])] = None,
+            tags: Set[String] = Set(), localDepth : Int = 0): Unit = {
+    val clockDomain = ctrlStreams.map(_._1.valid.clockDomain).getOrElse(ClockDomain.current)
 
     if (built) {
       return
@@ -92,35 +92,35 @@ class GlobalLogger {
     new ClockingArea(clockDomain) {
       if (signals.nonEmpty && depth > 0) {
         val ctx = Component.push(Component.toplevel)
-        val logger = FlowLogger(signals)
+        val logger = FlowLogger(FlowLoggerConfig(localDepth = localDepth), signals)
         logger.setName(loggerName)
         logger.add_comments(comments)
         FlowLoggerYaml(logger, output_path)
-        logger.create_logger_port(sysBus, address, depth, outputStream)
+        logger.create_logger_port(sysBus, address, depth, ctrlStreams)
 
         ctx.restore()
       } else {
         val ctx = Component.push(Component.toplevel)
-        outputStream.foreach(_.setIdle())
+        ctrlStreams.foreach(_._1.setIdle())
         ctx.restore()
       }
     }
     output_path = null
   }
 
-  def create_logger_stream(depth: Int, outputStream: Stream[Bits], tags: Set[String] = Set()): Unit = {
+  def create_logger_stream(depth: Int, ctrlStreams: (Stream[Bits], Flow[Bits]), tags: Set[String] = Set()): Unit = {
     Component.toplevel.addPrePopTask(() => {
       val sysBus: GlobalBus_t = null
-      this.build(sysBus, 0, depth, "GlobalLogger", Some(outputStream), tags = tags)
+      this.build(sysBus, 0, depth, "GlobalLogger", Some(ctrlStreams), tags = tags)
     })
   }
 
-  def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String, outputStream: Option[Stream[Bits]] = None, tags: Set[String] = Set()): Unit = {
+  def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String, ctrlStreams: Option[(Stream[Bits], Flow[Bits])] = None, tags: Set[String] = Set(), localDepth : Int = 0): Unit = {
     sysBus.addPreBuildTask(() =>
-      build(sysBus, address, depth, name, outputStream, tags)
+      build(sysBus, address, depth, name, ctrlStreams, tags, localDepth = localDepth)
     )
     Component.toplevel.addPrePopTask(() => {
-      this.build(sysBus, address, depth, name, outputStream, tags)
+      this.build(sysBus, address, depth, name, ctrlStreams, tags, localDepth = localDepth)
     })
   }
 
@@ -156,12 +156,12 @@ object GlobalLogger {
     get().set_output_path(fn)
   }
 
-  def create_logger_stream(depth: Int, outputStream: Stream[Bits], tags: Set[String] = Set()): Unit = {
-    get().create_logger_stream(depth, outputStream = outputStream, tags = tags)
+  def create_logger_stream(depth: Int, ctrlStreams: (Stream[Bits], Flow[Bits]), tags: Set[String] = Set()): Unit = {
+    get().create_logger_stream(depth, ctrlStreams = ctrlStreams, tags = tags)
   }
 
   def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String = Component.toplevel.name + "Logger",
-                         outputStream: Option[Stream[Bits]] = None, tags: Set[String] = Set()): Unit = {
-    get().create_logger_port(sysBus, address, depth, name = name, outputStream = outputStream, tags = tags)
+                         ctrlStreams: Option[(Stream[Bits], Flow[Bits])] = None, tags: Set[String] = Set(), localDepth : Int = 0): Unit = {
+    get().create_logger_port(sysBus, address, depth, name = name, ctrlStreams = ctrlStreams, tags = tags, localDepth = localDepth)
   }
 }

@@ -3,7 +3,7 @@ package spinalextras.lib.formal
 import spinal.core.{Area, Bundle, Component, Data}
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly, Axi4Shared, Axi4WriteOnly}
 import spinal.lib.{Counter, Fragment, IMasterSlave, Stream}
-import spinal.lib.bus.simple.PipelinedMemoryBus
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter}
 import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.fsm.{StateFsm, StateMachine}
 

@@ -2,8 +2,10 @@ package spinalextras.lib.soc.bus
 
 import spinal.core._
 import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.regif.WishboneBusInterface
 import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinal.lib.master
+import spinalextras.lib.bus.bus.WishboneMultiBusInterface
 import spinalextras.lib.soc.spinex.{Spinex, SpinexPlugin}
 
 case class WishbonePlugin(mapping : SizeMapping,
@@ -15,6 +17,6 @@ case class WishbonePlugin(mapping : SizeMapping,
 
   override def apply(soc: Spinex): Unit = {
     soc.io.valCallbackRec(bus, name)
-    soc.add_slave(bus, name, mapping, tags:_*)
+    soc.add_slave(new WishboneMultiBusInterface(bus), name, mapping, direct = true, tags:_*)
   }
 }

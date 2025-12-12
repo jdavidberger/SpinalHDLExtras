@@ -11,8 +11,9 @@ import spinal.lib.com.jtag.JtagTapInstructionCtrl
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBus
 import spinal.lib.cpu.riscv.debug._
 import spinalextras.lib.Config
+import spinalextras.lib.bus.bus.InstructionCacheMemBusExt
 import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
-import spinalextras.lib.clocking.{ClockSelection}
+import spinalextras.lib.clocking.ClockSelection
 import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
@@ -23,6 +24,7 @@ import vexriscv.ip.InstructionCacheMemBus
 import vexriscv.plugin._
 import vexriscv.{VexRiscv, VexRiscvConfig}
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
@@ -78,7 +80,6 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     interconnect = new MultiInterconnectByTag("spinex_interconnect")
     directInterconnect = new MultiInterconnectByTag("spinex_directInterconnect")
 
-
     val pipelinedMemoryBusConfig = PipelinedMemoryBusConfig(
       addressWidth = 32,
       dataWidth = 32
@@ -87,7 +88,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     //Instanciate the CPU
     val cpu = new VexRiscv(
       config = VexRiscvConfig(
-        plugins = cpuPlugins += //new DebugPlugin(debugClockDomain, hardwareBreakpointCount)
+        plugins = cpuPlugins += //new DebugPlugin(debugClockDomain, hardwareBreakpointCount),
           new EmbeddedRiscvJtag(
             p = DebugTransportModuleParameter(
               addressWidth = 7,
@@ -98,7 +99,6 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
             withTunneling = false,
             withTap = true
           )
-
       )
     )
 
@@ -135,6 +135,18 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       }
       case plugin : CsrPlugin        => {
         plugin.timerInterrupt := timerInterrupt
+        withAutoPull()
+
+        GlobalLogger(Set("cpu"),
+          FlowLogger.flows({
+            val pc = plugin.pipeline.execute.input(plugin.pipeline.config.PC)
+            val flow = Flow(pc).setName("pc_at_exception")
+            flow.payload := pc
+            flow.valid := plugin.exceptionPortsInfos.map(_.port.valid).orR
+            flow
+          }),
+          FlowLogger.flows(plugin.exceptionPortsInfos.map(_.port):_*)
+        )
       }
       case plugin : ExternalInterruptArrayPlugin => {
         plugin.externalInterruptArray := externalInterrupts
@@ -197,12 +209,56 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       SignalLogger.concat("interrupts", interruptInfos.values.toSeq)
     )
 
+    @tailrec
+    def getErrorSignals(bus : Any) : (Bool, Bool) = {
+      bus match {
+        case bus: DBusSimpleBus => {
+          val setError = Bool()
+          when(setError && bus.cmd.valid) {
+            bus.cmd.ready := True
+            bus.rsp.error := True
+            bus.rsp.ready := True
+          }
+          (!bus.cmd.valid || bus.cmd.fire, setError)
+        }
+        case bus: InstructionCacheMemBus => {
+          val setError = Bool()
+          when(setError && bus.cmd.valid) {
+            bus.cmd.ready := True
+            bus.rsp.error := True
+            bus.rsp.valid := True
+          }
+          (!bus.cmd.valid || bus.cmd.fire, setError)
+        }
+        case bus: IBusSimpleBus => {
+          val setError = Bool()
+          when(setError && bus.cmd.valid) {
+            bus.cmd.ready := True
+            bus.rsp.error := True
+            bus.rsp.valid := True
+          }
+          (!bus.cmd.valid || bus.cmd.fire, setError)
+        }
+        case bus: MultiBusInterface => getErrorSignals(bus.bus)
+      }
+    }
+
     Component.toplevel.addPrePopTask(() => {
       directInterconnect.build()
       interconnect.build()
+
+      if(config.busTimeout.toInt > 0) {
+        directInterconnect.masters.foreach(bus => {
+          val busTimeout = Timeout(config.busTimeout)
+          val (clearTimeout, setError) = getErrorSignals(bus)
+          when(clearTimeout) {
+            busTimeout.clear()
+          }
+          setError := busTimeout
+        })
+      }
     })
   }
-
 
   import spinalextras.lib.bus.bus._
 
@@ -222,6 +278,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
   def add_master(bus: InstructionCacheMemBus): Unit = {
     directInterconnect.addMaster(bus, "iBus")
+
     GlobalLogger(Set("iBus"),
       FlowLogger.streams(bus.cmd.setName("iBus_cmd")),
       FlowLogger.flows(bus.rsp.setName("iBus_rsp"))

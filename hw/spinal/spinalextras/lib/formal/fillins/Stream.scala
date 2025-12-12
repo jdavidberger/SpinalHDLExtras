@@ -50,7 +50,7 @@ package object StreamFormal {
     def addFormalPayloadInvarianceException(b : Bool): Unit = {
       payloadInvarianceExceptions.append(b)
       val r = push(Component.toplevel)
-      when(b) {
+      when(b.pull()) {
         _formalPayloadInvarianceExceptionalState := True
       }
       r.restore()

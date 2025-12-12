@@ -70,10 +70,14 @@
 //
 
 // synopsys translate_off
-`include "timescale.v"
+`timescale 1ns / 10ps
 // synopsys translate_on
 
-`include "i2c_master_defines.v"
+`define I2C_CMD_NOP   4'b0000
+`define I2C_CMD_START 4'b0001
+`define I2C_CMD_STOP  4'b0010
+`define I2C_CMD_WRITE 4'b0100
+`define I2C_CMD_READ  4'b1000
 
 module i2c_master_top(
 	wb_clk_i, wb_rst_i, arst_i, wb_adr_i, wb_dat_i, wb_dat_o,

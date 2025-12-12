@@ -1,6 +1,6 @@
 package spinalextras.lib.soc.spinex
 
-import spinal.core.{HertzNumber, IntToBuilder, ifGen, log2Up}
+import spinal.core.{HertzNumber, IntToBuilder, TimeNumber, ifGen, log2Up}
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config, Apb3SlaveFactory}
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactoryNonStopWrite, BusSlaveFactoryOnReadAtAddress, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryRead, BusSlaveFactoryWrite, SizeMapping}
 import spinal.lib.com.spi.ddr.{SpiXdrMasterCtrl, SpiXdrParameter}
@@ -89,7 +89,8 @@ case class SpinexConfig(coreFrequency : HertzNumber,
                         withNativeJtag      : Boolean,
                         cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
                         externalInterrupts : Int,
-                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins
+                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins,
+                        busTimeout : TimeNumber = 1 sec
                        ){
   require(pipelineApbBridge || pipelineMainBus, "At least pipelineMainBus or pipelineApbBridge should be enable to avoid wipe transactions")
   val genXip = xipConfig != null
@@ -262,7 +263,7 @@ object SpinexConfig{
       TimerPlugin(),
       UartCtrlPlugin(),
 
-      OpenCoresI2CPlugin(),
+      OpenCoresI2CPlugin(use_external = false),
       SystemRam(),
       new JTagPlugin(),
       PrintAPBMapping()

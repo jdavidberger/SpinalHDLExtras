@@ -51,7 +51,7 @@ object FlowLoggerYaml {
     emit(s"clock_freq: ${clockDomain.get.frequency.getValue.toDouble}")
     emit(s"signature: ${signature}")
     emit(s"index_size: ${index_size}")
-    emit(s"log_bits: ${logBits}")
+    emit(s"log_bits: ${cfg.logBits}")
     emit("event_definitions:")
     datas.zipWithIndex.foreach(d_clk => {
       val (d, cd) = d_clk._1
@@ -60,7 +60,7 @@ object FlowLoggerYaml {
       emit(s"   - name: ${flows()(idx)._1.name}")
       emit(s"     index: ${idx}")
       emit(s"     path: ${flowLogger.datas(idx)._1.getRtlPath()}")
-      emit(s"     time_bits: ${logBits - d.getBitsWidth - index_size}")
+      emit(s"     time_bits: ${cfg.logBits - d.getBitsWidth - index_size}")
       emit(s"     type: ")
       emit_type(d, 2)
     })

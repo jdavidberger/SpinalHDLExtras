@@ -19,7 +19,13 @@ import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
-class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val gtimeTimeout : BigInt = 0xFFFFFFFFL, val stageAllFlows : Boolean = true) extends ComponentWithFormalProperties {
+case class FlowLoggerConfig(val logBits: Int = 95, val gtimeTimeout : BigInt = 0xFFFFFFFFL, val stageAllFlows : Boolean = true, localDepth : Int = 0) {
+
+}
+
+class FlowLogger(val datas: Seq[(Data, ClockDomain)], val cfg : FlowLoggerConfig = FlowLoggerConfig()) extends ComponentWithFormalProperties {
+  import cfg._
+
   val signature = datas.map(_.toString()).hashCode().abs
   val io = new Bundle {
     val flows = datas.map(b => slave Flow (Bits(b._1.getBitsWidth bits)))
@@ -27,7 +33,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
     val log = master(Stream(Bits(logBits bits)))
 
     val inactive_channels = in(Bits(datas.length bits)).addTag(crossClockDomain) default(0)
-    val manual_trigger = slave Flow (UInt(datas.length bits))
+    val manual_trigger = slave Flow (Bits(datas.length bits))
 
     val dropped_events = out(UInt(32 bits))
     val flush_dropped = in(Bool()) default(False)
@@ -99,7 +105,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
     for ((flow, idx) <- flows()) yield {
 
       val isSameCD = datas(idx)._2 == ClockDomain.current
-      val data_log_capture = FlowLoggerDataCapture(this, Bits(flow.payload.getBitsWidth bits), datas(idx), idx)
+      val data_log_capture = FlowLoggerDataCapture(this, Bits(flow.payload.getBitsWidth bits), datas(idx), idx, localDepth = localDepth)
 
       data_log_capture.setName(s"data_tap_${flow.name}_${idx}")
       data_log_capture.io.flow <> (if(stageAllFlows && isSameCD) flow.stage() else flow)
@@ -149,7 +155,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
   }
 
   def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int,
-                         outputStream : Option[Stream[Bits]] = None) = new Composite(this, "logger_port") {
+                         ctrlStreams : Option[(Stream[Bits], Flow[Bits])] = None) = new Composite(this, "logger_port") {
     //val loggerFifo = StreamFifo(cloneOf(io.log.payload), depth)
 
     val loggerFifo = new MemoryBackedFifo(cloneOf(io.log.payload), depth, memory_label = "logger_buffer")
@@ -166,7 +172,7 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
     }
 
     if(sysBus == null) {
-      stream >> outputStream.get
+      stream >> ctrlStreams.get._1
       loggerFifo.io.flush := False
       io.manual_trigger.clearAll()
     }
@@ -178,13 +184,13 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
     logger_port.createReadOnly(UInt(32 bits), address + 4) := RegNext(io.captured_events, init = U(0))
     val memoryStream = stream.clone()
     logger_port.readStreamNonBlocking(memoryStream, address + 8)
-    if(outputStream.isEmpty) {
+    if(ctrlStreams.isEmpty) {
       memoryStream << stream
     } else {
       val inMemory = RegNext(ctrlReg(0)) init(False)
 
       val demux = StreamDemux(stream, inMemory.asUInt, 2)
-      demux(0) >> outputStream.get
+      demux(0) >> ctrlStreams.get._1
       demux(1) >> memoryStream
 
       when(inMemory =/= RegNext(inMemory, False)) {
@@ -220,6 +226,38 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val logBits: Int = 95, val
       }
     })
 
+    val activityTimeout = Timeout(1000 ms)
+    when(activityTimeout) {
+      activityTimeout.clear()
+      io.manual_trigger.valid := True
+      io.manual_trigger.payload.setAll()
+    }
+    when(io.log.valid) {
+      activityTimeout.clear()
+    }
+
+    if(ctrlStreams.isDefined) {
+      val inFlow = ctrlStreams.get._2
+
+      when(inFlow.valid) {
+        val opCode = inFlow.payload.resize(16 bits)
+        val args = inFlow.payload >> 16
+
+        switch(opCode) {
+          is(0) {
+            inactive_channels := args.resized
+          }
+          is(1) {
+            io.manual_trigger.valid := True
+            io.manual_trigger.payload := args.resized
+          }
+          is(2) {
+            io.flush_dropped := True
+          }
+        }
+      }
+    }
+
     new DeviceTreeProvider(address) {
       override def compatible : Seq[String] = Seq(s"spinex,event-logger")
       override def baseEntryPath = Seq("/", f"eventLogger@${address.toString(16)}")
@@ -238,7 +276,7 @@ class FlowLoggerTestBench(inactiveChannels : Boolean = false) extends ComponentW
     val log = master(Stream(Bits(95 bits)))
   }
 
-  val logger = new FlowLogger(io.flows.map(x => (x.payload, ClockDomain.current)), gtimeTimeout = 5)
+  val logger = new FlowLogger(io.flows.map(x => (x.payload, ClockDomain.current)), FlowLoggerConfig(gtimeTimeout = 5))
   logger.io.manual_trigger.setIdle()
 
   if(!inactiveChannels) {
@@ -270,15 +308,24 @@ class FlowLoggerTestBench(inactiveChannels : Boolean = false) extends ComponentW
 
 
 object FlowLogger {
+  def apply(config : FlowLoggerConfig, signals: Seq[(Data, Flow[Bits], ClockDomain)]*): FlowLogger = {
+    new FlowLogger(signals.flatten.map(x => (x._1, x._3)), config).assign(signals.flatten.map(_._2))
+  }
   def apply(signals: Seq[(Data, Flow[Bits], ClockDomain)]*): FlowLogger = {
-    new FlowLogger(signals.flatten.map(x => (x._1, x._3))).assign(signals.flatten.map(_._2))
+    FlowLogger(FlowLoggerConfig(), signals:_*)
   }
   def apply(signals: Seq[(Data, Flow[Bits])]*)(implicit ev: DummyImplicit): FlowLogger = {
     new FlowLogger(signals.flatten.map(x => (x._1, ClockDomain.current))).assign(signals.flatten.map(_._2))
   }
 
   def asFlow[T <: Data](s: Stream[T], stage : Boolean = true): (Data, Flow[Bits]) = {
-    var flow = s.toFlowFire
+    var flow = new Flow(s.payloadType)
+    flow.valid := s.fire
+    flow.payload.clearAll()
+    when(s.fire) {
+      flow.payload := s.payload
+    }
+
     if(stage) flow = flow.stage()
     (s.payload, flow.setName(s.getName()).map(FlowLogger.asBits).setName(s.getName()))
   }

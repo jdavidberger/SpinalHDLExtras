@@ -105,7 +105,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] extends BusSlavePro
 
     slaves.foreach(s => {
       //println(s"Checking ${s._2} vs ${newMapping}")
-      val no_overlap = !s._2.hit(mapping.lowerBound) && !mapping.hit(s._2.lowerBound)
+      val no_overlap = mapping == DefaultMapping || s._2 == DefaultMapping || !s._2.hit(mapping.lowerBound) && !mapping.hit(s._2.lowerBound)
       if(!no_overlap) {
         println("Invalid memory settings, overlap between two slave devices:")
         println(s"${s} overlaps with ${name} (${mapping})")
@@ -164,11 +164,18 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] extends BusSlavePro
   def interconnect_spec() : Seq[(T, Seq[T])] = {
     var slaves_without_arbiters = slaves.map(_._1).toSet
 
+    val sortedSlaves = slaves.sortBy(x =>
+        x._2 match {
+          case DefaultMapping => 0
+          case _ => -x._2.lowerBound.toInt
+        }
+    )
+
     val rtn = masters.map {
       case (m, tags) => {
         println(s"\t${m.name} ${tags}")
 
-        val connected_slaves = slaves.filter { case (s, mapping, slave_tags) =>
+        val connected_slaves = sortedSlaves.filter { case (s, mapping, slave_tags) =>
           tags.isEmpty || slave_tags.isEmpty || slave_tags.intersect(tags).nonEmpty
         }.map { case (s, inputMapping, slave_tags) =>
           val mapping = spinalextras.lib.bus.to_mask_mapping(32, inputMapping)
@@ -214,7 +221,6 @@ trait GlobalBusFactory[GBT <: GlobalBus[_]] {
 }
 
 case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone] {
-
   def addr_width() = config.addressWidth
 
   override def create_bus(): Wishbone = {
@@ -231,7 +237,11 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
     WishboneStage(bus)
   }
   override def bus_interface(port : Wishbone, mapping: SizeMapping) : WishboneBusInterface = WishboneBusInterface(port, mapping)
-  override def slave_factory(port : Wishbone) = WishboneSlaveFactory(port)
+  override def slave_factory(port : Wishbone) = {
+    if(port.ERR != null)
+      port.ERR := False
+    WishboneSlaveFactory(port)
+  }
 
   override def apply_staging(bus: Wishbone, m2s_stage: Boolean, s2m_stage: Boolean): Wishbone = {
     WishboneStage(bus, m2s_stage, s2m_stage)
@@ -287,12 +297,16 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
   }
 
   override def slave_direction: direction_function = x => {
-    if(x.ERR != null) {
-      x.ERR := False
-      x.ERR.allowOverride()
-    }
     slave(x)
   }
+
+//  if(config.useERR) {
+//    val missSlave = add_slave("decoder_miss", DefaultMapping)
+//    if(missSlave.ERR != null)
+//      missSlave.ERR := True
+//    missSlave.ACK := True
+//    missSlave.DAT_MISO := 0x9ABCDEF
+//  }
 
 }
 object PipelineMemoryGlobalBus {
@@ -325,24 +339,7 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
     }
 
     interconn.addMasters(spec:_*)
-//
-//    def directWithFormal(m : PipelinedMemoryBus, s : PipelinedMemoryBus) : Unit = {
-//      val mContract = test_funcs.assertPMBContract(m).setName(s"c${m.name}_gb_contract")
-//      val sContract = test_funcs.assertPMBContract(s).setName(s"c${s.name}_gb_contract")
-//      println(s"Associating ${m}(${mContract.name}) with ${s}(${sContract.name})")
-//      assert(mContract.outstanding_cnt === sContract.outstanding_cnt)
-//      m >> s
-//    }
-//
-//    for(m <- interconn.masters) {
-//      m._2.connector = directWithFormal
-//    }
-//    for(s <- interconn.slaves) {
-//      s._2.connector = directWithFormal
-//    }
-//    for(c <- interconn.connections) {
-//      c.connector = directWithFormal
-//    }
+
     ctx.restore()
   }
 

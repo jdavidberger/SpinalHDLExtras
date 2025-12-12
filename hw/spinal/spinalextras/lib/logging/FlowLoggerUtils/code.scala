@@ -209,7 +209,7 @@ object FlowLoggerCCode {
       val typeName = getTypeName(d)
 
       var bitOffset = 0
-      val time_bits = logBits - d.getBitsWidth - index_size
+      val time_bits = cfg.logBits - d.getBitsWidth - index_size
       emit(s"#define ${d.getName()}_TIME_BIT_WIDTH ${time_bits}")
       d match {
         case b : MultiData => {
@@ -235,7 +235,7 @@ object FlowLoggerCCode {
           emit("}")
         }
         case _ => {
-          val time_bits = logBits - d.getBitsWidth - index_size
+          val time_bits = cfg.logBits - d.getBitsWidth - index_size
           val prefix = s"${d.getName()}"
           emit(
             s"""

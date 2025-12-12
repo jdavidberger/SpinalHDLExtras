@@ -9,18 +9,24 @@ import spinalextras.lib.clocking.ClockUtils
 import scala.language.postfixOps
 
 object JtagLoggerTap {
-  def apply(log_stream : Stream[Bits], tap: JtagTap, jtag_cd : ClockDomain, instr : Int = 0x24) = {
-    val log_stream_cc = log_stream.ccToggle(ClockDomain.current, popClock = jtag_cd)
+  def apply(outStream : Stream[Bits],
+            inFlow: Flow[Bits],
+            tap: JtagTap, jtag_cd : ClockDomain, instr : Int = 0x24) = {
+    val log_stream_cc = outStream.ccToggle(ClockDomain.current, popClock = jtag_cd)
 
     val ctrl = new ClockingArea(jtag_cd) {
-      tap.map(StreamJtagInstrCtrl(log_stream_cc), instr)
+      val inFlow_cc = inFlow.clone()
+      tap.map(StreamJtagInstrCtrl(log_stream_cc, inFlow_cc), instr)
     }
+
+    inFlow <> ctrl.inFlow_cc.ccToggle(jtag_cd, ClockDomain.current)
   }
 }
 class JtagLoggerTap(bitWidth : Int, instr : Int = 0x24, frequency : HertzNumber = 12 MHz) extends Component {
   val io = new Bundle {
     val jtag    = slave(Jtag())
-    val log_stream = slave(Stream(Bits(bitWidth bits)))
+    val outStream = slave(Stream(Bits(bitWidth bits)))
+    val inFlow = master(Flow(Bits(bitWidth bits)))
   }
 
   ClockUtils.asAsyncReset(ClockDomain.current) on new Area {
@@ -32,7 +38,7 @@ class JtagLoggerTap(bitWidth : Int, instr : Int = 0x24, frequency : HertzNumber 
     }
     noIoPrefix()
 
-    JtagLoggerTap(io.log_stream, ctrl.tap, jtag_cd, instr)
+    JtagLoggerTap(io.outStream, io.inFlow, ctrl.tap, jtag_cd, instr)
   }
 }
 

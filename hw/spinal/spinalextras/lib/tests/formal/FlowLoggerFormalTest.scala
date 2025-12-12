@@ -6,7 +6,7 @@ import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinal.lib.{Flow, Stream, master, slave}
 import spinalextras.lib.bus.WishboneGlobalBus
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperty}
-import spinalextras.lib.logging.{FlowLogger, FlowLoggerTestBench}
+import spinalextras.lib.logging.{FlowLogger, FlowLoggerConfig, FlowLoggerTestBench}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 class FlowLoggerPortTestBench() extends ComponentWithFormalProperties {
@@ -17,14 +17,16 @@ class FlowLoggerPortTestBench() extends ComponentWithFormalProperties {
     val bus = slave(new Wishbone(sysBus.config))
     val log = master(Stream(Bits(95 bits)))
   }
+  val inFlow = Flow(Bits(32 bits))
+  inFlow.setIdle()
 
   io.bus <> sysBus.add_master("cpu")
-  val logger = new FlowLogger(io.flows.map(x => (x.payload, ClockDomain.current)), gtimeTimeout = 5)
+  val logger = new FlowLogger(io.flows.map(x => (x.payload, ClockDomain.current)), FlowLoggerConfig( gtimeTimeout = 5))
 
   logger.io.flows.zip(io.flows).foreach(x => x._1 <> x._2)
 
 
-  val portArea = logger.create_logger_port(sysBus, 0, 3, outputStream = Some(io.log))
+  val portArea = logger.create_logger_port(sysBus, 0, 3, ctrlStreams = Some((io.log, inFlow)))
   when(portArea.loggerFifo.io.flush) {
     assume(portArea.loggerFifo.io.pop.ready)
   }

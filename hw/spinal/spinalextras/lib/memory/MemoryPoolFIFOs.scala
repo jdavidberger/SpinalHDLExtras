@@ -53,7 +53,7 @@ case class MemoryPoolFIFOs[T <: Data](dataType: HardType[T],
     val fifo = new PipelinedMemoryBusFIFO(dataType, (base, sm_fifo._1.toInt << sysBus.config.wordAddressShift), Some(sysBus), localPopDepth = mem.latency)
     base = base + (sm_fifo._1.toInt << sysBus.config.wordAddressShift)
     fifo.io.push << sm_fifo._2.push
-    fifo.io.pop.stage() >> sm_fifo._2.pop
+    fifo.io.pop >> sm_fifo._2.pop
     fifo.io.flush := sm_fifo._2.flush
 
     sm_fifo._2.occupancy := fifo.io.occupancy

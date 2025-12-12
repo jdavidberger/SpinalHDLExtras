@@ -65,8 +65,8 @@ class FlowLoggerDataCapture(dataWidth: Int, val index_size: Int, val logBits: In
 }
 
 object FlowLoggerDataCapture {
-  def apply(logger: FlowLogger, dataType: HardType[Bits], datum: (Data, ClockDomain), idx: Int) = {
-    new FlowLoggerDataCapture(dataWidth = dataType.getBitsWidth, index_size = logger.index_size, logBits = logger.logBits, datumName = datum._1.name, cd = datum._2, idx = idx)
+  def apply(logger: FlowLogger, dataType: HardType[Bits], datum: (Data, ClockDomain), idx: Int, localDepth : Int = 0) = {
+    new FlowLoggerDataCapture(dataWidth = dataType.getBitsWidth, index_size = logger.index_size, logBits = logger.cfg.logBits, datumName = datum._1.name, cd = datum._2, idx = idx, localDepth = localDepth)
   }
 }
 

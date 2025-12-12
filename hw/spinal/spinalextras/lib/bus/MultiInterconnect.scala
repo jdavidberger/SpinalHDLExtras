@@ -1,12 +1,9 @@
 package spinalextras.lib.bus
 
 import spinal.core.{Bool, Component, MultiData, log2Up}
-import spinal.lib.{IMasterSlave, master, slave}
-import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, DefaultMapping, MaskMapping, NeverMapping, SizeMapping}
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig, PipelinedMemoryBusDecoder, PipelinedMemoryBusSlaveFactory}
-import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig, WishboneSlaveFactory}
-import spinalextras.lib.bus
-import spinalextras.lib.bus.bus.WishboneMultiBusInterface
+import spinal.lib.bus.misc._
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig, PipelinedMemoryBusSlaveFactory}
+import spinal.lib.{IMasterSlave, master}
 import spinalextras.lib.bus.general.BusSlaveProvider
 
 import scala.collection.mutable

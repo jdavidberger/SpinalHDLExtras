@@ -6,7 +6,7 @@ import spinal.core.formal.{FormalDut, anyseq}
 import spinal.lib.StreamFifo
 import spinalextras.lib.formal.HasFormalProperties
 import spinalextras.lib.memory._
-import spinalextras.lib.testing.FormalTestSuite
+import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 import scala.language.postfixOps
 
@@ -80,5 +80,6 @@ class MemoryBackedFIFOsTestFormal extends AnyFunSuite with FormalTestSuite {
 
   override def generateRtlCover() = generateRtlProve()
   override def generateRtlProve() =
-    testConfigs.map(x => x.toString -> (() => new MemoryPoolFIFOsFormal(x.copy(checkResponses = false))))
+    testConfigs.map(x => x.toString -> (() => new MemoryPoolFIFOsFormal(x.copy(checkResponses = false)))) ++
+      Seq(("Basic", () => GeneralFormalDut(() => new MemoryPoolFIFOs(Bits(8 bits), sizes = Seq(10, 50)))))
 }

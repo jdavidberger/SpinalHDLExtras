@@ -23,7 +23,7 @@ object PipelinedMemoryBusFormal {
   class PipelinedMemoryBusContract(bus: PipelinedMemoryBus) extends FormalProperties(bus) {
     val outstandingReads = CounterUpDown(0x100000000L, incWhen = bus.readRequestFire, decWhen = bus.rsp.valid)
     assume(!outstandingReads.willOverflow) // This is required for the inductive formal methods to work
-    val willUnderflow = outstandingReads.value === 0 && outstandingReads.decrementIt
+    val willUnderflow = CombInit(outstandingReads.value === 0 && outstandingReads.decrementIt).setPartialName("readsWillUnderflow", weak = true)
     addFormalProperty(!willUnderflow, s"${bus.name} should not have has more rsp than reads")
   }
 
