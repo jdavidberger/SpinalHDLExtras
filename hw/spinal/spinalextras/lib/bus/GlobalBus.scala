@@ -144,6 +144,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] extends BusSlavePro
       val port = apply_staging(add_slave(name, mapping, tags:_*), m2s_stage, s2m_stage)
       bus_interface(port, mapping)
     })
+    busIf.setPartialName(name)
     busIf.regPtrReAnchorAt(mapping.base)
     busIf
   }

@@ -10,6 +10,8 @@ import scala.language.postfixOps
 
 object RegisterTools {
   def inc_addr(b : BusIf): BusIf = {
+    if(b == null) return null
+
     val r = (b.getRegPtr() & 0xFFFFFF00L) + 0x100L
     b.regPtrReAnchorAt(r)
     b

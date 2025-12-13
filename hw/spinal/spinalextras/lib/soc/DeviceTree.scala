@@ -2,6 +2,7 @@ package spinalextras.lib.soc
 
 import spinal.core.{Component, SpinalReport, SpinalTag}
 import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.regif.BusIf
 
 import java.io.{FileWriter, OutputStreamWriter}
 import scala.collection.mutable
@@ -79,6 +80,30 @@ abstract class DeviceTreeProvider(val regBase : BigInt = 0, val regSize : Int = 
   }
 }
 
+class BusIfDeviceTreeProvider(busIf : BusIf) extends DeviceTreeProvider(
+  busIf.orderdRegInsts.head.addr,
+  (busIf.orderdRegInsts.last.addr - busIf.orderdRegInsts.head.addr).toInt
+) {
+  override def compatible : Seq[String] = Seq(s"spinex,reg-file")
+
+  override def entryName: String = busIf.name
+
+  override def appendDeviceTree(dt: DeviceTree): Unit = {
+    super.appendDeviceTree(dt)
+    dt.addEntry(s"reg-docs = ${busIf.orderdRegInsts.map(_.doc).map(m => '"' + m + '"').mkString(",\n            ")};", baseEntryPath:_*)
+  }
+
+  override def regs: Seq[(String, SizeMapping)] = {
+    val base = busIf.orderdRegInsts.head.addr
+
+    busIf.orderdRegInsts.map(r => {
+      (r.name, SizeMapping(r.addr - base, r.size))
+    }).seq
+  }
+
+
+}
+
 object DeviceTree {
   def generate[T <: Component](report: SpinalReport[T]) = {
     val deviceTree = new DeviceTree()
@@ -86,4 +111,7 @@ object DeviceTree {
     deviceTree.save(s"${report.globalData.config.targetDirectory}")
   }
 
+  def register(regs : BusIf) = {
+    new BusIfDeviceTreeProvider(regs)
+  }
 }

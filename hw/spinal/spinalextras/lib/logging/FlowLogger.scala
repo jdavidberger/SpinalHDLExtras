@@ -226,15 +226,15 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val cfg : FlowLoggerConfig
       }
     })
 
-    val activityTimeout = Timeout(1000 ms)
-    when(activityTimeout) {
-      activityTimeout.clear()
-      io.manual_trigger.valid := True
-      io.manual_trigger.payload.setAll()
-    }
-    when(io.log.valid) {
-      activityTimeout.clear()
-    }
+//    val activityTimeout = Timeout(1000 ms)
+//    when(activityTimeout) {
+//      activityTimeout.clear()
+//      io.manual_trigger.valid := True
+//      io.manual_trigger.payload.setAll()
+//    }
+//    when(io.log.valid) {
+//      activityTimeout.clear()
+//    }
 
     if(ctrlStreams.isDefined) {
       val inFlow = ctrlStreams.get._2

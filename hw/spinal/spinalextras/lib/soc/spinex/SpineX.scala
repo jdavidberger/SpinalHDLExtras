@@ -22,7 +22,7 @@ import spinalextras.lib.soc.DeviceTree
 import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
 import vexriscv.ip.InstructionCacheMemBus
 import vexriscv.plugin._
-import vexriscv.{VexRiscv, VexRiscvConfig}
+import vexriscv.{ExceptionCause, VexRiscv, VexRiscvConfig}
 
 import scala.annotation.tailrec
 import scala.collection.mutable

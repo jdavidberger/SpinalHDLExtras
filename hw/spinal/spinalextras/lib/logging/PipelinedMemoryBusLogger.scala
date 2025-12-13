@@ -28,11 +28,12 @@ object PipelinedMemoryBusLogger {
   }
 
   def attach_debug_registers(busSlaveFactory: BusIf, busses: PipelinedMemoryBus*): Unit = {
-
-    busses.foreach(bus => {
-      RegisterTools.Counter(busSlaveFactory, f"${bus.name}_write_count", bus.cmd.write && bus.cmd.fire, bus.cmd.valid.clockDomain)
-      RegisterTools.Counter(busSlaveFactory, f"${bus.name}_read_count", ~bus.cmd.write && bus.cmd.fire, bus.cmd.valid.clockDomain)
-      RegisterTools.Counter(busSlaveFactory, f"${bus.name}_rsp_count", bus.rsp.fire, bus.cmd.valid.clockDomain)
-    })
+    if(busSlaveFactory != null) {
+      busses.foreach(bus => {
+        RegisterTools.Counter(busSlaveFactory, f"${bus.name}_write_count", bus.cmd.write && bus.cmd.fire, bus.cmd.valid.clockDomain)
+        RegisterTools.Counter(busSlaveFactory, f"${bus.name}_read_count", ~bus.cmd.write && bus.cmd.fire, bus.cmd.valid.clockDomain)
+        RegisterTools.Counter(busSlaveFactory, f"${bus.name}_rsp_count", bus.rsp.fire, bus.cmd.valid.clockDomain)
+      })
+    }
   }
 }
