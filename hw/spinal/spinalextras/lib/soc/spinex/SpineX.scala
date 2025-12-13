@@ -137,19 +137,30 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
         plugin.timerInterrupt := timerInterrupt
         withAutoPull()
 
-        GlobalLogger(Set("cpu"),
-          FlowLogger.flows({
-            val pc = plugin.pipeline.execute.input(plugin.pipeline.config.PC)
-            val flow = Flow(pc).setName("pc_at_exception")
-            flow.payload := pc
-            flow.valid := plugin.exceptionPortsInfos.map(_.port.valid).orR
-            flow
-          }),
-          FlowLogger.flows(plugin.exceptionPortsInfos.map(_.port):_*)
-        )
+//        GlobalLogger(Set("cpu"),
+//          FlowLogger.flows(plugin.exceptionPortsInfos.map({ ec =>
+//            class ExceptionCauseWithPC() extends ExceptionCause(ec.port.codeWidth) {
+//              val pc = UInt(32 bits)
+//            }
+//
+//            val rtn = Flow(new ExceptionCauseWithPC())
+//            rtn.payload.pc := ec.stage.input(plugin.pipeline.config.PC)
+//            rtn.payload.badAddr := ec.port.badAddr
+//            rtn.payload.code := ec.port.code
+//            rtn.valid := ec.port.valid
+//            rtn.setName(ec.port.refOwner.toString + "_" + ec.port.name + "WithPC")
+//            rtn
+//          }):_*)
+//        )
       }
       case plugin : ExternalInterruptArrayPlugin => {
         plugin.externalInterruptArray := externalInterrupts
+      }
+      case plugin : DebugModule => {
+//        GlobalLogger(Set("cpu"),
+//          FlowLogger.flows(plugin.io.harts.map(_.hartToDm):_*),
+//          FlowLogger.flows(plugin.io.harts.map(_.dmToHart):_*)
+//        )
       }
       case plugin : DebugPlugin         => plugin.debugClockDomain{
         resetCtrl.systemReset setWhen(RegNext(plugin.io.resetOut))
@@ -209,54 +220,9 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       SignalLogger.concat("interrupts", interruptInfos.values.toSeq)
     )
 
-    @tailrec
-    def getErrorSignals(bus : Any) : (Bool, Bool) = {
-      bus match {
-        case bus: DBusSimpleBus => {
-          val setError = Bool()
-          when(setError && bus.cmd.valid) {
-            bus.cmd.ready := True
-            bus.rsp.error := True
-            bus.rsp.ready := True
-          }
-          (!bus.cmd.valid || bus.cmd.fire, setError)
-        }
-        case bus: InstructionCacheMemBus => {
-          val setError = Bool()
-          when(setError && bus.cmd.valid) {
-            bus.cmd.ready := True
-            bus.rsp.error := True
-            bus.rsp.valid := True
-          }
-          (!bus.cmd.valid || bus.cmd.fire, setError)
-        }
-        case bus: IBusSimpleBus => {
-          val setError = Bool()
-          when(setError && bus.cmd.valid) {
-            bus.cmd.ready := True
-            bus.rsp.error := True
-            bus.rsp.valid := True
-          }
-          (!bus.cmd.valid || bus.cmd.fire, setError)
-        }
-        case bus: MultiBusInterface => getErrorSignals(bus.bus)
-      }
-    }
-
     Component.toplevel.addPrePopTask(() => {
       directInterconnect.build()
       interconnect.build()
-
-      if(config.busTimeout.toInt > 0) {
-        directInterconnect.masters.foreach(bus => {
-          val busTimeout = Timeout(config.busTimeout)
-          val (clearTimeout, setError) = getErrorSignals(bus)
-          when(clearTimeout) {
-            busTimeout.clear()
-          }
-          setError := busTimeout
-        })
-      }
     })
   }
 

@@ -89,8 +89,7 @@ case class SpinexConfig(coreFrequency : HertzNumber,
                         withNativeJtag      : Boolean,
                         cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
                         externalInterrupts : Int,
-                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins,
-                        busTimeout : TimeNumber = 1 sec
+                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins
                        ){
   require(pipelineApbBridge || pipelineMainBus, "At least pipelineMainBus or pipelineApbBridge should be enable to avoid wipe transactions")
   val genXip = xipConfig != null
