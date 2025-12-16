@@ -86,7 +86,7 @@ case class SpinexConfig(coreFrequency : HertzNumber,
                         uartCtrlConfig     : UartCtrlMemoryMappedConfig,
                         xipConfig          : SpiXdrMasterCtrl.MemoryMappingParameters,
                         hardwareBreakpointCount : Int,
-                        withNativeJtag      : Boolean,
+                        withJtag      : Boolean,
                         cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
                         externalInterrupts : Int,
                         plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins
@@ -106,7 +106,7 @@ object SpinexConfig{
   val resetVector = 0x20200000
 
   def default : SpinexConfig = default(withXip = true, bigEndian = false)
-  def default(withXip : Boolean = true, bigEndian : Boolean = false) =  SpinexConfig(
+  def default(withXip : Boolean = true, bigEndian : Boolean = false, withJtag : Boolean = true) =  SpinexConfig(
     coreFrequency         = 80 MHz,
     onChipRamSize         = 0x00010000,
     onChipRamHexFile      = null,
@@ -138,7 +138,7 @@ object SpinexConfig{
       xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 5)
     )),
     hardwareBreakpointCount = if(withXip) 3 else 0,
-    withNativeJtag = false,
+    withJtag = withJtag,
     cpuPlugins = ArrayBuffer( //DebugPlugin added by the toplevel
       new IBusCachedPlugin(
         config = InstructionCacheConfig(
@@ -174,7 +174,7 @@ object SpinexConfig{
       ),
       //new CsrPlugin(CsrPluginConfig.small(mtvecInit = if(withXip) 0xE0040020l else 0x80000020l)),
       new CsrPlugin(CsrPluginConfig.small(mtvecInit = null).copy(mtvecAccess = WRITE_ONLY,
-        ecallGen = true, wfiGenAsNop = true, withPrivilegedDebug = true, xtvecModeGen = false, debugTriggers = 8)),
+        ecallGen = true, wfiGenAsNop = true, withPrivilegedDebug = withJtag, xtvecModeGen = false, debugTriggers = 8)),
       new MulDivIterativePlugin(
         genMul = true,
         genDiv = true,
@@ -237,7 +237,7 @@ object SpinexConfig{
       rxFifoDepth = 16
     ),
     externalInterrupts = 8,
-    plugins = plugins(withXip)
+    plugins = plugins(withXip, withJtag = withJtag)
   )
 
   def fast = {
@@ -255,8 +255,8 @@ object SpinexConfig{
     config
   }
 
-  def plugins(withXip : Boolean = true) = {
-    val plugins = mutable.ArrayBuffer(
+  def plugins(withXip : Boolean = true, withJtag : Boolean = true) = {
+    val plugins : ArrayBuffer[SpinexPlugin] = mutable.ArrayBuffer(
       IdentificationPlugin(registerLocation = 0x3000),
       RandomPlugin(registerLocation = 0x3060),
       TimerPlugin(),
@@ -264,9 +264,12 @@ object SpinexConfig{
 
       OpenCoresI2CPlugin(use_external = false),
       SystemRam(),
-      new JTagPlugin(),
       PrintAPBMapping()
     )
+
+    if(withJtag) {
+      plugins.append(new JTagPlugin())
+    }
 
     if(withXip)
       plugins.append(new XipFlashPlugin())

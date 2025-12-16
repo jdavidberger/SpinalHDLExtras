@@ -38,7 +38,12 @@ object FlowLoggerYaml {
           })
         }
         case e: SpinalEnumCraft[_] => {
-          e.spinalEnum.elements.map(_.getDisplayName()).foreach(n => {
+          e.spinalEnum.elements.map(x => {
+            if(x.name == null)
+              s"_${x.position}"
+            else
+              x.getDisplayName()
+          }).foreach(n => {
             emit(s"${tabs}- ${n}")
           })
         }

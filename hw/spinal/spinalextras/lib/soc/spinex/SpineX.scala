@@ -69,10 +69,6 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
   )
 
   val debugClockDomain = systemClockDomain
-  val jtagNative = withNativeJtag generate new ClockingArea(debugClockDomain){
-    val jtagCtrl = JtagTapInstructionCtrl()
-    val tap = jtagCtrl.fromXilinxBscane2(userId = 2)
-  }
 
   var interconnect, directInterconnect: MultiInterconnectByTag = null
 
@@ -85,20 +81,24 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       dataWidth = 32
     )
 
+    if(config.withJtag) {
+      cpuPlugins += //new DebugPlugin(debugClockDomain, hardwareBreakpointCount),
+        new EmbeddedRiscvJtag(
+          p = DebugTransportModuleParameter(
+            addressWidth = 7,
+            version      = 1,
+            idle         = 7
+          ),
+          debugCd = debugClockDomain,
+          withTunneling = false,
+          withTap = true
+        )
+    }
+
     //Instanciate the CPU
     val cpu = new VexRiscv(
       config = VexRiscvConfig(
-        plugins = cpuPlugins += //new DebugPlugin(debugClockDomain, hardwareBreakpointCount),
-          new EmbeddedRiscvJtag(
-            p = DebugTransportModuleParameter(
-              addressWidth = 7,
-              version      = 1,
-              idle         = 7
-            ),
-            debugCd = debugClockDomain,
-            withTunneling = false,
-            withTap = true
-          )
+        plugins = cpuPlugins,
       )
     )
 
@@ -137,38 +137,41 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
         plugin.timerInterrupt := timerInterrupt
         withAutoPull()
 
-//        GlobalLogger(Set("cpu"),
-//          FlowLogger.flows(plugin.exceptionPortsInfos.map({ ec =>
-//            class ExceptionCauseWithPC() extends ExceptionCause(ec.port.codeWidth) {
-//              val pc = UInt(32 bits)
-//            }
-//
-//            val rtn = Flow(new ExceptionCauseWithPC())
-//            rtn.payload.pc := ec.stage.input(plugin.pipeline.config.PC)
-//            rtn.payload.badAddr := ec.port.badAddr
-//            rtn.payload.code := ec.port.code
-//            rtn.valid := ec.port.valid
-//            rtn.setName(ec.port.refOwner.toString + "_" + ec.port.name + "WithPC")
-//            rtn
-//          }):_*)
-//        )
+        if(plugin.config.withPrivilegedDebug) {
+          GlobalLogger(Set("cpu"),
+            FlowLogger.flows(plugin.debugBus.dmToHart),
+            FlowLogger.flows(plugin.debugBus.hartToDm),
+          )
+        }
+
+        GlobalLogger(Set("cpu"),
+          FlowLogger.flows(plugin.exceptionPortsInfos.map({ ec =>
+            class ExceptionCauseWithPC() extends ExceptionCause(ec.port.codeWidth) {
+              val pc = UInt(32 bits)
+            }
+
+            val rtn = Flow(new ExceptionCauseWithPC())
+            rtn.payload.pc := ec.stage.input(plugin.pipeline.config.PC)
+            rtn.payload.badAddr := ec.port.badAddr
+            rtn.payload.code := ec.port.code
+            rtn.valid := ec.port.valid
+            rtn.setName(ec.port.refOwner.toString + "_" + ec.port.name + "WithPC")
+            rtn
+          }):_*)
+        )
       }
       case plugin : ExternalInterruptArrayPlugin => {
         plugin.externalInterruptArray := externalInterrupts
       }
       case plugin : DebugModule => {
-//        GlobalLogger(Set("cpu"),
-//          FlowLogger.flows(plugin.io.harts.map(_.hartToDm):_*),
-//          FlowLogger.flows(plugin.io.harts.map(_.dmToHart):_*)
-//        )
+        GlobalLogger(Set("cpu"),
+          FlowLogger.flows(plugin.io.harts.map(_.hartToDm):_*),
+          FlowLogger.flows(plugin.io.harts.map(_.dmToHart):_*)
+        )
       }
       case plugin : DebugPlugin         => plugin.debugClockDomain{
         resetCtrl.systemReset setWhen(RegNext(plugin.io.resetOut))
-        if (withNativeJtag) {
-          jtagNative.jtagCtrl <> plugin.io.bus.fromJtagInstructionCtrl(ClockDomain(jtagNative.tap.TCK),0)
-        } else {
-          getPlugin[JTagPlugin].get.jtags.append(plugin.io.bus.fromJtag())
-        }
+        getPlugin[JTagPlugin].get.jtags.append(plugin.io.bus.fromJtag())
       }
       case plugin : EmbeddedRiscvJtag => {
         getPlugin[JTagPlugin].get.jtags.append(plugin.jtag)

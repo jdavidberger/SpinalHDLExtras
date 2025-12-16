@@ -301,13 +301,13 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
     slave(x)
   }
 
-//  if(config.useERR) {
-//    val missSlave = add_slave("decoder_miss", DefaultMapping)
-//    if(missSlave.ERR != null)
-//      missSlave.ERR := True
-//    missSlave.ACK := True
-//    missSlave.DAT_MISO := 0x9ABCDEF
-//  }
+  if(config.useERR) {
+    val missSlave = add_slave("decoder_miss", DefaultMapping)
+    if(missSlave.ERR != null)
+      missSlave.ERR := True
+    missSlave.ACK := True
+    missSlave.DAT_MISO := 0x9ABCDEF
+  }
 
 }
 object PipelineMemoryGlobalBus {

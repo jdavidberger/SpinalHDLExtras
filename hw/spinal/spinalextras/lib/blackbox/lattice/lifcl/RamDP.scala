@@ -75,15 +75,23 @@ class LscRamDpTrue_Mem[T <: Data](_requirements : MemoryRequirement[T]) extends 
     rdAddressWidth = log2Up(requirements.num_elements), rdDataWidth = requirements.dataType.getBitsWidth, wrMaskEnable = requirements.needsMask, wrMaskWidth = requirements.dataType.getBitsWidth / 8
   )
 
-  val mem_port_a = (mem.io.wr_data_a_i, mem.io.addr_a_i, mem.io.wr_en_a_i, mem.io.clk_a_i, mem.io.ben_a_i, mem.io.rd_data_a_o)
-  val mem_port_b = (mem.io.wr_data_b_i, mem.io.addr_b_i, mem.io.wr_en_b_i, mem.io.clk_b_i, mem.io.ben_b_i, mem.io.rd_data_b_o)
+  mem.io.clk_a_i := ClockDomain.current.readClockWire
+  mem.io.clk_b_i := ClockDomain.current.readClockWire
+  mem.io.rst_a_i := ClockDomain.current.isResetActive
+  mem.io.rst_b_i := ClockDomain.current.isResetActive
+
+  val mem_port_a = (mem.io.wr_data_a_i, mem.io.addr_a_i, mem.io.wr_en_a_i, mem.io.clk_en_a_i, mem.io.ben_a_i, mem.io.rd_data_a_o)
+  val mem_port_b = (mem.io.wr_data_b_i, mem.io.addr_b_i, mem.io.wr_en_b_i, mem.io.clk_en_b_i, mem.io.ben_b_i, mem.io.rd_data_b_o)
   for(port_maps <- io.readWritePorts.zip(Seq(mem_port_a, mem_port_b))) {
     val (port, (di, adr, we, cs, benb, dout)) = port_maps
     di := port.cmd.data
     adr := port.cmd.address
     we := port.cmd.write
     cs := port.cmd.valid
-    benb := ~port.cmd.mask
+    if(port.cmd.mask != null)
+      benb := ~port.cmd.mask
+    else
+      benb.setAll()
 
     port.rsp.data := dout
 
