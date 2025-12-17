@@ -432,7 +432,7 @@ class dphy_rx(cfg : MIPIConfig,
     val lastWriteAddress = RegNext(busSlaveFactory.writeAddress() ## busSlaveFactory.doWrite)
 
     for((clk_meas, name) <- Seq((clk_meas_long, "long"), (clk_meas_short, "short"))) {
-      val dphy_reg = busSlaveFactory.newReg(f"dphy ${name} clk reg")
+      val dphy_reg = busSlaveFactory.newReg(f"dphy ${name} clk reg")(SymbolName(f"dphy_${name}_clk_meas"))
       val dphy_status = dphy_reg.field(clk_meas.io.output_cnt.payload.clone(), RO, s"${name}_CLK_cnt")
       dphy_status := clk_meas.io.output_cnt.payload
 

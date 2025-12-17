@@ -30,25 +30,45 @@ class FlowLoggerDataCapture(dataWidth: Int, val index_size: Int, val logBits: In
 
   val time_bits = logBits - dataWidth - index_size
 
+  var manual_trigger = io.manual_trigger
+  var channel_active = io.channel_active
+  if (ClockDomain.current != cd) {
+    new ClockingArea(cd) {
+      manual_trigger = BufferCC(manual_trigger)
+      channel_active = BufferCC(channel_active)
+    }
+  }
+
+  val flow = cloneOf(io.flow)
+  flow.payload := io.flow.payload
+  flow.valid := (channel_active && io.flow.valid) || manual_trigger
+  io.overflow := False
+
+  val output_stream_in_current_clock = {
+    if (ClockDomain.current != cd) {
+      val overflow = Bool()
+      val rCCed = flow.toStream(overflow).queue(4, pushClock = cd, popClock = ClockDomain.current)
+      when(BufferCC(overflow)) {
+        io.overflow := True
+      }
+      rCCed.setName(s"${datumName}_fifo_cc")
+      rCCed.toFlow
+    } else {
+      flow
+    }
+  }
+
   val output_stream = {
     val r = Flow(Bits(time_bits + dataWidth bits))
-    var manual_trigger = io.manual_trigger
-    if (ClockDomain.current != cd) {
-      new ClockingArea(cd) {
-        manual_trigger = BufferCC(manual_trigger)
-      }
+    r.payload := io.syscnt.resize(time_bits bits) ## output_stream_in_current_clock.payload
+    r.valid := output_stream_in_current_clock.valid
+    io.flow_fire := r.valid
+
+    val overflow = Bool()
+    when(overflow) {
+      io.overflow := overflow
     }
-    r.payload := io.syscnt.resize(time_bits bits) ## io.flow.payload
-    r.valid := (io.channel_active && io.flow.valid) || manual_trigger
-    if (ClockDomain.current == cd) {
-      io.flow_fire := r.valid
-      r.toStream(io.overflow).addFormalException(RegNext(io.overflow, init = False)).queue(localDepth)
-    } else {
-      val rCCed = r.toStream.queue(4, pushClock = cd, popClock = ClockDomain.current)
-      rCCed.setName(s"${datumName}_fifo_cc")
-      io.flow_fire := rCCed.fire
-      rCCed
-    }
+    r.toStream(overflow).addFormalException(RegNext(io.overflow, init = False)).queue(localDepth)
   }
 
   assert(time_bits > 0, s"${io.flow} has too many bits for logger ${logBits} ${output_stream.payload.getBitsWidth} ${index_size}")
