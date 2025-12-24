@@ -1046,7 +1046,7 @@ object PLLConfig {
 
         val clk_freq = vco_freq / d
         (
-          (clk_freq.toDouble - spec.freq.toInt).abs,
+          (clk_freq.toDouble - spec.freq.toInt),
           (actual_phase - spec.phaseOffset).abs,
           PLLOutputClockConfig(
             ENABLE = true,
@@ -1057,8 +1057,8 @@ object PLLConfig {
           )
         )
       })
-      .map(r => (r._1 * 1e-6 + r._2 / 360.0, r._3, r._1 <= (spec_freq_d * (spec_tol_d + vco_tolerance))))
-      .sortBy(r => r._1)
+      .map(r => (r._1.abs * 1e-6 + r._2 / 360.0, r._3, r._1 > 0 && r._1.abs <= (spec_freq_d * (spec_tol_d + vco_tolerance))))
+      .sortBy(r => r._1.abs)
 
     validOptions.head
 //    (validOptions.head._1,
