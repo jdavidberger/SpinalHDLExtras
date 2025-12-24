@@ -49,10 +49,16 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
     pll_count.clear()
   }
 
-  val pll_reset = RegInit(True) clearWhen (pll_count.willOverflow)
+  val pll_reset = ~io.pll_lock
+
+  val currentClockDomainWithPLLReset = ClockDomain.current.copy(
+    config = ClockDomain.current.config.copy(resetKind = SYNC),
+    reset = pll_reset
+  )
+
   var clockDomains = pll.ClockDomains
   if(refClockIsOutput) {
-    clockDomains = clockDomains.patch(outputClocksRefIdx, Seq(ClockDomain.current), 0)
+    clockDomains = clockDomains.patch(outputClocksRefIdx, Seq(currentClockDomainWithPLLReset), 0)
   }
 
   for (out_idx <- outputClocks.indices) {
@@ -64,12 +70,11 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
 
     var name = s"${(cd.frequency.getValue.toDouble / 1e6).round.toInt}mhz"
     io.resets(out_idx) := {
-      val rawReset = if(bootstrap) reset else pll_reset
-      ClockUtils.createAsyncReset(io.clks(out_idx), rawReset)
-    }.setName(s"rst_sync_${name}", true)
+      if(out_idx == 0 && bootstrap) reset else cd.readResetWire
+    }.setName(s"rst_sync_${name}", weak = true)
 
-    io.clks(out_idx).setName(s"clk_${name}", true)
-    io.resets(out_idx).setName(s"clk_${name}_reset", true)
+    io.clks(out_idx).setName(s"clk_${name}", weak = true)
+    io.resets(out_idx).setName(s"clk_${name}_reset", weak = true)
   }
 
   lazy val ClockDomains = clockDomains

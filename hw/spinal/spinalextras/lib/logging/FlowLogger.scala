@@ -321,10 +321,7 @@ object FlowLogger {
   def asFlow[T <: Data](s: Stream[T], stage : Boolean = true): (Data, Flow[Bits]) = {
     var flow = new Flow(s.payloadType)
     flow.valid := s.fire
-    flow.payload.clearAll()
-    when(s.fire) {
-      flow.payload := s.payload
-    }
+    flow.payload := s.payload
 
     if(stage) flow = flow.stage()
     (s.payload, flow.setName(s.getName()).map(FlowLogger.asBits).setName(s.getName()))

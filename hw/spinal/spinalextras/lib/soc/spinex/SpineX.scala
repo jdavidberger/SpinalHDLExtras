@@ -49,14 +49,13 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
   val resetCtrl = new ClockingArea(resetCtrlClockDomain) {
     val mainClkResetUnbuffered  = False
 
-    val systemClkResetCounter = Reg(UInt(4 bits)) init(0)
-    when(systemClkResetCounter.andR === False) {
-      systemClkResetCounter := systemClkResetCounter + 1
+    val systemClkReset = Timeout(1 us)
+    when(!systemClkReset) {
       mainClkResetUnbuffered := True
     }
 
     when(mainClockDomain.isResetActive) {
-      systemClkResetCounter := 0
+      systemClkReset.clear()
       mainClkResetUnbuffered := True
     }
 

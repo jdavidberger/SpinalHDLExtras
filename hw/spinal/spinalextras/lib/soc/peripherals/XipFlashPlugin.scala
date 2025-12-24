@@ -68,6 +68,7 @@ case class XipFlashPlugin(config: MemoryMappingParameters = XipFlashPlugin.defau
     som.io.valCallbackRec(spiflash_cs_n, s"${name}_cs_n")
     som.io.valCallbackRec(spiflash_dq, s"${name}_dq")
 
+    Constraints.create_clock(spiflash_clk, ClockDomain.current.frequency.getValue)
     Constraints.set_max_skew(1 ns, spiflash_clk, spiflash_cs_n, spiflash_dq)
   }
 }
