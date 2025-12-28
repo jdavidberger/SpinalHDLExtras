@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.node.ObjectNode
 import spinal.core.ClockDomain.ClockFrequency
-import spinal.core.{ClockDomain, FixedFrequency, HertzNumber}
+import spinal.core.{ClockDomain, FixedFrequency, HertzNumber, TimeNumber}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -13,8 +13,36 @@ import scala.collection.mutable.ArrayBuffer
 
 case class HertzDeserializer() extends StdDeserializer[HertzNumber](classOf[HertzNumber]) {
   override def deserialize(p: JsonParser, ctxt: DeserializationContext) = {
-    val t = p.readValueAsTree[ObjectNode]()
-    HertzNumber(t.get("value").asDouble())
+    val suffixes : Map[String, Double] = Map(
+      "ehz" -> 1e18,
+      "phz" -> 1e15,
+      "thz" -> 1e12,
+      "ghz" -> 1e9,
+      "mhz" -> 1e6,
+      "khz" -> 1e3,
+      "hz" -> 1,
+    )
+
+    val t = p.getValueAsString.split(' ')
+    HertzNumber(t(0).toDouble * suffixes(t(1).toLowerCase))
+  }
+}
+
+case class TimeNumberDeserializer() extends StdDeserializer[TimeNumber](classOf[TimeNumber]) {
+  override def deserialize(p: JsonParser, ctxt: DeserializationContext) = {
+    val suffixes : Map[String, Double] = Map(
+      "hr" -> 36000,
+      "min" -> 60,
+      "sec" -> 1,
+      "ms" -> 1e-3,
+      "us" -> 1e-6,
+      "ns" -> 1e-9,
+      "ps" -> 1e-12,
+      "fs" -> 1e-15
+    )
+
+    val t = p.getValueAsString.split(' ')
+    TimeNumber(t(0).toDouble * suffixes(t(1).toLowerCase))
   }
 }
 
