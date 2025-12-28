@@ -99,6 +99,7 @@ object MIPIDataTypes extends Enumeration {
 case class MIPIConfig(NUM_RX_LANES: Int = 2, RX_GEAR: Int = 8, OUTPUT_LANES: Int = 1, ref_dt : MIPIDataTypes,
                       dphy_byte_freq : HertzNumber) {
   def GEARED_LANES = NUM_RX_LANES * RX_GEAR
+  def PIX_WIDTH = MIPIDataTypes.bit_width(ref_dt)
   def DT_WIDTH = OUTPUT_LANES * MIPIDataTypes.bit_width(ref_dt)
 
   def rx_line_rate = dphy_byte_freq * NUM_RX_LANES * RX_GEAR / 2

@@ -24,6 +24,8 @@ def normalize_identifier(name: str) -> str:
     s = s.strip("_")
     if not s:
         s = "_"
+    if s[0] >= '0' and s[0] <= '9':
+        s = "idx" + s
     return s
 
 # -------------------------
@@ -432,9 +434,13 @@ class EventDB:
         # build create statement
         col_defs = ",\n  ".join(f"{cname} {ctype}" for cname, ctype in sql_cols)
         sql = f"CREATE TABLE IF NOT EXISTS \"{table_name}\" (\n  {col_defs}\n)"
-        cur = self.conn.cursor()
-        cur.execute(sql)
-        self.conn.commit()
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql)
+            self.conn.commit()
+        except:
+            print(f"Error on sql statement ${sql}")
+            pass
 
     def _get_insert(self, schema_name):
         if schema_name in self.insert_statements:

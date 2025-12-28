@@ -56,11 +56,12 @@ class dphy_rx(cfg : MIPIConfig,
   def solve_datasettle(byte_freq : HertzNumber, ui_freq : HertzNumber): Int = {
     val TCLK_BYTE = byte_freq.toTime
 
+    // Note: The 0.5 is an attempt to match what the radiant UI does, this isn't from the datasheet.
     val UI = ui_freq.toTime / 2
-    (((85 ns) + (UI * 6)).toDouble  / TCLK_BYTE.toDouble).ceil.toInt - (if(is_soft_phy) 3 else 0)
+    (((85 ns) + (UI * 6)).toDouble  / TCLK_BYTE.toDouble + 0.5).ceil.toInt - (if(is_soft_phy) 3 else 0)
   }
 
-  val default_datsettlecyc = solve_datasettle(byte_freq, rx_line_rate)
+  val default_datsettlecyc = solve_datasettle(byte_freq, dphy_clk_freq)
 
   val io = new Bundle {
     /**
@@ -439,28 +440,28 @@ class dphy_rx(cfg : MIPIConfig,
       clk_meas.io.flush := lastWriteAddress === (U(dphy_reg.addr) ## True).resized
     }
 
-    def crossClock(reg: RegInst, field: UInt, newClock: ClockDomain): UInt = {
+    def crossClock(reg: RegInst, field: UInt, newClock: ClockDomain, init : Int): UInt = {
       val stream = Stream(cloneOf(field))
       stream.valid := reg.hitDoWrite
       stream.payload := field
       val toggledCC = stream.ccToggle(field.clockDomain, newClock)
       new ClockingArea(io.byte_clock_domain()) {
         toggledCC.ready := RegNext(toggledCC.valid)
-        val r = RegNextWhen(toggledCC.payload, toggledCC.valid)
+        val r = RegNextWhen(toggledCC.payload, toggledCC.valid, init = U(init))
       }.r
     }
 
     val dphy_data_ctrl = busSlaveFactory.newReg("rxcsr_datsettlecyc")
-    val dphy_data_settle =
+      val dphy_data_settle =
       dphy_data_ctrl.field(io.rxcsr_datsettlecyc_i.clone(), RW, "Controls the tHS-SETTLE protocol timing parameter. Check the t-HSZERO parameter of the D-PHY transmitter to ensure the tHS-SETTLE setting can properly detect the Start-of-Transmit pattern.") init(default_datsettlecyc)
 
-    GlobalSignals.externalize(io.rxcsr_datsettlecyc_i) := crossClock(dphy_data_ctrl, dphy_data_settle, io.byte_clock_domain())
+    GlobalSignals.externalize(io.rxcsr_datsettlecyc_i) := crossClock(dphy_data_ctrl, dphy_data_settle, io.byte_clock_domain(), default_datsettlecyc)
 
     val pktdelay_ctrl = busSlaveFactory.newReg("rxcsr_rxfifo_pktdly")
     val pktdelay =
       pktdelay_ctrl.field(io.rxcsr_rxfifo_pktdly_i.clone(), RW, "Packet delay on fifo") init(1)
 
-    GlobalSignals.externalize(io.rxcsr_rxfifo_pktdly_i) := crossClock(pktdelay_ctrl, pktdelay, io.byte_clock_domain())
+    GlobalSignals.externalize(io.rxcsr_rxfifo_pktdly_i) := crossClock(pktdelay_ctrl, pktdelay, io.byte_clock_domain(), 1)
 
 
     val fifo_signals = if(io.fifo_misc_signals != null) Seq(

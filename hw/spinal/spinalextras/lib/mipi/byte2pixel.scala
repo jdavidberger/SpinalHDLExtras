@@ -14,6 +14,7 @@ import spinal.lib.bus.regif.AccessType.{RO, ROV, WC}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinalextras.lib.Config
 import spinalextras.lib.lattice.IPX
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.mipi.MIPIDataTypes.{MIPIDataTypes, RAW10}
 import spinalextras.lib.misc.{ClockSpecification, HertzDeserializer}
 
@@ -92,6 +93,32 @@ case class byte2pixel(cfg : MIPIConfig,
   require(byte_clock_fast_enough)
   require(pixel_clock_fast_enough)
 
+  {
+    val pixelCounter, lineCounter = Counter(32 bits)
+    val pixelCounterFlow = Flow(TupleBundle(UInt(32 bits), UInt(32 bits)))
+    pixelCounterFlow.setName("pixelCounterFlow")
+    pixelCounterFlow.valid := False
+    pixelCounterFlow.payload._1 := pixelCounter
+    pixelCounterFlow.payload._2 := lineCounter
+    when(~io.pixelFlow.line_valid) {
+      lineCounter.clear()
+    }
+    when(~io.pixelFlow.frame_valid) {
+      pixelCounter.clear()
+      when(pixelCounter =/= 0) {
+        pixelCounterFlow.valid := True
+      }
+    }
+    when(io.pixelFlow.valid) {
+      pixelCounter.increment()
+      lineCounter.increment()
+    }
+
+    GlobalLogger(Set("mipi"),
+      FlowLogger.flows(pixelCounterFlow)
+    )
+  }
+
   val byte_count = 2400
   val clock_ratio = (byte_phy_freq / pixel_cd.frequency.getValue).toDouble
   val delay_time_ratio = 8.0 * ((1.0 / cfg.GEARED_LANES) - clock_ratio / cfg.DT_WIDTH)
@@ -119,7 +146,7 @@ case class byte2pixel(cfg : MIPIConfig,
   }
 
   val byte_clk_area = new ClockingArea(byte_cd) {
-    val isRefDt, fv = RegInit(False)
+    val isRefDt, fv, inFSPacket = RegInit(False)
 
     val watermarkReg = Reg(fifo.io.pushOccupancy) init(0)
     when(fifo.io.pushOccupancy > watermarkReg) {
@@ -132,6 +159,11 @@ case class byte2pixel(cfg : MIPIConfig,
     }
 
     when(io.mipi_header.fire) {
+      when(inFSPacket) {
+        fv := True
+        inFSPacket := False
+      }
+
       when(io.mipi_header.is_long_av_packet) {
         isRefDt := True
       } elsewhen(io.mipi_header.is_long_packet) {
@@ -140,7 +172,8 @@ case class byte2pixel(cfg : MIPIConfig,
 
       when(io.mipi_header.is_short_packet) {
         when(io.mipi_header.datatype === 0) { // Frame start short packet
-          fv := True
+          inFSPacket := True
+          fv := False
         } elsewhen(io.mipi_header.datatype === 1) { // Frame end short packet
           fv := False
         }
@@ -168,6 +201,10 @@ case class byte2pixel(cfg : MIPIConfig,
     }
 
     assert(fifo.io.push.ready, "Fifo overflow")
+
+    GlobalLogger(Set("mipi"),
+      FlowLogger.flows(io.mipi_header)
+    )
   }
 
   val pixel_clk_area = new ClockingArea(pixel_cd) {

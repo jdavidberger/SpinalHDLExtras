@@ -6,7 +6,7 @@ import spinal.lib.bus.misc.BusSlaveFactory
 import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.blackbox.lattice.lifcl.dphy_rx
 import spinalextras.lib.mipi._
-import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 
 import scala.language.postfixOps
 
@@ -24,8 +24,7 @@ case class MIPIToPixel(cfg : MIPIConfig,
 
     val tx_rdy = in(Bool()) default(True)
 
-    val pixelFlow = master(PixelFlow(cfg.DT_WIDTH))
-    def pixelFragment = PixelFlow2Fragment(pixelFlow)
+    val pixelFlow = master(Flow(Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.OUTPUT_LANES))))
   }
   val byte_freq = cfg.dphy_byte_freq
 
@@ -52,7 +51,13 @@ case class MIPIToPixel(cfg : MIPIConfig,
 
   bytes_to_pixels.assignMIPIHeader(mipi_to_bytes.MIPIPacketHeader)
   bytes_to_pixels.assignMIPIBytes(mipi_to_bytes.MIPIBytes)
-  io.pixelFlow <> bytes_to_pixels.io.pixelFlow
+
+  io.pixelFlow <> PixelFlow2Fragment(bytes_to_pixels.io.pixelFlow).map(f => {
+    val outFlow = Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.OUTPUT_LANES))
+    outFlow.last := f.last
+    outFlow.fragment.assignFromBits(f.fragment)
+    outFlow
+  })
 
   def byte_clock_domain() : ClockDomain = {
     mipi_to_bytes.byte_cd()
