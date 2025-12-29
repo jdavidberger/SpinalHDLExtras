@@ -42,7 +42,7 @@ class PixelFlow2FragmentTest extends AnyFunSuite {
     Config.sim.doSim(
       new Component {
         val dut = new PixelFlow2Fragment(Bits(12 bit))
-        val metaP = PixelFlowMetaProvider(dut.dataType.getBitsWidth)
+
         val io = new Bundle {
           val pixelFlow = slave(PixelFlow(dut.dataType))
           val pixelFragment = master (Flow(Fragment(dut.dataType)))
@@ -50,8 +50,8 @@ class PixelFlow2FragmentTest extends AnyFunSuite {
         }
         dut.io.pixelFlow <> io.pixelFlow
         dut.io.pixelFragment <> io.pixelFragment
-        metaP.io.pixelFragment <> dut.io.pixelFragment
-        io.meta <> metaP.io.meta
+
+        io.meta <> PixelFlowMetaProvider(dut.io.pixelFragment)
       }.setDefinitionName("PixelFlow2FragmentTest")
     ) { dut =>
       dut.clockDomain.forkStimulus(100 MHz)

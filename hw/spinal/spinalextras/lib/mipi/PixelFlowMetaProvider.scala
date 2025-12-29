@@ -13,7 +13,7 @@ case class PixelFlowMeta() extends Bundle {
   val frame_idx = UInt(16 bits)
 }
 
-case class PixelFlowMetaProvider(WIDTH : Int) extends Component {
+class PixelFlowMetaProvider(WIDTH : Int) extends Component {
   val io = new Bundle {
     val pixelFragment = slave (Flow(Fragment(Bits(WIDTH bits))))
 
