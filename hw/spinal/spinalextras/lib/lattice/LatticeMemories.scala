@@ -8,9 +8,13 @@ import scala.collection.mutable
 import scala.language.postfixOps
 
 object LatticeMemories {
+  var lram_allow : Boolean = true
   var lram_available_maps = new mutable.HashMap[Component, Int]()
 
-  def lram_available = lram_available_maps.getOrElse(Component.toplevel, 5)
+  def lram_available = if(lram_allow)
+    lram_available_maps.getOrElse(Component.toplevel, 5)
+  else
+    0
 
   def find_lram[T <: Data](requirements: MemoryRequirement[T]): Option[() => HardwareMemory[Bits]] = {
     if (requirements.numPorts > 2)

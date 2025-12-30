@@ -1,10 +1,12 @@
 package spinalextras.lib.soc.spinex
 
-import spinal.core.{ClockDomain, Component, Device, False, IntToBuilder, RegInit, SystemVerilog, True}
+import spinal.core.{ClockDomain, ClockingArea, Component, Device, False, IntToBuilder, RegInit, SystemVerilog, True}
 import spinal.lib.Timeout
 import spinalextras.lib.Config
 import spinalextras.lib.blackbox.lattice.lifcl.{GSR, OSCD, OSCDConfig}
 import spinalextras.lib.blackbox.memories.W25Q128JVxIM_quad
+import spinalextras.lib.clocking.ClockSelection
+import spinalextras.lib.lattice.LatticeMemories
 import spinalextras.lib.misc.ClockSpecification
 import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
 import spinalextras.lib.soc.spinex.plugins.JTagPlugin
@@ -18,25 +20,28 @@ case class SpinexSim(memoryFile : String = "") extends Component {
   val oscd = new OSCD(OSCDConfig.create(ClockSpecification(80 MHz)))
   ClockDomain.push(oscd.hf_clk().get.withBootReset())
 
-  val resetTimer = Timeout(10)
-  val reset = RegInit(True) clearWhen resetTimer
-  ClockDomain.push(oscd.hf_clk().get.copy(reset = reset))
+  val clocks = new ClockSelection(Seq(ClockSpecification(75 MHz)))
+  val spinexClockDomain = clocks.ClockDomains.last
 
-  val som = new Spinex(SpinexConfig.default)
-  val flash = new W25Q128JVxIM_quad(memoryFile)
+  var connectionArea = new ClockingArea(clockDomain = spinexClockDomain) {
+    val som = Spinex(SpinexConfig.default)
+    val flash = new W25Q128JVxIM_quad(memoryFile)
 
-  val flashPlugin = som.getPlugin[XipFlashPlugin].get
-  flash.io.spiflash_dq <> flashPlugin.spiflash_dq
-  flash.io.spiflash_cs_n <> flashPlugin.spiflash_cs_n
-  flash.io.spiflash_clk <> flashPlugin.spiflash_clk
+    val flashPlugin = som.getPlugin[XipFlashPlugin].get
+    flash.io.spiflash_dq <> flashPlugin.spiflash_dq
+    flash.io.spiflash_cs_n <> flashPlugin.spiflash_cs_n
+    flash.io.spiflash_clk <> flashPlugin.spiflash_clk
 
-  som.getPlugin[JTagPlugin].foreach(j => {
-    j.jtag.tdi := False
-    j.jtag.tms := False
-    j.jtag.tck := False
-  })
+    som.getPlugin[JTagPlugin].foreach(j => {
+      j.jtag.tdi := False
+      j.jtag.tms := False
+      j.jtag.tck := False
+    })
 
-  som.getPlugin[UartCtrlPlugin].foreach(_.uart.rxd := True)
+    som.getPlugin[UartCtrlPlugin].foreach(_.uart.rxd := True)
+  }
+
+
 //  som.io.wb.DAT_MISO.clearAll()
 //  som.io.wb.ACK := False
 //  som.io.wb.ERR := False
@@ -50,6 +55,7 @@ object SpinexSim {
       System.err.println("--lattice-lifcl dictates whether this is made as a generic simulation or one specifically for the LIFCL chipset")
       System.exit(-1)
     }
+    LatticeMemories.lram_allow = false
     var config = Config.spinal
     if(args.contains("--lattice-lifcl")) {
       config = config.copy(device = Device("lattice", "lifcl"))

@@ -353,8 +353,6 @@ object SpinexWithClock{
 
 object SpinexWithClockTestBench {
   def main(args: Array[String]) {
-    val report = Config.spinal.copy(defaultClockDomainFrequency = FixedFrequency(60 MHz)).generateVerilog(new SpinexWithClock())
-
     Config.sim.addIncludeDir("hw/verilog/opencores_i2c/rtl/verilog/").withConfig(
       Config.spinal.includeSimulation.copy(
         defaultClockDomainFrequency = FixedFrequency(60 MHz),
