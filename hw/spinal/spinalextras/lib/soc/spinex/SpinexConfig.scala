@@ -1,12 +1,12 @@
 package spinalextras.lib.soc.spinex
 
-import spinal.core.{HertzNumber, IntToBuilder, TimeNumber, ifGen, log2Up}
+import spinal.core.{ClockDomain, HertzNumber, IntToBuilder, TimeNumber, ifGen, log2Up}
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config, Apb3SlaveFactory}
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactoryNonStopWrite, BusSlaveFactoryOnReadAtAddress, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryRead, BusSlaveFactoryWrite, SizeMapping}
 import spinal.lib.com.spi.ddr.{SpiXdrMasterCtrl, SpiXdrParameter}
 import spinal.lib.com.uart.{UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemoryMappedConfig, UartParityType, UartStopType}
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
-import spinalextras.lib.soc.bus.WishbonePlugin
+
 import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
 import spinalextras.lib.soc.spinex.plugins.{I2CPlugin, IdentificationPlugin, JTagPlugin, OpenCoresI2CPlugin, TimerPlugin, Uart16550CtrlPlugin}
 import vexriscv.ip.InstructionCacheConfig
@@ -84,16 +84,13 @@ case class SpinexConfig(coreFrequency : HertzNumber,
                         pipelineApbBridge  : Boolean,
                         gpioWidth          : Int,
                         uartCtrlConfig     : UartCtrlMemoryMappedConfig,
-                        xipConfig          : SpiXdrMasterCtrl.MemoryMappingParameters,
                         hardwareBreakpointCount : Int,
                         withJtag      : Boolean,
                         cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
                         externalInterrupts : Int,
-                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins
+                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins,
                        ){
   require(pipelineApbBridge || pipelineMainBus, "At least pipelineMainBus or pipelineApbBridge should be enable to avoid wipe transactions")
-  val genXip = xipConfig != null
-
 
   def withPlugins(extraPlugins: SpinexPlugin*): SpinexConfig = {
     this.copy(plugins = extraPlugins ++ this.plugins)
@@ -105,8 +102,10 @@ case class SpinexConfig(coreFrequency : HertzNumber,
 object SpinexConfig{
   val resetVector = 0x20200000
 
-  def default : SpinexConfig = default(withXip = true, bigEndian = false)
-  def default(withXip : Boolean = true, bigEndian : Boolean = false, withJtag : Boolean = true) =  SpinexConfig(
+  def default : SpinexConfig = default(bigEndian = false)
+  def default(bigEndian : Boolean = false, withJtag : Boolean = true,
+              xipConfig          : Option[SpiXdrMasterCtrl.MemoryMappingParameters] = Some(XipFlashPlugin.defaultConfig),
+              flashClockDomain   : ClockDomain = null) =  SpinexConfig(
     coreFrequency         = 80 MHz,
     onChipRamSize         = 0x00010000,
     onChipRamHexFile      = null,
@@ -114,30 +113,7 @@ object SpinexConfig{
     pipelineMainBus       = false,
     pipelineApbBridge     = true,
     gpioWidth = 32,
-    xipConfig = ifGen(withXip) (SpiXdrMasterCtrl.MemoryMappingParameters(
-      SpiXdrMasterCtrl.Parameters(8, 12, SpiXdrParameter(
-          dataWidth = 4,
-          ioRate = 1,
-          ssWidth = 1))
-        .addFullDuplex(id = 0)
-        .addHalfDuplex(id = 1, rate = 1, ddr = false, spiWidth = 4, lateSampling = false),
-      cmdFifoDepth = 32,
-      rspFifoDepth = 32,
-      xipEnableInit = true,
-
-      modInit = 0,
-      xipInstructionModInit = 0,
-      xipAddressModInit  = 0,
-      xipDummyModInit  = 0,
-      xipPayloadModInit  = 1,
-      xipInstructionDataInit = 0x6B,
-      xipDummyDataInit = 0xa5,
-
-      //xipConfigWritable = false,
-
-      xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 5)
-    )),
-    hardwareBreakpointCount = if(withXip) 3 else 0,
+    hardwareBreakpointCount = 3,
     withJtag = withJtag,
     cpuPlugins = ArrayBuffer( //DebugPlugin added by the toplevel
       new IBusCachedPlugin(
@@ -237,7 +213,7 @@ object SpinexConfig{
       rxFifoDepth = 16
     ),
     externalInterrupts = 8,
-    plugins = plugins(withXip, withJtag = withJtag)
+    plugins = plugins(withJtag = withJtag, xipConfig, flashClockDomain)
   )
 
   def fast = {
@@ -255,7 +231,10 @@ object SpinexConfig{
     config
   }
 
-  def plugins(withXip : Boolean = true, withJtag : Boolean = true) = {
+  def plugins(withJtag : Boolean = true,
+              xipConfig          : Option[SpiXdrMasterCtrl.MemoryMappingParameters] = Some(XipFlashPlugin.defaultConfig),
+              flashClockDomain   : ClockDomain = null,
+             ) = {
     val plugins : ArrayBuffer[SpinexPlugin] = mutable.ArrayBuffer(
       IdentificationPlugin(registerLocation = 0x3000),
       RandomPlugin(registerLocation = 0x3060),
@@ -271,8 +250,9 @@ object SpinexConfig{
       plugins.append(new JTagPlugin())
     }
 
+    val withXip = xipConfig.isDefined
     if(withXip)
-      plugins.append(new XipFlashPlugin())
+      plugins.append(new XipFlashPlugin(config = xipConfig.get, clockDomain = flashClockDomain))
     else
       plugins.append(new SystemRam("spinex_rom", SizeMapping(0x20000000L, 0x01000000)))
 

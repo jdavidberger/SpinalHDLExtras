@@ -291,6 +291,17 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     directInterconnect.addSlave(bus, mapping = mapping, tags:_*)
   }
 
+  def add_peripheral(apb : Apb3, registerMapping : SizeMapping) = {
+    if(systemClockDomain == ClockDomain.current) {
+      system.apbMapping += apb -> registerMapping
+    } else {
+      assert(ClockDomain.current.frequency.getValue <= systemClockDomain.frequency.getValue)
+      val cc = Apb3CC(apb.config, systemClockDomain, ClockDomain.current)
+      cc.io.output <> apb
+      system.apbMapping += cc.io.input -> registerMapping
+    }
+  }
+
   def add_slave(bus: MultiBusInterface, name : String, mapping : AddressMapping, direct : Boolean, tags : String*): Unit = {
     if(direct) {
       directInterconnect.addSlave(bus, mapping, tags = tags:_*)
@@ -343,7 +354,7 @@ object SpinexWithClock{
   def main(args: Array[String]) {
     val report = Config.spinal.copy(
       targetDirectory = s"hw/gen/SpinexWithClock",
-      defaultClockDomainFrequency = FixedFrequency(60 MHz)
+      defaultClockDomainFrequency = FixedFrequency(75 MHz)
     ).generateVerilog(new SpinexWithClock())
 
     IPX.generate_ipx(report)

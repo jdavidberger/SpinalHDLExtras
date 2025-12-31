@@ -15,6 +15,7 @@ class Constraints {
   val false_paths = new ArrayBuffer[Data]()
   val min_delay = new ArrayBuffer[(Seq[Data], TimeNumber)]()
 
+  val verbatim_constraints = new ArrayBuffer[() => String]()
 
   def write_file[T <: Component](report: SpinalReport[T], path : String): Unit = {
     val file = new PrintWriter(path)
@@ -68,6 +69,11 @@ class Constraints {
         file.println(s"ldc_set_port -iobuf {${tags.map(x => s"${x._1}=${x._2}").mkString(" ")}} [get_ports {${data.getRtlPath()}*}]")
       }
     }
+
+    for (c <- verbatim_constraints) {
+      file.println(c())
+    }
+
     file.close()
   }
 
@@ -89,6 +95,10 @@ object Constraints {
   def write_file[T <: Component](report: SpinalReport[T], path : String): Unit = {
     check()
     constraints.write_file(report, path)
+  }
+  def add_verbatim(s: => String) : Unit = {
+    check()
+    constraints.verbatim_constraints.append(() => s)
   }
   def add_false_path(d: Data*): Unit = {
     check()

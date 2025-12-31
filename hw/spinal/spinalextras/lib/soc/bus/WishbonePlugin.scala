@@ -17,6 +17,6 @@ case class WishbonePlugin(mapping : SizeMapping,
 
   override def apply(soc: Spinex): Unit = {
     soc.io.valCallbackRec(bus, name)
-    soc.add_slave(new WishboneMultiBusInterface(bus), name, mapping, direct = true, tags:_*)
+    soc.add_slave(new WishboneMultiBusInterface(bus), name, mapping, direct = false, tags:_*)
   }
 }

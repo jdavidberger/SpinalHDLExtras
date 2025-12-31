@@ -9,9 +9,25 @@ object GlobalSignals {
   }
 
   def externalize[T <: Data](payload : T, topComponent : Component): T = {
-    externalize(payload, (t : T) => cloneOf(t), topComponent)
+    if(payload.component == null)
+      payload
+    else
+      externalize(payload, (t : T) => cloneOf(t), topComponent)
   }
 
+  def export_toplevel[T <: Data](payload : T, name : String) = {
+    val signal =
+      if (payload.component == null && payload.name == "clk")
+        Component.toplevel.clockDomain.readClockWire
+      else externalize(payload, topComponent = null)
+    val ctx = Component.push(Component.toplevel)
+    val export_signal = out(cloneOf(signal))
+    export_signal.addAttribute("syn_keep", 1).addAttribute("nomerge", "")
+    export_signal.setName(name)
+    export_signal := signal
+    ctx.restore()
+    export_signal
+  }
   /**
    * Take a signal and pull it up through components until it gets to 'topComponent'
    **/
