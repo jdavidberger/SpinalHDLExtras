@@ -1,5 +1,6 @@
 package spinalextras.lib.soc.spinex
 
+import spinal.core
 import spinal.core._
 import spinal.core.sim.{SimClockDomainHandlePimper, SimClockDomainPimper, sleep}
 import spinal.lib._
@@ -24,6 +25,7 @@ import vexriscv.ip.InstructionCacheMemBus
 import vexriscv.plugin._
 import vexriscv.{ExceptionCause, VexRiscv, VexRiscvConfig}
 
+import java.nio.file.{Files, StandardCopyOption}
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -318,6 +320,31 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
 
 object Spinex{
+  def generate_ipx[T <: Component](report : SpinalReport[T]): Unit = {
+    val rtl_sourcess = Seq(
+      "/blackbox/lattice/lifcl/BlackboxMemory.sv",
+      "/opencores_i2c/rtl/verilog/i2c_master_bit_ctrl.v",
+      "/opencores_i2c/rtl/verilog/i2c_master_byte_ctrl.v",
+      "/opencores_i2c/rtl/verilog/i2c_master_top.v",
+    )
+
+    val tmpFiles = rtl_sourcess.map(fn => {
+      val bb_stream = getClass.getResourceAsStream(fn)
+      val tempFile = Files.createTempFile("bb-resource-", ".v")
+      Files.copy(bb_stream, tempFile, StandardCopyOption.REPLACE_EXISTING)
+
+      report.blackboxesSourcesPaths.add(tempFile.toAbsolutePath.toString)
+      tempFile
+    })
+
+    report.mergeRTLSource(report.toplevelName + "_references")
+
+    tmpFiles.foreach(_.toFile.deleteOnExit())
+
+    IPX.generate_ipx(report)
+    DeviceTree.generate(report)
+  }
+
   def main(args: Array[String]) {
     val report = Config.spinal.generateVerilog(Spinex(SpinexConfig.default))
     IPX.generate_ipx(report)
@@ -357,8 +384,7 @@ object SpinexWithClock{
       defaultClockDomainFrequency = FixedFrequency(75 MHz)
     ).generateVerilog(new SpinexWithClock())
 
-    IPX.generate_ipx(report)
-    DeviceTree.generate(report)
+    Spinex.generate_ipx(report)
   }
 }
 
