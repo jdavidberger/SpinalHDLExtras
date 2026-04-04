@@ -47,3 +47,6 @@ USER user
 FROM radiant-base AS radiant2025.1
 ENV RADIANT_VERSION=2025.1
 
+FROM radiant-base AS radiant2025.2
+ENV RADIANT_VERSION=2025.2
+

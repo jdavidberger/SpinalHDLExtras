@@ -53,7 +53,9 @@ case class DeviceTreeProviderTag(provider : DeviceTreeProvider) extends SpinalTa
 
 }
 abstract class DeviceTreeProvider(val regBase : BigInt = 0, val regSize : Int = 4) {
-  Component.toplevel.addTag(new DeviceTreeProviderTag(this))
+  if (Component.current != null) {
+    Component.toplevel.addTag(new DeviceTreeProviderTag(this))
+  }
 
   def regs : Seq[(String, SizeMapping)] = Seq(("base" -> SizeMapping(0, regSize)))
   def entryName : String = getClass.getSimpleName.toLowerCase

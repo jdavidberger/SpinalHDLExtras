@@ -28,7 +28,7 @@ class StreamFifoFormalProperties[T <: Data](val fifo: StreamFifo[T]) extends Has
           )
       }).getOrElse(U(0))
 
-    val extraOccupancy = logic_option.flatMap(logic => Option(logic.pop.sync)).map(_.readArbitation.valid.asUInt).getOrElse(U(0))
+    val extraOccupancy = logic_option.flatMap(logic => Option(logic.pop.sync)).map(_.readArbitration.valid.asUInt).getOrElse(U(0))
 
     val calculate_occupancy = push_pop_occupancy +^ extraOccupancy
 

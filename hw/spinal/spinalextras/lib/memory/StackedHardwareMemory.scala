@@ -23,6 +23,11 @@ class StackedHardwareMemory[T <: Data](reqs: MemoryRequirement[T], direct_factor
 
   var mappings = Array.range(0, needed_rows).map(idx => SizeMapping(prototype.num_elements * idx, prototype.num_elements))
 
+  override def init(initialContents : Seq[BigInt]): Unit = {
+    assert(memories.size == 1)
+    memories(0).init(initialContents)
+  }
+
   override lazy val actual_num_elements = memories.map(_.actual_num_elements).sum
 
   if (actual_num_elements > num_elements) {

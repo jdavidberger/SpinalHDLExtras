@@ -71,7 +71,6 @@ case class XipFlashPlugin(config: MemoryMappingParameters = XipFlashPlugin.defau
       spiflash_clk := ctrl.io.spi.sclk.write(0)
       spiflash_cs_n := ctrl.io.spi.ss(0)
 
-      val source_clock = GlobalSignals.export_toplevel(ClockDomain.current.clock, s"${spiflash_clk.name}_refclk")
     }
     val xip = if (systemClockDomain == clockArea.clockDomain) clockArea.ctrl.io.xip else {
       val flashClockDomain = clockArea.clockDomain

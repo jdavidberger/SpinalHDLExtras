@@ -21,6 +21,7 @@ object HardwareMemoryReadWriteConfig {
 
 abstract class HardwareMemory[T <: Data]() extends ComponentWithFormalProperties {
   def requirements: MemoryRequirement[T] = ???
+  def init(initialContents : Seq[BigInt]): Unit = ???
 
   def summary(depth: Int = 0): Unit = {
     println(("\t" * depth) + s"memory_${getClass.getSimpleName}_${requirements.num_elements}x${requirements.dataType.getBitsWidth}")

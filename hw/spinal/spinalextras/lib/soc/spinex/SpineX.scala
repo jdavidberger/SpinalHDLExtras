@@ -1,18 +1,16 @@
 package spinalextras.lib.soc.spinex
 
-import spinal.core
 import spinal.core._
-import spinal.core.sim.{SimClockDomainHandlePimper, SimClockDomainPimper, sleep}
 import spinal.lib._
+import spinal.core.sim.{SimClockDomainHandlePimper, SimClockDomainPimper, sleep}
 import spinal.lib.bus.amba3.apb._
 import spinal.lib.bus.misc.{AddressMapping, DefaultMapping, SizeMapping}
 import spinal.lib.bus.simple._
 import spinal.lib.bus.wishbone.Wishbone
-import spinal.lib.com.jtag.JtagTapInstructionCtrl
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBus
 import spinal.lib.cpu.riscv.debug._
 import spinalextras.lib.Config
-import spinalextras.lib.bus.bus.InstructionCacheMemBusExt
+import spinalextras.lib.blackbox.lattice.lifcl.WDT
 import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
 import spinalextras.lib.clocking.ClockSelection
 import spinalextras.lib.lattice.IPX
@@ -22,11 +20,10 @@ import spinalextras.lib.misc.ClockSpecification
 import spinalextras.lib.soc.DeviceTree
 import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
 import vexriscv.ip.InstructionCacheMemBus
-import vexriscv.plugin._
+import vexriscv.plugin.{CsrPlugin, DBusSimpleBus, DBusSimplePlugin, DebugPlugin, EmbeddedRiscvJtag, ExternalInterruptArrayPlugin, IBusCachedPlugin, IBusSimpleBus, IBusSimplePlugin}
 import vexriscv.{ExceptionCause, VexRiscv, VexRiscvConfig}
 
 import java.nio.file.{Files, StandardCopyOption}
-import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
@@ -43,15 +40,17 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
   val mainClockDomain = ClockDomain.current
 
-  val resetCtrlClockDomain = mainClockDomain.copy(
+  val resetCtrlClockDomain = ClockDomain(
+    clock = mainClockDomain.readClockWire,
     reset = null,
-    config = ClockDomainConfig(resetKind = BOOT)
+    config = ClockDomainConfig(resetKind = BOOT),
+    frequency = mainClockDomain.frequency
   )
 
   val resetCtrl = new ClockingArea(resetCtrlClockDomain) {
     val mainClkResetUnbuffered  = False
 
-    val systemClkReset = Timeout(1 us)
+    val systemClkReset = Timeout(10 us)
     when(!systemClkReset) {
       mainClkResetUnbuffered := True
     }
@@ -64,9 +63,14 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     val systemReset  = RegNext(mainClkResetUnbuffered, init = True)
   }
 
-
-  val systemClockDomain = mainClockDomain.copy(
+  val systemClockDomain = ClockDomain(
+    clock = mainClockDomain.readClockWire,
     reset = resetCtrl.systemReset,
+    config = ClockDomainConfig(
+      resetActiveLevel = HIGH,
+      resetKind = SYNC
+    ),
+    frequency = mainClockDomain.frequency
   )
 
   val debugClockDomain = systemClockDomain
@@ -316,6 +320,16 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     add_slave(bus, name, mapping, false, tags:_*)
   }
 
+  def init_rom(file : String): Unit = {
+    plugins.filter(_.isInstanceOf[SystemRam]).map(_.asInstanceOf[SystemRam]).find(_.name == "spinex_rom") match {
+      case Some(rom) => {
+        rom.init_rom(file)
+      }
+      case None => {
+        SpinalError("ROM is not part of the design image")
+      }
+    }
+  }
 }
 
 

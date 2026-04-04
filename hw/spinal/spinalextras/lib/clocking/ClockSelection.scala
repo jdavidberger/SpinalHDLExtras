@@ -11,8 +11,6 @@ import spinalextras.lib.misc.ClockSpecification
 import scala.language.postfixOps
 
 class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false) extends Component {
-  assert(ClockDomain.current.config.resetActiveLevel == HIGH)
-
   val inputClockFrequency = ClockDomain.current.frequency.getValue
   val outputClocksRefIdx = outputClocks.indexWhere(c => c.phaseOffset == 0 && c.freq == inputClockFrequency)
   val refClockIsOutput = outputClocksRefIdx != -1
@@ -30,7 +28,7 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
   val external_clock_domain = ClockDomain.current
 
   val reset = ResetCtrl.asyncAssertSyncDeassert(
-    input = external_clock_domain.readResetWire,
+    input = external_clock_domain.isResetActive,
     clockDomain = external_clock_domain
   )
 
@@ -70,7 +68,7 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
 
     var name = s"${(cd.frequency.getValue.toDouble / 1e6).round.toInt}mhz"
     io.resets(out_idx) := {
-      if(out_idx == 0 && bootstrap) reset else cd.readResetWire
+      if(out_idx == 0 && bootstrap) reset else cd.isResetActive
     }.setName(s"rst_sync_${name}", weak = true)
 
     io.clks(out_idx).setName(s"clk_${name}", weak = true)

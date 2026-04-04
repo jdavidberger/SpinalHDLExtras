@@ -34,6 +34,22 @@ case class LscRamDpTrue(
   addGeneric("BYTE_SIZE_B", wrMaskWidth)
   addGeneric("MEM_ID", "MEM0")
 
+  def init(initialContents : Seq[BigInt]): Unit = {
+    assert(initialContents.size <= (0x80 * 160))
+
+    initialContents.grouped(5120/32).zipWithIndex.foreach { case (mem, idx) => {
+      var v = ""
+      for (i <- (0 until 160 - mem.size)) {
+        v = v + f"00000000"
+      }
+      mem.foreach(d => {
+        assert(d >= 0)
+        v = f"$d%08X" + v
+      })
+      addGeneric(f"INIT_VALUE_$idx%02X", f"0x$v")
+    }}
+  }
+
   // Define I/O bundle
   val io = new Bundle {
     val addr_a_i      = in  UInt(wrAddressWidth bits)
@@ -74,6 +90,10 @@ class LscRamDpTrue_Mem[T <: Data](_requirements : MemoryRequirement[T]) extends 
     wordCount = requirements.num_elements, wrAddressWidth = log2Up(requirements.num_elements), wrDataWidth = requirements.dataType.getBitsWidth,
     rdAddressWidth = log2Up(requirements.num_elements), rdDataWidth = requirements.dataType.getBitsWidth, wrMaskEnable = requirements.needsMask, wrMaskWidth = requirements.dataType.getBitsWidth / 8
   )
+
+  override def init(initialContents : Seq[BigInt]): Unit = {
+    mem.init(initialContents)
+  }
 
   mem.io.clk_a_i := ClockDomain.current.readClockWire
   mem.io.clk_b_i := ClockDomain.current.readClockWire

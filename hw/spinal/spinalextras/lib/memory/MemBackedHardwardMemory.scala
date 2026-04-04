@@ -10,6 +10,12 @@ case class MemBackedHardwardMemory[T <: Data](override val requirements : Memory
   HardwareMemory[T]() {
   val mem = Mem[T](dataType, num_elements)
 
+  override def init(initialContents : Seq[BigInt]) : Unit = {
+    assert(initialContents.size <= mem.wordCount)
+    val initialContentsFilled = initialContents.padTo(mem.wordCount, BigInt(0xA5))
+    mem.initBigInt(initialContentsFilled)
+  }
+
   override lazy val latency = requirements.latencyRange._2
   val extra_latency = latency - 1
 

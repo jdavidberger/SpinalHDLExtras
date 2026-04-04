@@ -35,6 +35,10 @@ class WideHardwareMemory[T <: Data](reqs: MemoryRequirement[T], direct_factory: 
   }
 
   override lazy val latency: Int = prototype.latency
+  override def init(initialContents : Seq[BigInt]): Unit = {
+    assert(memories.size == 1)
+    memories(0).init(initialContents)
+  }
 
   override def requirements: MemoryRequirement[T] = reqs.copy(num_elements = prototype.num_elements)
 

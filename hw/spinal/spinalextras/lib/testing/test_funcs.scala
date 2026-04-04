@@ -161,7 +161,7 @@ object test_funcs {
 
     val extraOccupancy: UInt = {
       if (fifo.logic != null && fifo.logic.pop.sync != null) {
-        fifo.logic.pop.sync.readArbitation.valid.asUInt
+        fifo.logic.pop.sync.readArbitration.valid.asUInt
       } else {
         0
       }
