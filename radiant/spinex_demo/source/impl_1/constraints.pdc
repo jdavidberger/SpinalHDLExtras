@@ -1,16 +1,19 @@
-ldc_set_sysconfig {CONFIGIO_VOLTAGE_BANK0=1.8 CONFIGIO_VOLTAGE_BANK1=1.8 CONFIG_IOSLEW=FAST TRANSFR=OFF MASTER_SPI_PORT=DISABLE INITN_PORT=DISABLE MCCLK_FREQ=28.1 COMPRESS_CONFIG=OFF JTAG_PORT=DISABLE SLAVE_I3C_PORT=DISABLE DONE_PORT=DISABLE}
-
+ldc_set_sysconfig {CONFIGIO_VOLTAGE_BANK0=1.8 CONFIGIO_VOLTAGE_BANK1=1.8 CONFIG_IOSLEW=FAST MASTER_SPI_PORT=DISABLE INITN_PORT=DISABLE COMPRESS_CONFIG=OFF JTAG_PORT=DISABLE SLAVE_I3C_PORT=DISABLE DONE_PORT=DISABLE MCCLK_FREQ=28.1 BOOTMODE=DUAL TRANSFR=OFF}
 ldc_set_vcc -bank 0 1.8
 ldc_set_vcc -bank 1 1.8
 ldc_set_vcc -bank 2 1.8
 ldc_set_vcc -bank 3 1.2
 ldc_set_vcc -bank 4 1.8
+
 ldc_set_location -site {E1} [get_ports scl]
 ldc_set_location -site {E2} [get_ports sda]
 ldc_set_port -iobuf {PULLMODE=NONE OPENDRAIN=ON} [get_ports scl]
 ldc_set_port -iobuf {PULLMODE=NONE OPENDRAIN=ON} [get_ports sda]
 # Clock input from the PLL:
 ldc_set_location -site {H8} [get_ports clk_2]
+ldc_set_location -site {H8} [get_ports clk]
+ldc_set_port -iobuf {IO_TYPE=LVCMOS18H} [get_ports clk]
+
 ldc_set_port -iobuf {IO_TYPE=LVCMOS18H} [get_ports clk_2]
 # GPIO:
 ldc_set_location -site {G1} [get_ports gpio_g1]
@@ -20,9 +23,13 @@ ldc_set_location -site {A3} [get_ports led]
 ldc_set_location -site {A3} [get_ports camera_led0]
 
 ldc_set_location -site {A1} [get_ports button_n]
+ldc_set_location -site {A1} [get_ports resetn]
+
 ldc_set_location -site {B1} [get_ports button2_n]
 ldc_set_port -iobuf {PULLMODE=UP} [get_ports button_n]
 ldc_set_port -iobuf {PULLMODE=UP} [get_ports button2_n]
+ldc_set_port -iobuf {PULLMODE=UP} [get_ports resetn]
+
 # Debug UART: Note that these pins are shared with GPIO!
 ldc_set_location -site {B1} [get_ports uart_rxd]
 ldc_set_location -site {G1} [get_ports uart_txd]

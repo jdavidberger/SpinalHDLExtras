@@ -5,7 +5,7 @@ import spinal.lib.Timeout
 import spinalextras.lib.Config
 import spinalextras.lib.blackbox.lattice.lifcl.WDT
 import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
-import spinalextras.lib.soc.peripherals.UartCtrlPlugin
+import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
 import spinalextras.lib.soc.spinex.{Spinex, SpinexConfig}
 
 import scala.language.postfixOps
@@ -18,7 +18,8 @@ class SpinexMinimal(file : String) extends Component {
   withAutoPull()
 
   val som = Spinex(SpinexConfig.minimal)
-//  som.init_rom(file)
+
+  som.init_rom(file)
 
   io.led.setAsReg() init(False)
   val t = Timeout(3 sec)
