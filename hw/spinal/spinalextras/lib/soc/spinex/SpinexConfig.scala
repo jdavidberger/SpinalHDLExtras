@@ -101,12 +101,12 @@ object SpinexConfig{
   val resetVector = 0x20200000
 
   def minimal : SpinexConfig = default(
-    withJtag = false,
-    xipConfig = Some(XipFlashPlugin.defaultConfig),
+    withJtag = true,
+    xipConfig = None,//Some(XipFlashPlugin.defaultConfig),
     withI2C = false,
     withUart = true,
     ram_mapping = SizeMapping(0x40000000l, 0x0004000 Bytes),
-    //rom_mapping = SizeMapping(0x20200000, 0x00010000)
+    rom_mapping = SizeMapping(0x20200000, 0x00010000)
   )
 
   def default : SpinexConfig = default()

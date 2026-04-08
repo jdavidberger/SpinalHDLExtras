@@ -1,19 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<RadiantProject version="4.2" radiant="2025.1.1.308.0" title="spinex_demo" device="LIFCL-33U-8CTG104C" performance_grade="8_High-Performance_1.0V" family_int="je5d00" device_int="jd5u27a" package_int="FCCSP104" operation_int="COM" speed_int="11" default_implementation="impl_1">
+<RadiantProject version="4.2" radiant="2024.1.1.259.1" title="spinex_demo" device="LIFCL-33U-7CTG104C" performance_grade="7_High-Performance_1.0V" family_int="je5d00" device_int="jd5u27a" package_int="FCCSP104" operation_int="COM" speed_int="10" default_implementation="impl_1">
     <Options/>
-    <Implementation title="impl_1" dir="impl_1" description="impl_1" synthesis="lse" default_strategy="Strategy1">
-        <Options def_top="Ram_1wrs" top="spinex_top"/>
-        <Source name="../../../tinyclunx33_internal/tinyclunx33_public/RTL/ip/opencores_i2c/rtl/verilog/opencores_i2c.ipx" type="IPX_Module" type_short="IPX">
+    <Implementation title="impl_1" dir="impl_1" description="impl_1" synthesis="synplify" default_strategy="Strategy1">
+        <Options def_top="SpinexMinimal" top="SpinexMinimal"/>
+        <Source name="../../../tinyclunx33_internal/tinyclunx33_public/RTL/ip/opencores_i2c/rtl/verilog/opencores_i2c.ipx" type="IPX_Module" type_short="IPX" excluded="TRUE">
             <Options/>
         </Source>
-        <Source name="source/impl_1/spinex_top.sv" type="Verilog" type_short="Verilog">
-            <Options VerilogStandard="System Verilog" top_module="spinex_top"/>
+        <Source name="source/impl_1/spinex_top.sv" type="Verilog" type_short="Verilog" excluded="TRUE">
+            <Options VerilogStandard="System Verilog"/>
         </Source>
-        <Source name="../../../hw/gen/SpinexWithClock.ipx" type="IPX_Module" type_short="IPX">
+        <Source name="../../../hw/gen/SpinexWithClock.ipx" type="IPX_Module" type_short="IPX" excluded="TRUE">
             <Options/>
         </Source>
         <Source name="../../hw/verilog/blackbox/lattice/lifcl/BlackboxMemory.sv" type="Verilog" type_short="Verilog">
             <Options VerilogStandard="System Verilog"/>
+        </Source>
+        <Source name="../../../hw/gen/SpinexMinimal/SpinexMinimal.ipx" type="IPX_Module" type_short="IPX">
+            <Options top_module="SpinexMinimal"/>
         </Source>
         <Source name="source/impl_1/constraints.pdc" type="Physical Constraints File" type_short="PDC">
             <Options/>

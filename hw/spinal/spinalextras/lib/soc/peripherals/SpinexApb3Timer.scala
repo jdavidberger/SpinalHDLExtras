@@ -50,7 +50,7 @@ class SpinexApb3Timer(val baseAddress: BigInt) extends Component {
   }
   val uptime = CounterFreeRun(64 bits)
   val uptime_cycles = RegNextWhen(uptime.value, uptime_latch) init(0)
-  busCtrlWrapped.createReadMultiWord(uptime_cycles, address = 36, documentation = "Uptime cycles") := uptime_cycles
+  busCtrlWrapped.createReadMultiWord(uptime_cycles, address = 36, documentation = "Uptime cycles") := EndiannessSwap(uptime_cycles, base = 32 bits)
 
   io.interrupt := CSREventManager(busCtrl = busCtrlWrapped, addr = 20,
     new EventSourceProcess(counter_is_zero, description = "counter is zero")

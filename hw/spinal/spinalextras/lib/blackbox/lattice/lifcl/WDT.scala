@@ -13,13 +13,14 @@ class WDT(WDTEN : Boolean = false, WDTMODE : String = "SINGLE", WDTVALUE : Int =
     addGeneric("WDTVALUE", WDTVALUE)
   }
   val io = new Bundle {
-    val WDTRELOAD, WDT_CLK, WDT_RST = in Bool() default(False)
+    val WDTRELOAD, WDT_CLK, WDT_RST = in Bool()
   }
   noIoPrefix()
 }
 
 object WDT {
   def noop() = {
-    new WDT()
+    val wdt = new WDT()
+    wdt.io.assignDontCareToUnasigned()
   }
 }

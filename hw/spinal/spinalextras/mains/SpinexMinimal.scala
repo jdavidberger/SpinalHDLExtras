@@ -45,7 +45,7 @@ object SpinexMinimal{
       ),
       targetDirectory = s"hw/gen/SpinexMinimal",
       defaultClockDomainFrequency = FixedFrequency(60 MHz),
-      device = Device(vendor = "???", family = "???"),
+      //device = Device(vendor = "???", family = "???"),
     ).generateVerilog(new SpinexMinimal(args(0)))
 
     Spinex.generate_ipx(report)
