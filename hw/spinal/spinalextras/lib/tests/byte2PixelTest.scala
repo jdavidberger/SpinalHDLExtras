@@ -10,12 +10,12 @@ import spinalextras.lib.mipi.{MIPIConfig, MIPIDataTypes, byte2pixel}
 class byte2PixelTest extends AnyFunSuite {
   def doTest(cfg: MIPIConfig, f1: HertzNumber): Unit = {
     Config.sim.withConfig(Config.spinalConfig.copy(defaultClockDomainFrequency = FixedFrequency(f1))).doSim(
-      new byte2pixel(cfg, ClockDomain.external("byte", frequency = FixedFrequency(cfg.dphy_byte_freq)))) { dut =>
+      new byte2pixel(cfg, ClockDomain.external("byte", frequency = FixedFrequency(cfg.dphyByteFreq)))) { dut =>
       dut.io.mipi_header.valid #= false
       dut.io.payload.valid #= false
 
       dut.clockDomain.forkStimulus(f1)
-      dut.byte_cd.forkStimulus(cfg.dphy_byte_freq)
+      dut.byte_cd.forkStimulus(cfg.dphyByteFreq)
 
       dut.byte_cd.waitSampling(1)
 
@@ -27,7 +27,7 @@ class byte2PixelTest extends AnyFunSuite {
         px => sco.pushDut(px.toInt)
       }
 
-      dut.io.mipi_header.payload.datatype #= cfg.ref_dt.id
+      dut.io.mipi_header.payload.datatype #= cfg.refDt.id
       dut.io.mipi_header.payload.is_long_av_packet #= false
       dut.io.mipi_header.payload.is_long_packet #= false
 
@@ -43,7 +43,7 @@ class byte2PixelTest extends AnyFunSuite {
 
       for (n <- 0 until 5) {
         send_mipi_hdr(0, false)
-        send_mipi_hdr(cfg.ref_dt.id, true)
+        send_mipi_hdr(cfg.refDt.id, true)
         dut.byte_cd.waitSampling(20)
         for (i <- 0 until 10) {
           for (j <- 0 until 20) {

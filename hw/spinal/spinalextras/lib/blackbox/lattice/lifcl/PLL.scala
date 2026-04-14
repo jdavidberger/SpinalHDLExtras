@@ -1057,7 +1057,13 @@ object PLLConfig {
           )
         )
       })
-      .map(r => (r._1.abs * 1e-6 + r._2 / 360.0, r._3, r._1 > 0 && r._1.abs <= (spec_freq_d * (spec_tol_d + vco_tolerance))))
+      .map(r => (r._1.abs * 1e-6 + r._2 / 360.0, r._3,
+        {
+          val err = r._1
+          val allowable_error = (spec_freq_d * (spec_tol_d + vco_tolerance))
+          err <= allowable_error
+        }
+        ))
       .sortBy(r => r._1.abs)
 
     validOptions.head

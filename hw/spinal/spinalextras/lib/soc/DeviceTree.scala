@@ -101,8 +101,16 @@ class BusIfDeviceTreeProvider(busIf : BusIf) extends DeviceTreeProvider(
   override def regs: Seq[(String, SizeMapping)] = {
     val base = busIf.orderdRegInsts.head.addr
 
+    val set = new mutable.HashMap[String,Int]()
     busIf.orderdRegInsts.map(r => {
-      (r.name, SizeMapping(r.addr - base, r.size))
+      val name = if (set.contains(r.name)) {
+        set(r.name) += 1
+        r.name + "_" + set.get(r.name).get
+      } else {
+        set(r.name) = 0
+        r.name
+      }
+      (name, SizeMapping(r.addr - base, r.size))
     }).seq
   }
 

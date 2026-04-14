@@ -19,14 +19,14 @@ case class MIPIToPixel(cfg : MIPIConfig,
                        is_continous_clock : Option[Boolean] = None
                  ) extends Component {
   val io = new Bundle {
-    val mipi = slave(MIPIIO(cfg.NUM_RX_LANES))
+    val mipi = slave(MIPIIO(cfg.numRXLanes))
     val pll_lock = in(Bool())
 
     val tx_rdy = in(Bool()) default(True)
 
-    val pixelFlow = master(Flow(Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.OUTPUT_LANES))))
+    val pixelFlow = master(Flow(Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.outputLanes))))
   }
-  val byte_freq = cfg.dphy_byte_freq
+  val byte_freq = cfg.dphyByteFreq
 
   if(sensor_name != "") {
     io.mipi.setPartialName(s"${sensor_name}_mipi")
@@ -42,7 +42,7 @@ case class MIPIToPixel(cfg : MIPIConfig,
 
   mipi_to_bytes.io.pll_lock_i := io.pll_lock
   mipi_to_bytes.io.tx_rdy_i := io.tx_rdy
-  mipi_to_bytes.io.packet_parser.ref_dt_i := cfg.ref_dt.id
+  mipi_to_bytes.io.packet_parser.ref_dt_i := cfg.refDt.id
 
   mipi_to_bytes.io.rxcsr_dropnull_i := False
   mipi_to_bytes.io.rxcsr_vcx_on_i := False
@@ -53,7 +53,7 @@ case class MIPIToPixel(cfg : MIPIConfig,
   bytes_to_pixels.assignMIPIBytes(mipi_to_bytes.MIPIBytes)
 
   io.pixelFlow <> PixelFlow2Fragment(bytes_to_pixels.io.pixelFlow).map(f => {
-    val outFlow = Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.OUTPUT_LANES))
+    val outFlow = Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.outputLanes))
     outFlow.last := f.last
     outFlow.fragment.assignFromBits(f.fragment)
     outFlow
@@ -63,7 +63,7 @@ case class MIPIToPixel(cfg : MIPIConfig,
     mipi_to_bytes.byte_cd()
   }
 
-  val input_rate = cfg.RX_GEAR * cfg.NUM_RX_LANES * cfg.dphy_byte_freq.toDouble
+  val input_rate = cfg.rxGear * cfg.numRXLanes * cfg.dphyByteFreq.toDouble
   val sink_rate = cfg.DT_WIDTH * pixel_cd.frequency.getValue.toDouble
   require(input_rate <= sink_rate, s"Configuration doesn't work; pixel clock can't keep up with the output ${input_rate} >= ${sink_rate}")
 

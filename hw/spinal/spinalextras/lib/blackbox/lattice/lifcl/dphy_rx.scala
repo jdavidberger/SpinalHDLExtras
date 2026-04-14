@@ -29,7 +29,7 @@ class dphy_rx(cfg : MIPIConfig,
   val is_soft_phy = true
   val config_for_continous_clock = is_continous_clock.getOrElse(byte_cd == null)
 
-  val byte_freq: HertzNumber = cfg.dphy_byte_freq
+  val byte_freq: HertzNumber = cfg.dphyByteFreq
   val byte_cd_freq = if(byte_cd != null) byte_cd.frequency.getValue else byte_freq
   val rx_line_rate = cfg.rx_line_rate
   val dphy_clk_freq = rx_line_rate / 2
@@ -50,7 +50,7 @@ class dphy_rx(cfg : MIPIConfig,
     val byte_f = s"_byte${clockString(byte_freq)}"
     val clock_suffix_str = if(clock_suffix) s"${sync_f}${byte_f}" else ""
     val cont_string = if (config_for_continous_clock) "cont_" else ""
-    ip_name = s"dphy_rx_${cont_string}${cfg.NUM_RX_LANES}x${cfg.RX_GEAR}${clock_suffix_str}"
+    ip_name = s"dphy_rx_${cont_string}${cfg.numRXLanes}x${cfg.rxGear}${clock_suffix_str}"
   }
 
   def solve_datasettle(byte_freq : HertzNumber, ui_freq : HertzNumber): Int = {
@@ -124,10 +124,10 @@ class dphy_rx(cfg : MIPIConfig,
     val reset_byte_fr_n_i = in Bool()
     val clk_p_io = inout(Analog(Bool()))
     val clk_n_io = inout(Analog(Bool()))
-    val d_p_io = inout(Analog(Bits(cfg.NUM_RX_LANES bits)))
-    val d_n_io = inout(Analog(Bits(cfg.NUM_RX_LANES bits)))
-    val lp_d_rx_p_o = out(Analog(Bits(cfg.NUM_RX_LANES bits)))
-    val lp_d_rx_n_o = out(Analog(Bits(cfg.NUM_RX_LANES bits)))
+    val d_p_io = inout(Analog(Bits(cfg.numRXLanes bits)))
+    val d_n_io = inout(Analog(Bits(cfg.numRXLanes bits)))
+    val lp_d_rx_p_o = out(Analog(Bits(cfg.numRXLanes bits)))
+    val lp_d_rx_n_o = out(Analog(Bits(cfg.numRXLanes bits)))
     val bd_o = out(Bits(cfg.GEARED_LANES bits))
 
     /**
@@ -196,10 +196,10 @@ class dphy_rx(cfg : MIPIConfig,
       ecc_info.payload(1).setName("ecc_2bit_error_o")
       ecc_info.payload(2).setName("ecc_byte_error_o")
 
-      val ref_dt_i = in(Bits(6 bits)) default(cfg.ref_dt.id)
+      val ref_dt_i = in(Bits(6 bits)) default(cfg.refDt.id)
     }.setPartialName("")
 
-    val dphy_rxdatawidth_hs_o = out(Bits(cfg.NUM_RX_LANES bits))
+    val dphy_rxdatawidth_hs_o = out(Bits(cfg.numRXLanes bits))
     val dphy_cfg_num_lanes_o = out(Bits(2 bits))
 
     val misc_signals = enable_misc_signals generate new Bundle {
@@ -220,7 +220,7 @@ class dphy_rx(cfg : MIPIConfig,
        * LP-11 after a high-speed mode.
        * Default is {NUM_LANES{1’d0}}.
        */
-      val term_d_en_o = out Bits(cfg.NUM_RX_LANES bits)
+      val term_d_en_o = out Bits(cfg.numRXLanes bits)
 
       /**
        * Active-high high-speed mode enable signal for data lane d0.

@@ -15,7 +15,7 @@ class byte2pixel(cfg : MIPIConfig, enable_misc_signals : Boolean = true, byte_cd
     val byte_f = if(byte_cd == null || byte_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_byte${byte_cd.frequency.getValue.decomposeString.replace(" ", "")}"
     val pixel_f = if(pixel_cd == null || pixel_cd.frequency.isInstanceOf[UnknownFrequency]) "" else s"_pixel${pixel_cd.frequency.getValue.decomposeString.replace(" ", "")}"
     val clock_suffix_str = if(clock_suffix) s"${byte_f}${pixel_f}" else ""
-    ip_name = s"byte2pixel_${cfg.NUM_RX_LANES}x${cfg.RX_GEAR}_${cfg.ref_dt}_l${cfg.OUTPUT_LANES}${clock_suffix_str}"
+    ip_name = s"byte2pixel_${cfg.numRXLanes}x${cfg.rxGear}_${cfg.refDt}_l${cfg.outputLanes}${clock_suffix_str}"
   }
 
   val io = new Bundle {

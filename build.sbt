@@ -36,8 +36,8 @@ lazy val SpinalHDLExtras = (project in file("."))
       "com.fasterxml.jackson.core" % "jackson-annotations" % "2.17.2",
       "com.fasterxml.jackson.core" % "jackson-databind" % "2.17.2",
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.17.2",
-
-      "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % "2.17.2"
+      "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % "2.17.2",
+      "com.kjetland" %% "mbknor-jackson-jsonschema" % "1.0.39",
     )
   ).dependsOn(vexRiscv)
 

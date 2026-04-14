@@ -20,9 +20,14 @@ class Constraints {
   def write_file[T <: Component](report: SpinalReport[T], path : String): Unit = {
     val file = new PrintWriter(path)
 
-    val defaultClock = report.globalData.config.defaultClockDomainFrequency.getValue
-    file.println(s"# clk ${defaultClock.decompose}")
-    file.println(s"create_clock -name {clk} -period ${defaultClock.toTime.toDouble * 1e9} [get_nets clk]")
+    report.globalData.config.defaultClockDomainFrequency match {
+      case f : FixedFrequency => {
+        val defaultClock = f.getValue
+        file.println(s"# clk ${defaultClock.decompose}")
+        file.println(s"create_clock -name {clk} -period ${defaultClock.toTime.toDouble * 1e9} [get_nets clk]")
+      }
+      case _ => {}
+    }
 
     for ((data, freq) <- clocks) {
       //if(data.getComponents().nonEmpty) {

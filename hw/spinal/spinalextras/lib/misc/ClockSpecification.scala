@@ -1,6 +1,6 @@
 package spinalextras.lib.misc
 
-import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.core.{JsonParser, TreeNode}
 import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.node.ObjectNode
@@ -12,7 +12,7 @@ import scala.collection.mutable.ArrayBuffer
 
 
 case class HertzDeserializer() extends StdDeserializer[HertzNumber](classOf[HertzNumber]) {
-  override def deserialize(p: JsonParser, ctxt: DeserializationContext) = {
+  override def deserialize(p: JsonParser, ctxt: DeserializationContext) : HertzNumber = {
     val suffixes : Map[String, Double] = Map(
       "ehz" -> 1e18,
       "phz" -> 1e15,
@@ -22,9 +22,15 @@ case class HertzDeserializer() extends StdDeserializer[HertzNumber](classOf[Hert
       "khz" -> 1e3,
       "hz" -> 1,
     )
-
-    val t = p.getValueAsString.split(' ')
-    HertzNumber(t(0).toDouble * suffixes(t(1).toLowerCase))
+    if (p.getCurrentToken.toString == "START_OBJECT") {
+      val tree : TreeNode = p.readValueAsTree()
+      HertzNumber(BigDecimal(tree.get("value").toString))
+    } else if(p.getCurrentToken.toString == "VALUE_STRING") {
+      val t = p.getValueAsString.split(' ')
+      HertzNumber(t(0).toDouble * suffixes(t(1).toLowerCase))
+    } else {
+      throw new Exception("Could not parse json hertz field")
+    }
   }
 }
 

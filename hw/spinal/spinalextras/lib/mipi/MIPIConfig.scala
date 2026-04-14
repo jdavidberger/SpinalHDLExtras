@@ -2,8 +2,10 @@ package spinalextras.lib.mipi
 
 import com.fasterxml.jackson.core.{JsonGenerator, JsonParser}
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.databind.ser.std.StdSerializer
-import com.fasterxml.jackson.databind.{DeserializationContext, SerializerProvider}
+import com.fasterxml.jackson.databind.{DeserializationContext, JsonNode, ObjectMapper, SerializerProvider}
+import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaInject
 import spinal.core.HertzNumber
 import spinalextras.lib.mipi.MIPIDataTypes.MIPIDataTypes
 
@@ -26,7 +28,7 @@ object MIPIDataTypes extends Enumeration {
   val FrameStartCode = Value(0x00)
   val FrameEndCode = Value(0x01)
   val Embedded8BitNonImageData = Value(0x12)
-  
+
   val YUV4208Bit = Value(0x18)
   val YUV42010Bit = Value(0x19)
   val LegacyYUV4208Bit = Value(0x1A)
@@ -96,11 +98,34 @@ object MIPIDataTypes extends Enumeration {
   }
 }
 
-case class MIPIConfig(NUM_RX_LANES: Int = 2, RX_GEAR: Int = 8, OUTPUT_LANES: Int = 1, ref_dt : MIPIDataTypes,
-                      dphy_byte_freq : HertzNumber) {
-  def GEARED_LANES = NUM_RX_LANES * RX_GEAR
-  def PIX_WIDTH = MIPIDataTypes.bit_width(ref_dt)
-  def DT_WIDTH = OUTPUT_LANES * MIPIDataTypes.bit_width(ref_dt)
+case class MIPIConfig(numRXLanes: Int = 2, rxGear: Int = 8, outputLanes: Int = 1, refDt : MIPIDataTypes,
+                      dphyByteFreq : HertzNumber) {
+  def GEARED_LANES = numRXLanes * rxGear
+  def PIX_WIDTH = MIPIDataTypes.bit_width(refDt)
+  def DT_WIDTH = outputLanes * MIPIDataTypes.bit_width(refDt)
 
-  def rx_line_rate = dphy_byte_freq * NUM_RX_LANES * RX_GEAR / 2
+  def rx_line_rate = dphyByteFreq * numRXLanes * rxGear / 2
+
+}
+
+object MIPIConfig {
+  def patchEnumFields(objectMapper: ObjectMapper, schemaNode: JsonNode): Unit = {
+    val ref_dt = schemaNode.at("/definitions/MIPIConfig/properties/refDt")
+    ref_dt match {
+      case node: ObjectNode =>
+        node.put("$ref", "#/definitions/MIPIDataType")
+
+        val enumNames = MIPIDataTypes.values.map(_.toString).toSeq
+        val definitionsNode = schemaNode.get("definitions").asInstanceOf[ObjectNode]
+        val enumDef = objectMapper.createObjectNode()
+        enumDef.put("type", "string")
+        val enumArray = objectMapper.createArrayNode()
+        enumNames.foreach(enumArray.add)
+        enumDef.set("enum", enumArray)
+        definitionsNode.set("MIPIDataType", enumDef);
+        ()
+      case _ =>
+    };
+    return ()
+  }
 }

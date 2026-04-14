@@ -1,11 +1,9 @@
 package spinalextras.lib.mipi
 
-import com.fasterxml.jackson.core.{JsonGenerator, JsonParser}
+import com.kjetland.jackson.jsonSchema._
 import com.fasterxml.jackson.databind._
-import com.fasterxml.jackson.databind.deser.std.StdDeserializer
+import com.fasterxml.jackson.databind.node._
 import com.fasterxml.jackson.databind.module.SimpleModule
-import com.fasterxml.jackson.databind.node.ObjectNode
-import com.fasterxml.jackson.databind.ser.std.StdSerializer
 import com.fasterxml.jackson.dataformat.yaml._
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import spinal.core._
@@ -13,24 +11,29 @@ import spinal.lib._
 import spinal.lib.bus.regif.AccessType.{RO, ROV, WC}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 import spinalextras.lib.Config
+import spinalextras.lib.ipgen.{IPGenerator, IPGeneratorOptions, IPGenerator_}
 import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.mipi.MIPIDataTypes.{MIPIDataTypes, RAW10}
 import spinalextras.lib.misc.{ClockSpecification, HertzDeserializer}
 
+import scala.collection.JavaConverters._
 import java.io.FileReader
 import scala.Console.println
 import scala.language.postfixOps
 
 class Byte2PixelConfig(val name : String,
                        val mipiConfig : MIPIConfig,
-                       val pixel_clock_frequency : ClockSpecification
+                       val pixelClockFrequency : ClockSpecification
                       ) {
 }
 
 case class byte2pixel(cfg : MIPIConfig,
                       byte_cd: ClockDomain,
-                      pixel_cd: ClockDomain = ClockDomain.current) extends Component {
+                      var pixel_cd: ClockDomain = null) extends Component {
+  if(pixel_cd == null) {
+    pixel_cd = ClockDomain.current
+  }
   val io = new Bundle {
     val mipi_header = slave Flow(MIPIPacketHeader(cfg))
     val payload = slave Flow(Bits(cfg.GEARED_LANES bits))
@@ -47,7 +50,7 @@ case class byte2pixel(cfg : MIPIConfig,
 
 
   def csi_unpack_to_pixel(d : Vec[Bits]): Vec[Bits] = {
-    val dw = MIPIDataTypes.bit_width(cfg.ref_dt)
+    val dw = MIPIDataTypes.bit_width(cfg.refDt)
     if(dw == 8)
       return d
 
@@ -78,18 +81,19 @@ case class byte2pixel(cfg : MIPIConfig,
   val fifo_min_depth = 16 // Math.pow(2, (1 + Math.log(lcm_width / cfg.GEARED_LANES) / Math.log(2)).ceil).toInt
 
   val byte_cd_freq = byte_cd.frequency.getValue
-  val byte_phy_freq = cfg.dphy_byte_freq
+  val byte_phy_freq = cfg.dphyByteFreq
 
   val byte_clock_fast_enough = byte_cd_freq >= byte_phy_freq
   val pixel_clock_fast_enough = byte_phy_freq * cfg.GEARED_LANES <= pixel_cd.frequency.getValue * cfg.DT_WIDTH
 
   if(!byte_clock_fast_enough || !pixel_clock_fast_enough) {
-    println("Byte To pixel component configuration not viable")
-    println(s"Byte Clock: ${byte_cd_freq.decomposeString} should be >= ${byte_phy_freq.decomposeString}")
-    println(s"Pixel Clock: ${pixel_cd.frequency.getValue} should be >= ${byte_phy_freq * cfg.GEARED_LANES / cfg.DT_WIDTH}")
-    println(s"Byte data rate: ${byte_phy_freq * cfg.GEARED_LANES}")
-    println(s"Pixel data rate: ${pixel_cd.frequency.getValue * cfg.DT_WIDTH}")
+    System.err.println("Byte To pixel component configuration not viable")
+    System.err.println(s"Byte Clock: ${byte_cd_freq.decomposeString} should be >= ${byte_phy_freq.decomposeString}")
+    System.err.println(s"Pixel Clock: ${pixel_cd.frequency.getValue} should be >= ${byte_phy_freq * cfg.GEARED_LANES / cfg.DT_WIDTH}")
+    System.err.println(s"Byte data rate: ${byte_phy_freq * cfg.GEARED_LANES}")
+    System.err.println(s"Pixel data rate: ${pixel_cd.frequency.getValue * cfg.DT_WIDTH}")
   }
+
   require(byte_clock_fast_enough)
   require(pixel_clock_fast_enough)
 
@@ -134,7 +138,7 @@ case class byte2pixel(cfg : MIPIConfig,
   val conversion_clock = if(byte_clock_fifo) byte_cd else pixel_cd
   val conversion_area = new ClockingArea(conversion_clock) {
     val lcm_stream = Stream(Vec(Bits(8 bits), lcm_width/8))
-    val pixel_stream = Stream(Vec(Bits(MIPIDataTypes.bit_width(cfg.ref_dt) bits), cfg.OUTPUT_LANES))
+    val pixel_stream = Stream(Vec(Bits(MIPIDataTypes.bit_width(cfg.refDt) bits), cfg.outputLanes))
     pixel_stream.ready := True
 
     val bytes = Flow(Bits(cfg.GEARED_LANES bits))
@@ -273,57 +277,65 @@ case class byte2pixel(cfg : MIPIConfig,
 }
 
 
-object GenerateByte2Pixel {
-  val mapper = new ObjectMapper(new YAMLFactory())
-  mapper.registerModule(DefaultScalaModule)
-  val module = new SimpleModule()
-  module.addDeserializer(classOf[MIPIDataTypes], MIPIDatatypeDeserializer())
-  module.addSerializer(classOf[MIPIDataTypes], MIPIDatatypeSerializer())
-  module.addDeserializer(classOf[HertzNumber], HertzDeserializer())
-  mapper.registerModule(module)
 
-  def processFile(filePath : String): Unit = {
-    val reader = new FileReader(filePath)
-    val config: Byte2PixelConfig = mapper.readValue(reader, classOf[Byte2PixelConfig])
+class GenerateByte2Pixel extends IPGenerator_[Byte2PixelConfig]{
 
-    val report = Config.spinal.copy(rtlHeader = mapper.writeValueAsString(config),
-      targetDirectory = s"hw/gen/${config.name}",
-      device = Device(vendor = "lattice", family = "lifcl"),
-      defaultClockDomainFrequency = UnknownFrequency()
-      ).generateVerilog(
-      new byte2pixel(config.mipiConfig,
-        ClockDomain.external("byte_cd", frequency = FixedFrequency(config.mipiConfig.dphy_byte_freq)),
-        ClockDomain.external("pixel_cd", frequency = config.pixel_clock_frequency.toClockFrequency()))
-        .setDefinitionName(config.name + "_byte2pixel").noIoPrefix()
-    )
-    IPX.generate_ipx(report)
+  override def defaultClockDomainFrequency(cfg : Byte2PixelConfig): IClockDomainFrequency = {
+    cfg.pixelClockFrequency.toClockFrequency()
   }
 
-  def main(args: Array[String]): Unit = {
-    if (args.size > 0) {
-      processFile(args(0))
-    } else {
-      val exampleYaml = mapper.writeValueAsString(new Byte2PixelConfig(
-          name = "imx219",
-        mipiConfig = MIPIConfig(
-          NUM_RX_LANES = 2,
-          RX_GEAR = 8,
-          OUTPUT_LANES = 1,
-          ref_dt = RAW10,
-          dphy_byte_freq = 50 MHz
-        ),
-        pixel_clock_frequency = ClockSpecification(60 MHz)
-      ))
+  override def Schema(): JsonNode = {
+    val schema = super.Schema()
+    MIPIConfig.patchEnumFields(json_mapper, schema)
+    schema
+  }
 
-      println(
-        s"""
-           |GenerateByte2Pixel <spec-file.yml>
-           |
-           |Spec file example:
-           |```
-           |${exampleYaml}
-           |```
-           |""".stripMargin)
-    }
+  override def processConfig(options: IPGeneratorOptions, config: Byte2PixelConfig): Unit = {
+    processRtl(
+      options,
+      config,
+      () => new byte2pixel(config.mipiConfig,
+        ClockDomain.external("byte_cd", frequency = FixedFrequency(config.mipiConfig.dphyByteFreq)))
+        .setDefinitionName(config.name + "_byte2pixel").noIoPrefix(),
+    )
+  }
+
+  override def customMappings(module: SimpleModule): Unit = {
+    super.customMappings(module)
+    module.addDeserializer(classOf[MIPIDataTypes], MIPIDatatypeDeserializer())
+    module.addSerializer(classOf[MIPIDataTypes], MIPIDatatypeSerializer())
+    module.addDeserializer(classOf[HertzNumber], HertzDeserializer())
+  }
+
+  override def DefaultConfig: Option[Byte2PixelConfig] = super.DefaultConfig
+
+  override def ConfigExample: Byte2PixelConfig = {
+    new Byte2PixelConfig(
+      name = "imx219",
+      mipiConfig = MIPIConfig(
+        numRXLanes = 2,
+        rxGear = 8,
+        outputLanes = 1,
+        refDt = RAW10,
+        dphyByteFreq = 50 MHz
+      ),
+      pixelClockFrequency = ClockSpecification(80 MHz),
+    )
+  }
+  override def Labels: Seq[String] = Seq("MIPI")
+  override def Name: String = "MIPI Byte To Pixel"
+  override def Description: String =
+    """
+      |An IP block that takes in raw MIPI bytes and produces pixels of a given width. The pixel output has a last flag
+      |which signifies the end of a byte packet stream.
+      |""".stripMargin
+
+}
+
+object GenerateByte2Pixel {
+  IPGenerator.KnownGenerators.update(new GenerateByte2Pixel().Name, () => new GenerateByte2Pixel())
+  def main(args: Array[String]): Unit = {
+    new GenerateByte2Pixel().cli_main(args)
   }
 }
+

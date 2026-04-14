@@ -13,6 +13,7 @@ import spinal.core._
 import spinalextras.lib
 import spinalextras.lib.Config
 import spinalextras.lib.blackbox.lattice.lifcl.{PLL, PLLConfig}
+import spinalextras.lib.ipgen.{IPGenerator, IPGeneratorOptions, IPGenerator_}
 import spinalextras.lib.misc.ClockSpecification
 
 import java.io.FileReader
@@ -53,41 +54,36 @@ case class LatticePLL(config: PLLSpecification) extends Component {
   noIoPrefix()
 }
 
+class LatticePLLGenerator extends IPGenerator_[PLLSpecification] {
 
-object GenerateLatticePLL extends App {
-  val mapper = new ObjectMapper(new YAMLFactory())
-  mapper.registerModule(DefaultScalaModule)
-  val module = new SimpleModule()
-  module.addDeserializer(classOf[HertzNumber], HertzDeserializer())
-  mapper.registerModule(module)
+  override def Description: String =
+    """
+      |Generate a lattice PLL configuration given an input clock and the output clock specifications.
+      |""".stripMargin
+  override def Labels: Seq[String] = Seq("Lattice")
+  override def ConfigExample: PLLSpecification = new PLLSpecification(
+    "Example",
+    lib.misc.ClockSpecification(24 MHz),
 
-  if(args.size > 0) {
-    val reader = new FileReader(args(0))
-    val config: PLLSpecification = mapper.readValue(reader, classOf[PLLSpecification])
+    lib.misc.ClockSpecification(60 MHz),
+    lib.misc.ClockSpecification(100 MHz, tolerance = 0),
+    lib.misc.ClockSpecification(125 MHz, 90),
+    lib.misc.ClockSpecification(125 MHz, 25),
+    lib.misc.ClockSpecification(32 MHz, 135, .05),
+  )
 
-    Config.spinal.copy(rtlHeader  = mapper.writeValueAsString(config)).generateVerilog(
-      LatticePLL(config).setDefinitionName(config.name + "_pll")
+  override def Name: String = "LatticePLL"
+
+  override def processConfig(options: IPGeneratorOptions, config: PLLSpecification): Unit = {
+    processRtl(options, config,
+      () => new LatticePLL(config)
     )
-  } else {
-    val exampleYaml = mapper.writeValueAsString(new PLLSpecification(
-      "Example",
-      lib.misc.ClockSpecification(24 MHz),
+  }
+}
 
-      lib.misc.ClockSpecification(60 MHz),
-      lib.misc.ClockSpecification(100 MHz, tolerance = 0),
-      lib.misc.ClockSpecification(125 MHz, 90),
-      lib.misc.ClockSpecification(125 MHz, 25),
-      lib.misc.ClockSpecification(32 MHz, 135, .05),
-    ))
-
-    println(
-      s"""
-        |GenerateLatticePLL <spec-file.yml>
-        |
-        |Spec file example:
-        |```
-        |${exampleYaml}
-        |```
-        |""".stripMargin)
+object LatticePLLGenerator {
+  IPGenerator.KnownGenerators.update("LatticePLL", () => new LatticePLLGenerator())
+  def main(args: Array[String]): Unit = {
+    new LatticePLLGenerator().cli_main(args)
   }
 }
