@@ -109,6 +109,10 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     UnknownFrequency()
   }
 
+  def OutputDirectory(cfg : CFG): String = {
+    Name
+  }
+
   def SpinalConfig(options: IPGeneratorOptions, cfg : CFG): SpinalConfig = {
     Config.spinal.copy(
       device = options.device,
@@ -126,6 +130,22 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     val reader = new FileReader(filePath)
     val mapper = if (filePath.endsWith(".yml")) yaml_mapper else json_mapper
     val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
+    processConfig(options, config)
+  }
+
+  def ProcessFile(filePath : String) : Unit = {
+    val reader = new FileReader(filePath)
+    val mapper = if (filePath.endsWith(".yml")) yaml_mapper else json_mapper
+    val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
+
+    val options = IPGeneratorOptions(
+      device = Device(vendor = "lattice", family = "lifcl"),
+      obfuscate = false,
+      name = Name,
+      output_dir = f"hw/gen/${OutputDirectory(config)}",
+      generate_sim = false
+    )
+
     processConfig(options, config)
   }
 
@@ -158,13 +178,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
 
   def cli_main(args: Array[String]): Unit = {
     if (args.length > 0) {
-      ProcessFile(IPGeneratorOptions(
-        device = Device(vendor = "lattice", family = "lifcl"),
-        obfuscate = false,
-        name = "bytes2pixels",
-        output_dir = "hw/gen",
-        generate_sim = false
-      ), args(0))
+      ProcessFile(args(0))
     } else {
       val exampleYaml = yaml_mapper.writeValueAsString(ConfigExample)
       val exampleJson = json_mapper.writeValueAsString(ConfigExample)

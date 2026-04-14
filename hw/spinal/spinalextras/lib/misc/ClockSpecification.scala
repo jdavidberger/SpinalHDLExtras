@@ -71,6 +71,6 @@ object ClockSpecification {
     val allTolerances = new mutable.HashMap[(HertzNumber, Double), mutable.ArrayBuffer[Double]]()
     specs.foreach(x => allTolerances.getOrElseUpdate((x.freq, x.phaseOffset), new ArrayBuffer[Double]()).append(x.tolerance))
     val minTolerances = allTolerances.mapValues(_.min)
-    minTolerances.map(x => ClockSpecification(x._1._1, x._1._2, x._2)).toSeq
+    minTolerances.filter(x => x._1._1.toInt != 0).map(x => ClockSpecification(x._1._1, x._1._2, x._2)).toSeq
   }
 }
