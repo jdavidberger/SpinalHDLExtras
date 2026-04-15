@@ -16,3 +16,6 @@ target
 radiant/*/impl_1/
 **/#*
 **/.#*
+*.vcd
+hw/gen
+.podman
