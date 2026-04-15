@@ -69,7 +69,7 @@ object GenerateSpinex extends IPGenerator_[SpinexSpecification] {
 
   override def ConfigExample: SpinexSpecification = SpinexSpecification(
     name = "SpinexSoC_Example",
-    frequency = ClockSpecification(80 MHz),
+    frequency = 80 MHz,
     withJtag = true,
     withUart = true,
     withI2C = false, // Disabled for this specific example
