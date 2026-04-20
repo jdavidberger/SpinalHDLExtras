@@ -133,11 +133,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     processConfig(options, config)
   }
 
-  def ProcessFile(filePath : String) : Unit = {
-    val reader = new FileReader(filePath)
-    val mapper = if (filePath.endsWith(".yml")) yaml_mapper else json_mapper
-    val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
-
+  def processConfig(config : CFG) : Unit = {
     val options = IPGeneratorOptions(
       device = Device(vendor = "lattice", family = "lifcl"),
       obfuscate = false,
@@ -147,6 +143,14 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     )
 
     processConfig(options, config)
+  }
+
+  def ProcessFile(filePath : String) : Unit = {
+    val reader = new FileReader(filePath)
+    val mapper = if (filePath.endsWith(".yml")) yaml_mapper else json_mapper
+    val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
+
+    processConfig(config)
   }
 
   def processRtl(options : IPGeneratorOptions, cfg: CFG, dut : () => Component, simDut : () => Component = null): Unit = {
@@ -178,7 +182,11 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
 
   def cli_main(args: Array[String]): Unit = {
     if (args.length > 0) {
-      ProcessFile(args(0))
+      if (args(0) == "--build-default") {
+        processConfig(ConfigExample)
+      } else {
+        ProcessFile(args(0))
+      }
     } else {
       val exampleYaml = yaml_mapper.writeValueAsString(ConfigExample)
       val exampleJson = json_mapper.writeValueAsString(ConfigExample)

@@ -93,7 +93,7 @@ class Jtag:
                     if b:
                         counter = 96
                 if counter != 0:
-                    rev_c = 96 - counter
+                    rev_c = 95 - counter
                     counter = counter - 1
                     d32[rev_c // 32] |= (b << (rev_c % 32))
                     if counter == 0:

@@ -74,8 +74,11 @@ abstract class DeviceTreeProvider(val regBase : BigInt = 0, val regSize : Int = 
     dt.addEntry("#address-cells = <1>;", baseEntryPath:_*)
     dt.addEntry("#size-cells = <0>;", baseEntryPath:_*)
 
-    dt.addEntry(s"reg = <${regs.map(_._2).map(m => s"0x${(m.base + regBase).toString(16)} 0x${(1 + m.highestBound - m.lowerBound).toString(16)}").mkString("\n       ")}>;", baseEntryPath:_*)
-    dt.addEntry(s"reg-names = ${regs.map(_._1).map(m => '"' + m + '"').mkString(",\n            ")};", baseEntryPath:_*)
+    if (regBase != 0) {
+      dt.addEntry(s"reg = <${regs.map(_._2).map(m => s"0x${(m.base + regBase).toString(16)} 0x${(1 + m.highestBound - m.lowerBound).toString(16)}").mkString("\n       ")}>;", baseEntryPath: _*)
+      dt.addEntry(s"reg-names = ${regs.map(_._1).map(m => '"' + m + '"').mkString(",\n            ")};", baseEntryPath: _*)
+    }
+
     if(interrupts.nonEmpty) {
       dt.addEntry("interrupt-parent = <&intc0>;", baseEntryPath:_*)
       dt.addEntry(

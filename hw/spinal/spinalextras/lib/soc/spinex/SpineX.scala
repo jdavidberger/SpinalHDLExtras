@@ -17,7 +17,7 @@ import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
 import spinalextras.lib.misc.ClockSpecification
-import spinalextras.lib.soc.DeviceTree
+import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
 import vexriscv.ip.InstructionCacheMemBus
 import vexriscv.plugin.{CsrPlugin, DBusSimpleBus, DBusSimplePlugin, DebugPlugin, EmbeddedRiscvJtag, ExternalInterruptArrayPlugin, IBusCachedPlugin, IBusSimpleBus, IBusSimplePlugin}
@@ -228,6 +228,19 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       SignalLogger.concat("interrupts", interruptInfos.values.toSeq)
     )
 
+    new DeviceTreeProvider(0, 0) {
+      override def entryName: String = "spinex_irqs"
+
+      override def compatible: Seq[String] = Seq(s"spinex,irqs")
+
+      override def appendDeviceTree(dt: DeviceTree): Unit = {
+        super.appendDeviceTree(dt)
+
+        dt.addEntry(s"interrupts = <${interruptInfos.map(_._1).mkString(" ")}>;", baseEntryPath: _*)
+        dt.addEntry(s"interrupts-names = ${interruptInfos.map(n => '"' + n._2.name + '"').mkString(",\n                   ")};", baseEntryPath: _*)
+      }
+    }
+
     Component.toplevel.addPrePopTask(() => {
       directInterconnect.build()
       interconnect.build()
@@ -352,6 +365,7 @@ object Spinex{
     })
 
     report.mergeRTLSource(report.toplevelName + "_references")
+    report.generatedSourcesPaths.add( f"${report.globalData.config.targetDirectory}/${report.toplevelName}_references.v")
 
     tmpFiles.foreach(_.toFile.deleteOnExit())
 

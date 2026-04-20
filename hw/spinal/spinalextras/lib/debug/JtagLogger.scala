@@ -29,7 +29,7 @@ class JtagLoggerTap(bitWidth : Int, instr : Int = 0x24, frequency : HertzNumber 
     val inFlow = master(Flow(Bits(bitWidth bits)))
   }
 
-  ClockUtils.asAsyncReset(ClockDomain.current) on new Area {
+  val jtck_clock_area = new ClockingArea(ClockUtils.asAsyncReset(ClockDomain.current)) {
     val jtag_cd = ClockUtils.createAsyncClock(io.jtag.tck, FixedFrequency(12 MHz))
 
     val ctrl = new ClockingArea(jtag_cd) {

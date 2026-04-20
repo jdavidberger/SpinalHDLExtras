@@ -1,12 +1,30 @@
 package spinalextras.lib.soc.spinex
 
-import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.fasterxml.jackson.annotation._
+import com.fasterxml.jackson.databind.module.SimpleModule
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}
 import spinal.core._
+import spinal.lib.bus.misc.{MaskMapping, SizeMapping}
 import spinalextras.lib.ipgen.{IPGenerator, IPGeneratorOptions, IPGenerator_}
-import spinalextras.lib.misc.ClockSpecification
 import spinalextras.lib.soc.peripherals.XipFlashPlugin
+import spinalextras.lib.soc.spinex.plugins.{BusType, BusTypeDeserializer, PeripheralBus}
 
 import scala.language.postfixOps
+import scala.reflect.runtime.universe.typeOf
+
+//object BusType extends Enumeration {
+//  type BusType = Value
+//  val PipelinedMemoryBus, AXI, Wishbone = Value
+//}
+
+case class SlavePeripheral (
+                             name: String,
+                             address: MaskMapping,
+                             busType : BusType
+                          ) {
+
+}
 
 case class SpinexSpecification(
                                 name: String = "Spinex",
@@ -20,7 +38,8 @@ case class SpinexSpecification(
                                 withI2C: Boolean = true,
                                 withXip: Boolean = true,
                                 hardwareBreakpointCount: Int = 3,
-                                externalInterrupts: Int = 8
+                                externalInterrupts: Int = 8,
+                                peripherals: Seq[SlavePeripheral] = Seq(),
                               ) {
 
   /**
@@ -43,7 +62,9 @@ case class SpinexSpecification(
       pipelineApbBridge = pipelineApbBridge,
       hardwareBreakpointCount = hardwareBreakpointCount,
       externalInterrupts = externalInterrupts
-    )
+    ).withPlugins(peripherals.map(
+      cfg => PeripheralBus(cfg.name, SizeMapping(cfg.address.base, cfg.address.mask), cfg.busType)
+    ):_*)
   }
 }
 
@@ -52,6 +73,14 @@ case class SpinexSpecification(
  * Integrates into the IPGenerator framework to allow CLI-based generation from YAML/JSON specs.
  */
 object GenerateSpinex extends IPGenerator_[SpinexSpecification] {
+  override def Schema(): JsonNode = {
+    BusType.patchEnumFields(json_mapper, super.Schema())
+  }
+
+  override def customMappings(module: SimpleModule): Unit = {
+    super.customMappings(module)
+    module.addDeserializer(classOf[BusType], BusTypeDeserializer())
+  }
 
   override def defaultClockDomainFrequency(cfg: SpinexSpecification): IClockDomainFrequency = {
     FixedFrequency(cfg.frequency)

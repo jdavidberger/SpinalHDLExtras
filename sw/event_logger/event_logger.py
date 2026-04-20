@@ -4,6 +4,7 @@ import sys
 import time
 
 from jtag_tap import *
+import serial
 
 time_sync = None
 
@@ -23,8 +24,8 @@ def global_logger_parse_field(tx, bit_offset: int, bit_width: int) -> int:
         shift(l2, bit_offset - 64)
     ) & mask
 
-def global_logger_full_time(tx, gtime: int, time_bit_width: int) -> int:
-    time_part = global_logger_parse_field(tx, 96 - time_bit_width, 64)
+def global_logger_full_time(tx, gtime: int, log_bits: int, time_bit_width: int) -> int:
+    time_part = global_logger_parse_field(tx, log_bits - time_bit_width, 64)
     if time_bit_width >= 64:
         return time_part
     next_incr = 1 << time_bit_width
@@ -52,7 +53,8 @@ def decode_log_stream(stream, event_def_metadata):
     index_size = event_def_metadata["index_size"]
     event_defs = event_def_metadata["event_definitions"]
     clock_scale = 1. / float(event_def_metadata["clock_freq"])
-    syscnt_padding = event_def_metadata["log_bits"] - index_size - 64
+    log_bits = event_def_metadata["log_bits"]
+    syscnt_padding = log_bits - index_size - 64
 
     while True:
         raw = next(stream)
@@ -67,13 +69,13 @@ def decode_log_stream(stream, event_def_metadata):
             tx = (l0, l1, l2)
 
         # Decode index
-        index = global_logger_parse_field(tx, 1, index_size)
+        index = global_logger_parse_field(tx, 0, index_size)
 
         if index == (1 << index_size) - 1:
-            reserved_usage_id = global_logger_parse_field(tx, index_size + 1, 8)
+            reserved_usage_id = global_logger_parse_field(tx, index_size, 8)
 
             if reserved_usage_id == 0:
-                gtime = global_logger_parse_field(tx, 1 + index_size + 8, 64)
+                gtime = global_logger_parse_field(tx, index_size + 8, 64)
 
                 yield {
                     "event_id": index,
@@ -87,8 +89,8 @@ def decode_log_stream(stream, event_def_metadata):
                     "event_id": index + 1,
                     "event": "metadata",
                     "cycle": gtime,
-                    "stream_cnt": global_logger_parse_field(tx, 1 + index_size + 8, 10),
-                    "signature": global_logger_parse_field(tx, 1 + index_size + 18, 32),
+                    "stream_cnt": global_logger_parse_field(tx, index_size + 8, 10),
+                    "signature": global_logger_parse_field(tx, index_size + 18, 32),
                     "dropped_events": global_logger_parse_field(tx, 1 + index_size + 18 + 32, 32),
                     "data": hex(tx[0] | (tx[1] << 32) | (tx[2] << 64))
                 }
@@ -109,12 +111,12 @@ def decode_log_stream(stream, event_def_metadata):
 
         # Decode timestamp
         time_bits = event_def["time_bits"]
-        timestamp = global_logger_full_time(tx, gtime, time_bits)
+        timestamp = global_logger_full_time(tx, gtime, log_bits, time_bits)
         gtime = timestamp
 
         # Decode fields
         fields = {}
-        bit_offset = index_size + 1  # Skip VALID + index
+        bit_offset = index_size
 
         def parse_type(tdef, offset):
             if isinstance(tdef, list) and isinstance(tdef[0], str):
@@ -168,14 +170,57 @@ def decode_log_stream(stream, event_def_metadata):
             #"data": list(map(hex, tx))
         }
 
+
+def decode_slip_serial(port='/dev/ttyUSB0', baud=115200):
+    ser = serial.Serial(port, baud, timeout=0.1)
+    packet = bytearray()
+    SLIP_END = 0xC0
+    SLIP_ESC = 0xDB
+    SLIP_ESC_END = 0xDC
+    SLIP_ESC_ESC = 0xDD
+
+    escape_mode = False
+    while True:
+        byte = ser.read(1)
+        if not byte:
+            continue
+
+        b = byte[0]
+        if b == SLIP_END:
+            if packet:
+                yield bytes(packet)
+
+                packet = bytearray()
+        elif b == SLIP_ESC:
+            escape_mode = True
+        else:
+            if escape_mode:
+                if b == SLIP_ESC_END:
+                    packet.append(SLIP_END)
+                elif b == SLIP_ESC_ESC:
+                    packet.append(SLIP_ESC)
+                else:
+                    assert(False)
+            else:
+                packet.append(b)
+            escape_mode = False
+
 def open_data_stream(file_arg = None):
-    data_stream = None
     if file_arg is not None:
-        file = sys.stdin.buffer if file_arg == "-" else open(file_arg, "rb")
-        def data_stream_from_file():
-            while True:
-                yield file.read(12)
-        data_stream = data_stream_from_file()
+        if file_arg.startswith("/dev/tty"):
+            def data_stream_from_serial():
+                for msg in decode_slip_serial(file_arg):
+                    # print(len(msg), [hex(int(d)) for d in msg])
+                    if len(msg) == 12:
+                        #yield msg
+                        yield list(struct.unpack("<III", msg))
+            data_stream = data_stream_from_serial()
+        else:
+            file = sys.stdin.buffer if file_arg == "-" else open(file_arg, "rb")
+            def data_stream_from_file():
+                while True:
+                    yield file.read(12)
+            data_stream = data_stream_from_file()
     else:
         url = 'ftdi://ftdi:0x6010/1'
         jtag = Jtag(url)

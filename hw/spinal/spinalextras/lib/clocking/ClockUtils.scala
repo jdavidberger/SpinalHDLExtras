@@ -35,7 +35,7 @@ object ClockUtils {
     if (clockDomain.config.resetKind == SYNC) {
       clockDomain.copy(
         reset = BufferCC(clockDomain.isResetActive),
-        config = clockDomain.config.copy(resetKind = ASYNC))
+        config = clockDomain.config.copy(resetKind = ASYNC, resetActiveLevel = HIGH))
     } else {
       clockDomain
     }
@@ -49,12 +49,12 @@ object ClockUtils {
                                       bufferDepth : Option[Int] = None) : ClockDomain = {
     clockCd.copy(
       clock = clockCd.clock,
-      config = clockCd.config.copy(resetKind = ASYNC),
+      config = clockCd.config.copy(resetKind = ASYNC, resetActiveLevel = HIGH),
       reset = ResetCtrl.asyncAssertSyncDeassert(
         input = resetCd.isResetActive,
         clockDomain = clockCd,
-        inputPolarity = resetCd.config.resetActiveLevel,
-        outputPolarity = clockCd.config.resetActiveLevel,
+        inputPolarity = HIGH,
+        outputPolarity = HIGH,
         bufferDepth = bufferDepth
       ).setCompositeName(resetCd.isResetActive, "synchronized", true)
     )

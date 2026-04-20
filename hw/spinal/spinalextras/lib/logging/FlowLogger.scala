@@ -171,70 +171,62 @@ class FlowLogger(val datas: Seq[(Data, ClockDomain)], val cfg : FlowLoggerConfig
         fold(B(0, 32 bit))((a, b) => a ^ b.resize(32 bits))
     }
 
-    if(sysBus == null) {
-      stream >> ctrlStreams.get._1
-      loggerFifo.io.flush := False
-      io.manual_trigger.clearAll()
-    }
-
-    val logger_port = sysBus.add_slave_factory("logger_port", SizeMapping(address, 1 KiB), true, true, "dBus", "data")
-
-    val ctrlReg = logger_port.createReadAndWrite(UInt(32 bits), address + 0) init(0)
-
-    logger_port.createReadOnly(UInt(32 bits), address + 4) := RegNext(io.captured_events, init = U(0))
-    val memoryStream = stream.clone()
-    logger_port.readStreamNonBlocking(memoryStream, address + 8)
-    if(ctrlStreams.isEmpty) {
-      memoryStream << stream
-    } else {
-      val inMemory = RegNext(ctrlReg(0)) init(False)
-
-      val demux = StreamDemux(stream, inMemory.asUInt, 2)
-      demux(0) >> ctrlStreams.get._1
-      demux(1) >> memoryStream
-
-      when(inMemory =/= RegNext(inMemory, False)) {
-        assume(!RegNext(stream.isStall, False))
-      }
-    }
-
-    logger_port.createReadOnly(Bits(32 bits), address + 20) := checksum
-    logger_port.createReadOnly(Bits(32 bits), address + 24) := io.sysclk.resize(32).asBits
-    logger_port.createReadOnly(UInt(32 bits), address + 28) := RegNext(loggerFifo.io.occupancy, init = U(0)).resized
-
-    loggerFifo.io.flush := RegNext(logger_port.isWriting(address + 28))
-
-    val manual_trigger = io.manual_trigger.clone()
-    logger_port.driveFlow(manual_trigger, address + 32)
-    logger_port.createReadOnly(Bits(32 bits), address + 32) := B(datas.size, 32 bits).resized
-
-    io.manual_trigger <> manual_trigger.stage()
-
-    val inactive_channels = Reg(io.inactive_channels.clone()) init(0)
+    val inactive_channels = Reg(io.inactive_channels.clone()) init (0)
     io.inactive_channels := inactive_channels
-    logger_port.readAndWriteMultiWord(inactive_channels, address + 36)
 
-    logger_port.createReadOnly(Bits(32 bits), address + 48) := signature
-    logger_port.createReadOnly(UInt(32 bits), address + 52) := RegNext(io.dropped_events, init=U(0))
-    io.flush_dropped := RegNext(logger_port.isWriting(address + 52)) init(False)
+    if(sysBus == null) {
+      stream.map(_.resize(ctrlStreams.get._1.payload.getWidth bits)) >> ctrlStreams.get._1
+      loggerFifo.io.flush := False
+      io.flush_dropped := False
 
-    io.flowFires.zipWithIndex.foreach(x => {
-      val flowCnt = RegInit(U(0, 32 bits))
-      logger_port.createReadOnly(UInt(32 bits), address + 56 + x._2 * 4) := flowCnt
-      when(x._1) {
-        flowCnt := flowCnt + 1
+      io.manual_trigger.clearAll()
+    } else {
+      val logger_port = sysBus.add_slave_factory("logger_port", SizeMapping(address, 1 KiB), true, true, "dBus", "data")
+
+      val ctrlReg = logger_port.createReadAndWrite(UInt(32 bits), address + 0) init (0)
+
+      logger_port.createReadOnly(UInt(32 bits), address + 4) := RegNext(io.captured_events, init = U(0))
+      val memoryStream = stream.clone()
+      logger_port.readStreamNonBlocking(memoryStream, address + 8)
+      if (ctrlStreams.isEmpty) {
+        memoryStream << stream
+      } else {
+        val inMemory = RegNext(ctrlReg(0)) init (False)
+
+        val demux = StreamDemux(stream, inMemory.asUInt, 2)
+        demux(0) >> ctrlStreams.get._1
+        demux(1) >> memoryStream
+
+        when(inMemory =/= RegNext(inMemory, False)) {
+          assume(!RegNext(stream.isStall, False))
+        }
       }
-    })
 
-//    val activityTimeout = Timeout(1000 ms)
-//    when(activityTimeout) {
-//      activityTimeout.clear()
-//      io.manual_trigger.valid := True
-//      io.manual_trigger.payload.setAll()
-//    }
-//    when(io.log.valid) {
-//      activityTimeout.clear()
-//    }
+      logger_port.createReadOnly(Bits(32 bits), address + 20) := checksum
+      logger_port.createReadOnly(Bits(32 bits), address + 24) := io.sysclk.resize(32).asBits
+      logger_port.createReadOnly(UInt(32 bits), address + 28) := RegNext(loggerFifo.io.occupancy, init = U(0)).resized
+
+      loggerFifo.io.flush := RegNext(logger_port.isWriting(address + 28))
+
+      val manual_trigger = io.manual_trigger.clone()
+      logger_port.driveFlow(manual_trigger, address + 32)
+      logger_port.createReadOnly(Bits(32 bits), address + 32) := B(datas.size, 32 bits).resized
+
+      io.manual_trigger <> manual_trigger.stage()
+      logger_port.readAndWriteMultiWord(inactive_channels, address + 36)
+
+      logger_port.createReadOnly(Bits(32 bits), address + 48) := signature
+      logger_port.createReadOnly(UInt(32 bits), address + 52) := RegNext(io.dropped_events, init = U(0))
+      io.flush_dropped := RegNext(logger_port.isWriting(address + 52)) init (False)
+
+      io.flowFires.zipWithIndex.foreach(x => {
+        val flowCnt = RegInit(U(0, 32 bits))
+        logger_port.createReadOnly(UInt(32 bits), address + 56 + x._2 * 4) := flowCnt
+        when(x._1) {
+          flowCnt := flowCnt + 1
+        }
+      })
+    }
 
     if(ctrlStreams.isDefined) {
       val inFlow = ctrlStreams.get._2

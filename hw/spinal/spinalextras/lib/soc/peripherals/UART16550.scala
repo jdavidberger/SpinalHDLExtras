@@ -475,3 +475,4 @@ class UartCtrlHighRate(val g : UartCtrlGenerics = UartCtrlGenerics()) extends Co
   io.readBreak := rx.io.break
   tx.io.break := io.writeBreak
 }
+

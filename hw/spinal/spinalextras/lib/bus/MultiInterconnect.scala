@@ -134,9 +134,19 @@ class MultiInterconnectByTag(name : String = "multiinterconnect") extends MultiI
   val tags = new mutable.HashMap[MultiBusInterface, mutable.Set[String]]()
 
   override def addSlave(bus: MultiBusInterface, mapping: AddressMapping) : this.type = {
+    def sanitize_mapping(m : AddressMapping) = {
+      m match {
+        case m : MaskMapping => SizeMapping(m.base, m.mask)
+        case _ => m
+      }
+    }
+
     for((sbus, s) <- slaves) {
       if(tags(sbus).intersect(tags(bus)).size > 0 && mapping != DefaultMapping && s.mapping != DefaultMapping) {
-        val intersection = s.mapping.intersect(mapping)
+
+        val intersection = sanitize_mapping(s.mapping).
+          intersect(sanitize_mapping(mapping))
+
         //assert(!s.mapping.hit(mapping.lowerBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
         //assert(!s.mapping.hit(mapping.highestBound), f"Memory map conflict ${s.mapping} vs ${mapping}")
         intersection match {
