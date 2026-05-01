@@ -9,6 +9,8 @@ import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
 
 class AsyncStreamContract[T <: Data](stream : AsyncStream[T]) extends Composite(stream, "contract") {
+  stream.component.withAutoPull()
+
   import stream._
   val wasValid = RegNext(async_valid) init (False)
   val wasReady = RegNext(async_ready) init (False)

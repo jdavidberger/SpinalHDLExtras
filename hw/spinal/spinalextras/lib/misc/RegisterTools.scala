@@ -70,10 +70,14 @@ object RegisterTools {
   }
 
   def Counter(busIf : BusIf, name : String, event : Bool, clockDomain: ClockDomain = ClockDomain.current) = {
-    val reg = busIf.newReg(name)(SymbolName(name))
-    val field = reg.field(UInt(32 bits), if (ClockDomain.current == clockDomain) RW else RO)
-    create_counter(field, event, clockDomain)
-    field
+    if(busIf == null) {
+      null
+    } else {
+      val reg = busIf.newReg(name)(SymbolName(name))
+      val field = reg.field(UInt(32 bits), if (ClockDomain.current == clockDomain) RW else RO)
+      create_counter(field, event, clockDomain)
+      field
+    }
   }
 
   def newSection(b : BusIf) = {

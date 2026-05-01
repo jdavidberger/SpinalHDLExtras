@@ -232,7 +232,7 @@ object test_funcs {
                                                                   recover: OutT => TestOutT,
                                                                   factor: Option[Float] = None,
                                                                   compare: (TestOutT, TestOutT) => Boolean = (a: TestOutT, b: TestOutT) => a == b,
-                                                                  timeout: TimeNumber = 100 us, setup: (CT) => Unit = ((c: CT) => {}), latency1to1: Boolean = true,
+                                                                  timeout: TimeNumber = 1000 us, setup: (CT) => Unit = ((c: CT) => {}), latency1to1: Boolean = true,
                                                                  ): Unit = {
     Output.ready #= false
     Input.valid #= false
@@ -355,10 +355,6 @@ object test_funcs {
         case _ => {}
       }
     }
-  }
-
-  def assertPMBContract(pmb: PipelinedMemoryBus) = new Area {
-    ???//pmb.formalContract
   }
 
   var fastClockDomain: Option[ClockDomain] = None

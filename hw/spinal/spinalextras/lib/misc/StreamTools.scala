@@ -215,20 +215,20 @@ class StreamGather[T <: Data](dataType : HardType[T], gatherCount : Int) extends
 
   when(io.input.fire) {
     registers(gatherCount - 1).value := io.input.payload
-    registers(gatherCount - 1).valid := True
+    registers(gatherCount - 1).has_value := True
   }
 
   io.output.payload._2 := registers(0).value
 
   for(i <- 0 until gatherCount - 1) {
     io.output.payload._1(i).value := registers(i + 1).value
-    io.output.payload._1(i).valid := registers(i + 1).valid
+    io.output.payload._1(i).has_value := registers(i + 1).has_value
   }
   io.output.payload._1(gatherCount - 1).value := io.input.payload
-  io.output.payload._1(gatherCount - 1).valid := True
+  io.output.payload._1(gatherCount - 1).has_value := True
 
-  io.output.valid := (io.input.valid && registers(0).valid)
-  io.input.ready := (io.output.ready || !registers(0).valid)
+  io.output.valid := (io.input.valid && registers(0).has_value)
+  io.input.ready := (io.output.ready || !registers(0).has_value)
 
   //io.output.payload.assignDontCareToUnasigned()
 }
@@ -253,27 +253,27 @@ class StreamFragmentGather[T <: Data](dataType : HardType[T], gatherCount : Int)
 
   when(io.input.fire) {
     registers(gatherCount - 1).value := io.input.payload
-    registers(gatherCount - 1).valid := True
+    registers(gatherCount - 1).has_value := True
   } elsewhen(flush && output.fire) {
     registers(gatherCount - 1).value.assignDontCare()
-    registers(gatherCount - 1).valid := False
+    registers(gatherCount - 1).has_value := False
   }
 
   output.payload._2 := registers(0).value
 
   for(i <- 0 until gatherCount - 1) {
     output.payload._1(i).value := registers(i + 1).value
-    output.payload._1(i).valid := registers(i + 1).valid
+    output.payload._1(i).has_value := registers(i + 1).has_value
   }
   output.payload._1(gatherCount - 1).value := io.input.payload
-  output.payload._1(gatherCount - 1).valid := !flush
+  output.payload._1(gatherCount - 1).has_value := !flush
 
-  output.valid := (io.input.valid && registers(0).valid) || flush
-  io.input.ready := (output.ready || !registers(0).valid)
+  output.valid := (io.input.valid && registers(0).has_value) || flush
+  io.input.ready := (output.ready || !registers(0).has_value)
 
-  output.last := flush && !registers(1).valid
+  output.last := flush && !registers(1).has_value
 
-  io.output <> output.discardWhen(!registers(0).valid)
+  io.output <> output.discardWhen(!registers(0).has_value)
 }
 
 object StreamTools {
@@ -383,6 +383,34 @@ object StreamTools {
 
     ret
   }
+}
+
+
+case class StreamWrapFragment[T1 <: Data, T2 <: Data](val ctor : () => StreamMapComponent[T1, T2]) extends StreamMapComponent[Fragment[T1], Fragment[T2]] {
+  val c = ctor()
+
+  val io = new Bundle {
+    val input = slave Stream(Fragment(c.InputStream().payload))
+    val output = master Stream(Fragment(c.OutputStream().payload))
+  }
+
+  val lastFifo = StreamFifo(Bool(), depth = latency() + 2, latency = 0)
+
+  lastFifo.io.push.payload := io.input.last
+  lastFifo.io.push.valid := io.input.fire
+
+  io.input.map(_.fragment).continueWhen(lastFifo.io.push.ready) >> c.InputStream()
+
+  val last = lastFifo.io.pop.payload;
+  io.output << c.OutputStream().addFragmentLast(last)
+  lastFifo.io.pop.ready := io.output.fire
+
+
+  override def InputStream(): Stream[Fragment[T1]] = io.input
+
+  override def OutputStream(): Stream[Fragment[T2]] = io.output
+
+  override def latency(): Int = c.latency()
 }
 
 class StreamPipelinedMux[T1 <: Data, T2 <: Data](val dataType : HardType[T1],

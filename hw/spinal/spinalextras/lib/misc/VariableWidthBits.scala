@@ -72,7 +72,7 @@ case class VariableWidthBits(width: Int) extends Bundle with FormalData {
 
   def takeHigh(n : Int) : Optional[UInt] = {
     val rtn = Optional(UInt(n bits))
-    rtn.valid := size >= n
+    rtn.has_value := size >= n
     rtn.value := (payload >> (size - n)).resize(n)
     rtn
   }

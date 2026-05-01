@@ -47,7 +47,7 @@ object WishbonePipelinedHelpers {
 }
 
 case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemoryBusConfig,
-                                        wbConfig: WishboneConfig, rspQueue : Int = 8, addressMap : (UInt => UInt) = identity) extends ComponentWithFormalProperties {
+                                        wbConfig: WishboneConfig, rspQueue : Int = 8, addressMap : (UInt => UInt) = identity, allowDataResize : Boolean = true) extends ComponentWithFormalProperties {
   val io = new Bundle {
     val wb = slave(Wishbone(wbConfig))
     val pmb = master(PipelinedMemoryBus(pipelinedMemoryBusConfig))
@@ -56,7 +56,7 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
   //assert(io.pmb.cmd.valid === False || (io.wb.byteAddress() & (io.wb.config.wordAddressInc() - 1)) === 0, "PMB needs word alignment")
   val pendingRead = RegInit(False) setWhen(io.pmb.readRequestFire) clearWhen(io.wb.ACK)
   io.pmb.cmd.valid := io.wb.masterHasRequest & !pendingRead
-  io.pmb.cmd.data := io.wb.DAT_MOSI
+  io.pmb.cmd.data := (if (allowDataResize) io.wb.DAT_MOSI.resized else io.wb.DAT_MOSI)
   io.pmb.cmd.address := io.wb.byteAddress().resized
   io.pmb.cmd.write := io.wb.WE
 
@@ -68,7 +68,7 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
   if(io.wb.ERR != null) {
     io.wb.ERR := False
   }
-  io.wb.DAT_MISO := io.pmb.rsp.data
+  io.wb.DAT_MISO := io.pmb.rsp.data.resized
   io.wb.ACK := io.pmb.rsp.valid
 
   when(io.wb.masterHasRequest) {

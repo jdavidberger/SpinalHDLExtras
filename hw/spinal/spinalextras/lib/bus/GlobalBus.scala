@@ -258,9 +258,6 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
       ctx
     }.restore()
 
-    super.build()
-    println("System Bus Masters")
-
     if(masters.isEmpty) {
       val m = add_master("filler")
       m.WE := False
@@ -271,6 +268,9 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
       m.ADR := 0
       m.DAT_MOSI := 0
     }
+
+    super.build()
+    println("System Bus Masters")
 
     val ctx = Component.push(topComponent)
     val wbInterconn = WishboneInterconFactory()

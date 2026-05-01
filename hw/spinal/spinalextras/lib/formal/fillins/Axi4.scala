@@ -61,7 +61,7 @@ object Axi4Formal {
 
     withAutoPull()
     val unfinishedArs = if(globalData.config.formalAsserts) {
-      val unfinishedArs = addTree(test_funcs.formalMapRam(arFifo).map(x => x.valid ? (x.value +^ 1) | U(0)))
+      val unfinishedArs = addTree(test_funcs.formalMapRam(arFifo).map(x => x.has_value ? (x.value +^ 1) | U(0)))
       val deducedReads = unfinishedArs - counter.value
       io.outstandingReads := deducedReads.resized
       unfinishedArs
@@ -215,7 +215,7 @@ object Axi4Formal {
     beatStream.freeRun()
 
     io.pendingBursts := awLengthFifo.io.occupancy
-    io.pendingWrites := addTree(test_funcs.formalMapRam(beatLengthFifo).map(x => x.valid ? (x.value +^ 1) | U(0) ) ++ Seq(beatCounter.value)).resized
+    io.pendingWrites := addTree(test_funcs.formalMapRam(beatLengthFifo).map(x => x.has_value ? (x.value +^ 1) | U(0) ) ++ Seq(beatCounter.value)).resized
 
     // Assume no overflows
     writeLastCounters.foreach(c => assume(c.getAheadValue() =/= 0 || !c.andR))
@@ -224,7 +224,7 @@ object Axi4Formal {
     val awCompleteFifo = createFifo(awComplete.map(_.asInstanceOf[Axi4Ax]), maxQueue)
 
     withAutoPull()
-    io.outstandingWrites := addTree(test_funcs.formalMapRam(awCompleteFifo).map(x => x.valid ? (x.value.len +^ 1) | U(0) ))
+    io.outstandingWrites := addTree(test_funcs.formalMapRam(awCompleteFifo).map(x => x.has_value ? (x.value.len +^ 1) | U(0) ))
 
     val wCompleteFifo = createFifo(wComplete.takeWhen(wComplete.last).map(x => U(0, 0 bits)), maxQueue)
     val awCompletesMatched = StreamJoin(awCompleteFifo.io.pop, wCompleteFifo.io.pop).toFlow.map(_._1)
