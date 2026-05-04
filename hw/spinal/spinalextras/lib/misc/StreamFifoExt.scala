@@ -17,6 +17,7 @@ package object misc {
     }.checkValidPayloadInvariance
   }
   implicit class StreamFifoExt[T <: Data](fifo : StreamFifo[T]) {
+    require(fifo != null)
 
     def formalFold[B](z: B)(op: (B, T, Bool) => B) : B = {
       def f(acc : B, args : (T, Bool)) : B = {

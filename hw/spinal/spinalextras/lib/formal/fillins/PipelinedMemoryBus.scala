@@ -25,6 +25,8 @@ object PipelinedMemoryBusFormal {
     assume(!outstandingReads.willOverflow) // This is required for the inductive formal methods to work
     val willUnderflow = CombInit(outstandingReads.value === 0 && outstandingReads.decrementIt).setPartialName("readsWillUnderflow", weak = true)
     addFormalProperty(!willUnderflow, s"${bus.name} should not have has more rsp than reads")
+
+    val outstandingReadsWithPending = Mux(bus.cmd.valid && !bus.cmd.payload.write, outstandingReads.value +^ 1, outstandingReads.value)
   }
 
   val contracts = new mutable.WeakHashMap[PipelinedMemoryBus, PipelinedMemoryBusContract]()

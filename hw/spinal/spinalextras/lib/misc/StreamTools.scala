@@ -4,7 +4,8 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
 import spinal.lib.fsm.{EntryPoint, State, StateMachine}
-import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
+import spinalextras.lib.formal.fillins.{EquivalenceRegistry, HasDefinedEquivalence}
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalData, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut, test_funcs}
 
 import scala.collection.mutable
@@ -198,10 +199,25 @@ class AdaptFragmentWidth[T <: Data](dataTypeIn : HardType[T], dataTypeOut : Hard
   StreamFragmentWidthAdapter(streamMid.stage(), out, endianness = LITTLE, earlyLast = true)
 }
 
+case class StreamGatherOutput[T <: Data](dataType : HardType[T], gatherCount : Int) extends Bundle with FormalData with HasDefinedEquivalence {
+  val nextStates = Array.fill(gatherCount)(new Optional(dataType))
+  val currentState = dataType()
+
+  override def formalIsStateValid(): Seq[FormalProperty] = {
+    FormalData.formalIsStateValid(currentState) ++
+      nextStates.flatMap(x => FormalData.formalIsStateValid(x))
+  }
+
+  override def IsEquivalent(b: StreamGatherOutput.this.type): Bool = {
+    nextStates.zip(b.nextStates).map(x => EquivalenceRegistry.Check(x._1, x._2)).fold(True)((x,y) => x && y) &&
+    EquivalenceRegistry.Check(currentState, b.currentState)
+  }
+}
+
 class StreamGather[T <: Data](dataType : HardType[T], gatherCount : Int) extends ComponentWithFormalProperties {
   val io = new Bundle {
     val input = slave Stream(dataType)
-    val output = master Stream(TupleBundle(Vec(new Optional(dataType), gatherCount), dataType()))
+    val output = master Stream(StreamGatherOutput(dataType, gatherCount))
   }
 
   val registers = Array.fill(gatherCount)(RegInit(Optional.Empty(dataType)))
@@ -218,14 +234,14 @@ class StreamGather[T <: Data](dataType : HardType[T], gatherCount : Int) extends
     registers(gatherCount - 1).has_value := True
   }
 
-  io.output.payload._2 := registers(0).value
+  io.output.payload.currentState := registers(0).value
 
   for(i <- 0 until gatherCount - 1) {
-    io.output.payload._1(i).value := registers(i + 1).value
-    io.output.payload._1(i).has_value := registers(i + 1).has_value
+    io.output.payload.nextStates(i).value := registers(i + 1).value
+    io.output.payload.nextStates(i).has_value := registers(i + 1).has_value
   }
-  io.output.payload._1(gatherCount - 1).value := io.input.payload
-  io.output.payload._1(gatherCount - 1).has_value := True
+  io.output.payload.nextStates(gatherCount - 1).value := io.input.payload
+  io.output.payload.nextStates(gatherCount - 1).has_value := True
 
   io.output.valid := (io.input.valid && registers(0).has_value)
   io.input.ready := (io.output.ready || !registers(0).has_value)
@@ -236,7 +252,7 @@ class StreamGather[T <: Data](dataType : HardType[T], gatherCount : Int) extends
 class StreamFragmentGather[T <: Data](dataType : HardType[T], gatherCount : Int) extends ComponentWithFormalProperties {
   val io = new Bundle {
     val input = slave Stream(Fragment(dataType))
-    val output = master Stream(Fragment(TupleBundle(Vec(new Optional(dataType), gatherCount), dataType())))
+    val output = master Stream(Fragment(StreamGatherOutput(dataType, gatherCount)))
   }
 
   val output = cloneOf(io.output)
@@ -259,14 +275,14 @@ class StreamFragmentGather[T <: Data](dataType : HardType[T], gatherCount : Int)
     registers(gatherCount - 1).has_value := False
   }
 
-  output.payload._2 := registers(0).value
+  output.payload.currentState := registers(0).value
 
   for(i <- 0 until gatherCount - 1) {
-    output.payload._1(i).value := registers(i + 1).value
-    output.payload._1(i).has_value := registers(i + 1).has_value
+    output.payload.nextStates(i).value := registers(i + 1).value
+    output.payload.nextStates(i).has_value := registers(i + 1).has_value
   }
-  output.payload._1(gatherCount - 1).value := io.input.payload
-  output.payload._1(gatherCount - 1).has_value := !flush
+  output.payload.nextStates(gatherCount - 1).value := io.input.payload
+  output.payload.nextStates(gatherCount - 1).has_value := !flush
 
   output.valid := (io.input.valid && registers(0).has_value) || flush
   io.input.ready := (output.ready || !registers(0).has_value)
@@ -347,7 +363,7 @@ object StreamTools {
     AdaptWidth(in.toStream(overflow).map(_.asBits), streamOut)
   }
 
-  def insertFooter[T <: Data](stream : Stream[Fragment[T]], footer: Vec[T]): Stream[Fragment[T]] = {
+  def insertFooter[T <: Data](stream : Stream[Fragment[T]], footer: Vec[T], footerReady : Bool = True): Stream[Fragment[T]] = {
     val ret = cloneOf(stream)
     val counter = Counter(footer.size)
 
@@ -366,7 +382,7 @@ object StreamTools {
 
       val addFooter : State = new State {
         whenIsActive {
-          ret.valid := True
+          ret.valid := footerReady
           ret.payload.fragment := footer(counter.value)
           ret.payload.last := counter.willOverflowIfInc
 

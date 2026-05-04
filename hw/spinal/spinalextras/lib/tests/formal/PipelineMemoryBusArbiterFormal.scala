@@ -15,6 +15,9 @@ class PipelineMemoryBusArbiterFormalTest extends AnyFunSuite with FormalTestSuit
   override def defaultDepth() = 10
 
   override def generateRtl() = Seq(
-    ("basic", () => GeneralFormalDut( () => PipelinedMemoryBusArbiter(PipelinedMemoryBusConfig(32,32), 5, 8, true, true))),
+    ("basic", () => GeneralFormalDut( () => PipelinedMemoryBusArbiter(PipelinedMemoryBusConfig(32,32), 3, 5, rspRouteQueue = true, transactionLock = true))),
+    ("no_q", () => GeneralFormalDut( () => PipelinedMemoryBusArbiter(PipelinedMemoryBusConfig(32,32), 1, 5, rspRouteQueue = false, transactionLock = true))),
+    ("basic_1", () => GeneralFormalDut( () => PipelinedMemoryBusArbiter(PipelinedMemoryBusConfig(32,32), 3, 1, rspRouteQueue = true, transactionLock = true))),
+    ("no_q_1", () => GeneralFormalDut( () => PipelinedMemoryBusArbiter(PipelinedMemoryBusConfig(32,32), 1, 1, rspRouteQueue = false, transactionLock = true))),
   )
 }

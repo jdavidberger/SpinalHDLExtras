@@ -8,9 +8,11 @@ class StreamArbiterFormalProperties[T <: Data](val arbiter: StreamArbiter[T]) ex
   override protected def formalProperties(): Seq[FormalProperty] = new FormalProperties(arbiter) {
     addFormalProperty(CountOne(arbiter.maskRouted) <= 1)
 
-    when(arbiter.locked) {
-      addFormalProperty(arbiter.io.inputs(OHToUInt(arbiter.maskLocked)).valid)
-      addFormalProperty(arbiter.io.output.valid)
+    if(arbiter.locked != null) {
+      when(arbiter.locked) {
+        addFormalProperty(arbiter.io.inputs(OHToUInt(arbiter.maskLocked)).valid)
+        addFormalProperty(arbiter.io.output.valid)
+      }
     }
   }
 }

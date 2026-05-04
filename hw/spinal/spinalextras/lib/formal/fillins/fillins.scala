@@ -1,8 +1,9 @@
 package spinalextras.lib.formal
 
-import spinal.core.{Area, Bundle, Component, Data}
+import spinal.core.internals.DataAssignmentStatement
+import spinal.core.{Area, Bundle, Component, Data, TupleBundle2}
 import spinal.lib.bus.amba4.axi.{Axi4, Axi4ReadOnly, Axi4Shared, Axi4WriteOnly}
-import spinal.lib.{Counter, Fragment, IMasterSlave, Stream}
+import spinal.lib.{Counter, Fragment, IMasterSlave, Stream, StreamFork, StreamForkArea}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter}
 import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.fsm.{StateFsm, StateMachine}
@@ -19,6 +20,24 @@ package object fillins {
     handlers.append(f)
     this
   }
+  def findInternalFormalProperties(a : Area): Set[HasFormalProperties] = {
+    val fillin = findFillin(a, a)
+    if (fillin != null && fillin.isInstanceOf[HasFormalProperties]) {
+      return Set(fillin.asInstanceOf[HasFormalProperties])
+    }
+
+
+    val rtn = new mutable.HashSet[HasFormalProperties]()
+    a.foreachReflectableNameables {
+      case inner_a: Area => {
+        rtn ++= findInternalFormalProperties(inner_a)
+      }
+      case _ => {
+      }
+    }
+
+    rtn.toSet
+  }
 
   def findInternalFormalProperties(c : Component): Set[HasFormalProperties] = {
     val rtn = new mutable.HashSet[HasFormalProperties]()
@@ -28,6 +47,23 @@ package object fillins {
         if (t != null && t.isInstanceOf[HasFormalProperties]) {
           rtn += t.asInstanceOf[HasFormalProperties]
         }
+      }
+      case _ => {
+      }
+    }
+
+    c.children.foreach(ch => {
+      val t = findFillin(ch, ch)
+      if (t != null && t.isInstanceOf[HasFormalProperties]) {
+        rtn += t.asInstanceOf[HasFormalProperties]
+      }
+
+      rtn ++= findInternalFormalProperties(ch)
+    })
+
+    c.foreachReflectableNameables {
+      case a: Area => {
+        rtn ++= findInternalFormalProperties(a)
       }
       case _ => {}
     }
@@ -75,5 +111,6 @@ package object fillins {
   fillins.AddHandler { case bus: Axi4ReadOnly => Axi4Formal.Axi4ReadOnlyExt(bus) }
   fillins.AddHandler { case bus: Axi4WriteOnly => Axi4Formal.Axi4WriteOnlyExt(bus) }
   fillins.AddHandler { case fsm: StateMachine => new StateMachineFormal(fsm) }
+  fillins.AddHandler { case fork: StreamFork[Data] => new StreamForkFormal[Data](fork) }
   fillins.AddHandler { case fsm: StateFsm[_] => new StateFsmFormal(fsm) }
 }

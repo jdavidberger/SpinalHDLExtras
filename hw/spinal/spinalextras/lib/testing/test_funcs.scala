@@ -272,6 +272,7 @@ object test_funcs {
 
     var wait_count = 30
     StreamMonitor(Output, dut.clockDomain) { payload =>
+      println(recover(payload))
       scoreboard.pushDut(recover(payload))
       sysclkOut.append(sysclk)
       wait_count = 30
@@ -371,7 +372,7 @@ object test_funcs {
                                                                                    assign: (InT, TestInT) => Unit,
                                                                                    recover: OutT => TestOutT,
                                                                                    compare: (TestOutT, TestOutT) => Boolean = (a:TestOutT, b:TestOutT) => a == b,
-                                                                                   setup: (CT) => Unit = (c:CT) => (), latency1to1 : Boolean = true): Unit = {
+                                                                                   setup: (CT) => Unit = (c:CT) => (), latency1to1 : Boolean = true, timeout: TimeNumber = 1000 us): Unit = {
     for (factor <- Vector[Option[Float]](Some(1), Some(.1f), None)) {
       var inStream: Stream[InT] = null
       var outStream: Stream[OutT] = null
@@ -382,7 +383,7 @@ object test_funcs {
         dut
       }) { dut =>
         test_funcs.fastClockDomain.foreach(_.forkStimulus(200 MHz))
-        test_funcs.doTest(dut, inStream, outStream, testInput, expectedOutput, assign, recover, factor = factor, compare, setup = setup, latency1to1 = latency1to1)
+        test_funcs.doTest(dut, inStream, outStream, testInput, expectedOutput, assign, recover, factor = factor, compare, setup = setup, latency1to1 = latency1to1, timeout=timeout )
         test_funcs.fastClockDomain = None
       }
     }

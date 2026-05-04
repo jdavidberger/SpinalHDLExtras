@@ -321,6 +321,8 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
   override def build(): Unit = {
     println(s"System Bus Masters")
 
+    if(built) return
+
     super.build()
 
     val ctx = Component.push(topComponent)

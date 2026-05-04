@@ -2,9 +2,10 @@ package spinalextras.lib.formal
 
 import spinal.core._
 import spinal.lib._
+import spinalextras.lib.formal.fillins.{EquivalenceRegistry, HasDefinedEquivalence}
 
 package object FragmentFormal {
-  implicit class FragmentExt[T <: Data](fragment: Fragment[T]) extends FormalData {
+  implicit class FragmentExt[T <: Data](val fragment: Fragment[T]) extends FormalData with HasDefinedEquivalence {
     override def underlyingData: Data = fragment
 
     override type Self = this.type
@@ -16,6 +17,10 @@ package object FragmentFormal {
      *         For complicated properties, consider using the helper class `FormalProperties`
      */
     override def formalIsStateValid(): Seq[FormalProperty] = FormalData.formalIsStateValid(fragment.fragment)
+
+    override def IsEquivalent(b: FragmentExt.this.type): Bool = {
+      fragment.last === b.fragment.last && EquivalenceRegistry.Check(fragment.fragment, b.fragment.fragment)
+    }
   }
 }
 

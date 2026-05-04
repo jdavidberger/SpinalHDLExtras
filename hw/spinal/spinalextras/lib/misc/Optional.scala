@@ -1,18 +1,28 @@
 package spinalextras.lib.misc
 
-import spinal.core.{Bool, Bundle, Data, False, HardType, True, cloneOf, when}
+import spinal.core.{Bool, Bundle, Data, False, HardType, Mux, True, cloneOf, when}
 import spinal.lib.Stream
+import spinal.lib.bus.simple.PipelinedMemoryBusCmd
+import spinalextras.lib.formal.fillins.{EquivalenceRegistry, HasDefinedEquivalence}
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.pmb_cmd_equivalence
 import spinalextras.lib.formal.{FormalData, FormalProperties, FormalProperty}
 
 
-case class Optional[T <: Data](dataType : HardType[T]) extends Bundle with FormalData {
+case class Optional[T <: Data](dataType : HardType[T]) extends Bundle with FormalData with HasDefinedEquivalence {
   val has_value = Bool()
   val value = dataType()
+
+  def or_else(other : T): T = {
+    Mux(has_value, value, other)
+  }
 
   override def formalIsStateValid(): Seq[FormalProperty] = new FormalProperties(this) {
     val value_properties = FormalData.formalIsStateValid(value)
       for (v <- value_properties) {
-        addFormalProperty(has_value === False || v.condition, v.msg)(v.loc)
+        when(has_value) {
+          addFormalProperty(v.condition, v.msg)(v.loc)
+        }
+        //addFormalProperty(has_value === False || v.condition, v.msg)//(v.loc)
       }
   }
   def formalAssertEquivalence(that : Optional[T]) = new FormalProperties {
@@ -20,6 +30,14 @@ case class Optional[T <: Data](dataType : HardType[T]) extends Bundle with Forma
     when(has_value) {
       addFormalProperty(value === that.value, s"${this} value signal does not match ${that}")
     }
+  }
+
+  override def IsEquivalent(b: Optional.this.type): Bool = {
+    has_value === b.has_value &&
+    Mux(has_value,
+      EquivalenceRegistry.Check(value, b.value),
+      True,
+    )
   }
 }
 
@@ -56,4 +74,5 @@ object Optional {
 
     outStream
   }
+
 }

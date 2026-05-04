@@ -4,7 +4,7 @@ import spinal.core.Component.push
 import spinal.core._
 import spinal.core.formal.past
 import spinal.lib._
-import spinalextras.lib.formal.fillins.EquivalenceRegistry
+import spinalextras.lib.formal.fillins.{EquivalenceRegistry, HasDefinedEquivalence}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -117,7 +117,7 @@ package object StreamFormal {
 
   var contracts = new mutable.HashMap[Stream[_], StreamContract]()
 
-  implicit class StreamExt[T <: Data](stream: Stream[T]) extends FormalMasterSlave with FormalDataWithEquivalnce[StreamExt[T]] {
+  implicit class StreamExt[T <: Data](val stream: Stream[T]) extends FormalMasterSlave with FormalDataWithEquivalnce[StreamExt[T]] with HasDefinedEquivalence {
 
     lazy val contract = contracts.getOrElseUpdate(stream, new StreamContract(stream))
 
@@ -158,6 +158,14 @@ package object StreamFormal {
     }
 
     override def selfClassTag: ClassTag[StreamExt[T]] = classTag[StreamExt[T]]
+
+    override def IsEquivalent(b: StreamExt.this.type): Bool = {
+      stream.valid === b.stream.valid &&
+        Mux(stream.valid,
+          True,
+          EquivalenceRegistry.Check(stream.payload, b.stream.payload)
+        )
+    }
   }
 
   EquivalenceRegistry.AddEquivalenceHandler { case (a : Stream[Data], b : Stream[Data]) => {
