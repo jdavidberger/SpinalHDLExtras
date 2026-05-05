@@ -2,7 +2,7 @@ package spinalextras.lib.soc.spinex.plugins
 
 import spinal.core.IntToBuilder
 import spinal.lib.com.jtag.Jtag
-import spinal.lib.slave
+import spinal.lib.{BufferCC, slave}
 import spinalextras.lib.Constraints
 import spinalextras.lib.debug.JtagChain
 import spinalextras.lib.soc.spinex.{Spinex, SpinexPlugin}

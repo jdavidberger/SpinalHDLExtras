@@ -26,20 +26,18 @@ case class SlavePeripheral (
 
 }
 
-case class SpinexSpecification(
-                                name: String = "Spinex",
-                                frequency: HertzNumber = 75 MHz,
-                                onChipRamSize: BigInt = 0x10000,
-                                pipelineDBus: Boolean = true,
-                                pipelineMainBus: Boolean = false,
-                                pipelineApbBridge: Boolean = true,
-                                withJtag: Boolean = true,
-                                withUart: Boolean = true,
-                                withI2C: Boolean = true,
-                                withXip: Boolean = true,
-                                hardwareBreakpointCount: Int = 3,
-                                externalInterrupts: Int = 8,
-                                peripherals: Seq[SlavePeripheral] = Seq(),
+case class SpinexSpecification(frequency: HertzNumber = 75 MHz,
+                               onChipRamSize: BigInt = 0x10000,
+                               pipelineDBus: Boolean = true,
+                               pipelineMainBus: Boolean = false,
+                               pipelineApbBridge: Boolean = true,
+                               withJtag: Boolean = true,
+                               withUart: Boolean = true,
+                               withI2C: Boolean = true,
+                               withXip: Boolean = true,
+                               hardwareBreakpointCount: Int = 3,
+                               externalInterrupts: Int = 8,
+                               peripherals: Seq[SlavePeripheral] = Seq(),
                               ) {
 
   /**
@@ -90,14 +88,13 @@ object GenerateSpinex extends IPGenerator_[SpinexSpecification] {
     processRtl(
       options,
       config,
-      () => Spinex(config.toSpinexConfig()).setDefinitionName(config.name).noIoPrefix()
+      () => Spinex(config.toSpinexConfig())
     )
   }
 
   override def DefaultConfig: Option[SpinexSpecification] = Some(SpinexSpecification())
 
   override def ConfigExample: SpinexSpecification = SpinexSpecification(
-    name = "SpinexSoC_Example",
     frequency = 80 MHz,
     withJtag = true,
     withUart = true,

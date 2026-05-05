@@ -22,8 +22,7 @@ import java.io.FileReader
 import scala.Console.println
 import scala.language.postfixOps
 
-class Byte2PixelConfig(val name : String,
-                       val mipiConfig : MIPIConfig,
+class Byte2PixelConfig(val mipiConfig : MIPIConfig,
                        val pixelClockFrequency : ClockSpecification
                       ) {
 }
@@ -296,7 +295,6 @@ class GenerateByte2Pixel extends IPGenerator_[Byte2PixelConfig]{
       config,
       () => new byte2pixel(config.mipiConfig,
         ClockDomain.external("byte_cd", frequency = FixedFrequency(config.mipiConfig.dphyByteFreq)))
-        .setDefinitionName(config.name + "_byte2pixel").noIoPrefix(),
     )
   }
 
@@ -311,7 +309,6 @@ class GenerateByte2Pixel extends IPGenerator_[Byte2PixelConfig]{
 
   override def ConfigExample: Byte2PixelConfig = {
     new Byte2PixelConfig(
-      name = "imx219",
       mipiConfig = MIPIConfig(
         numRXLanes = 2,
         rxGear = 8,

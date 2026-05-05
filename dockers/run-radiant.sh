@@ -29,6 +29,7 @@ MAC_OPTION="--mac-address=$LICENSE_MAC --network bridge"
 $DOCKER_ENGINE run --userns=keep-id -it --rm \
        $MAC_OPTION \
        -v$HOME/.config/:/home/user/.config/ \
+       --name radiant \
        -v$HOME:$HOME \
        -v`pwd`:`pwd` \
        -w `pwd` \

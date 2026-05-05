@@ -21,7 +21,8 @@ import scala.reflect.{ClassTag, classTag}
 
 case class IPGeneratorOptions(device: Device = Device(vendor = "lattice", family = "lifcl"),
                               obfuscate: Boolean = false,
-                              name: String = "",
+                              schema_name: String = "",
+                              instance_name: String = "",
                               output_dir: String = "hw/gen",
                               generate_sim: Boolean = false) {
 
@@ -109,10 +110,6 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     UnknownFrequency()
   }
 
-  def OutputDirectory(cfg : CFG): String = {
-    Name
-  }
-
   def SpinalConfig(options: IPGeneratorOptions, cfg : CFG): SpinalConfig = {
     Config.spinal.copy(
       device = options.device,
@@ -133,12 +130,12 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     processConfig(options, config)
   }
 
-  def processConfig(config : CFG) : Unit = {
+  def processConfig(instance_name : String, config : CFG) : Unit = {
     val options = IPGeneratorOptions(
       device = Device(vendor = "lattice", family = "lifcl"),
       obfuscate = false,
-      name = Name,
-      output_dir = f"hw/gen/${OutputDirectory(config)}",
+      instance_name = instance_name,
+      output_dir = f"hw/gen/${instance_name}",
       generate_sim = false
     )
 
@@ -150,14 +147,14 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     val mapper = if (filePath.endsWith(".yml")) yaml_mapper else json_mapper
     val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
 
-    processConfig(config)
+    processConfig(Paths.get(filePath).getFileName.toString, config)
   }
 
   def processRtl(options : IPGeneratorOptions, cfg: CFG, dut : () => Component, simDut : () => Component = null): Unit = {
     val config = this.SpinalConfig(options, cfg)
     val report = config.generateVerilog(
       {
-        val top = dut()
+        val top = dut().setDefinitionName(options.instance_name).noIoPrefix()
         top.noIoPrefix()
         if (options.obfuscate) {
           Obfuscater(top)
@@ -170,7 +167,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
 
     if(simDut != null && options.generate_sim) {
       config.generateVerilog({
-        val top = simDut()
+        val top = simDut().setDefinitionName(options.instance_name).noIoPrefix()
         top.noIoPrefix()
         if (options.obfuscate) {
           Obfuscater(top)
@@ -183,7 +180,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
   def cli_main(args: Array[String]): Unit = {
     if (args.length > 0) {
       if (args(0) == "--build-default") {
-        processConfig(ConfigExample)
+        processConfig("Example", ConfigExample)
       } else {
         ProcessFile(args(0))
       }
@@ -229,15 +226,15 @@ object IPGenerator {
           gen.SaveDefaultJson(f"${dir}/${name}.example.json")
         }
       } else {
-        KnownGenerators.get(args(0)) match {
+        val options = IPGeneratorOptions.Load(args(0))
+
+        KnownGenerators.get(options.schema_name) match {
           case Some(g) => {
             val gen = g()
-
-            val options = IPGeneratorOptions.Load(args(1))
-            gen.ProcessFile(options = options, filePath = args(2))
+            gen.ProcessFile(options = options, filePath = args(1))
           }
           case None => {
-            System.err.println(f"Could not find generator with name ${args(0)}")
+            System.err.println(f"Could not find generator with name ${options.schema_name}")
             for ((name, gen_factory) <- KnownGenerators) {
               System.err.println(f"- ${name}")
             }

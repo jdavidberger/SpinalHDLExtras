@@ -22,7 +22,7 @@ RUN echo "#!/bin/sh" > entrypoint.sh
 RUN echo "" >> entrypoint.sh
 RUN echo "export RADIANT_ROOT=${RADIANT_BASE}/\$RADIANT_VERSION" >> /entrypoint.sh && \
     echo "export LD_LIBRARY_PATH=\$RADIANT_ROOT/modeltech/linuxloem/:\$RADIANT_ROOT/bin/lin64/:\$RADIANT_ROOT/ispfpga/bin/lin64" >> /entrypoint.sh && \
-    echo "export PATH=\$RADIANT_ROOT/modeltech/linuxloem/:\$RADIANT_ROOT/bin/lin64/:\$PATH" >> /entrypoint.sh && \
+    echo "export PATH=\$RADIANT_ROOT/modeltech/linuxloem/:\$RADIANT_ROOT/bin/lin64/:\$PATH:\$RADIANT_ROOT/ispfpga/bin/lin64" >> /entrypoint.sh && \
     echo "exec \"\$@\"" >> /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh
@@ -44,9 +44,9 @@ USER root
 RUN apt update && apt install -y libopengl-dev libxkbfile-dev
 USER user
 
-FROM radiant-base AS radiant2025.1
+FROM radiant2024.2 AS radiant2025.1
 ENV RADIANT_VERSION=2025.1
 
-FROM radiant-base AS radiant2025.2
+FROM radiant2024.2 AS radiant2025.2
 ENV RADIANT_VERSION=2025.2
 
