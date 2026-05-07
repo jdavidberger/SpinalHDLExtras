@@ -75,6 +75,14 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     schema.asInstanceOf[ObjectNode].put("title", Name)
     schema.asInstanceOf[ObjectNode].put("description", Description.replace("\n", ""))
     schema.asInstanceOf[ObjectNode].put("provider", Provider)
+
+    val version = getClass.getPackage.getImplementationVersion
+    if (version != null) {
+      schema.asInstanceOf[ObjectNode].put("version", version)
+    } else {
+      schema.asInstanceOf[ObjectNode].put("version", "dev")
+    }
+
     val labelsArray = json_mapper.createArrayNode()
     Labels.foreach(labelsArray.add)
     schema.asInstanceOf[ObjectNode].set("labels", labelsArray)

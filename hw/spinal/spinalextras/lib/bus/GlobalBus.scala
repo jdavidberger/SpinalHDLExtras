@@ -239,8 +239,6 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
   }
   override def bus_interface(port : Wishbone, mapping: SizeMapping) : WishboneBusInterface = WishboneBusInterface(port, mapping)
   override def slave_factory(port : Wishbone) = {
-    if(port.ERR != null)
-      port.ERR := False
     WishboneSlaveFactory(port)
   }
 
