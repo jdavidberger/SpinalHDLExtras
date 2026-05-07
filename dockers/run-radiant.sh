@@ -26,10 +26,15 @@ LICENSE_MAC=$(echo "$LICENSE_MAC" | sed 's/../&:/g; s/:$//')
 
 MAC_OPTION="--mac-address=$LICENSE_MAC --network bridge"
 
+if [[ -v CONTAINER_NAME ]]; then
+  DOCKER_NAME="--name ${CONTAINER_NAME}"
+fi
+
+
 $DOCKER_ENGINE run --userns=keep-id -it --rm \
        $MAC_OPTION \
        -v$HOME/.config/:/home/user/.config/ \
-       --name radiant \
+       $DOCKER_NAME \
        -v$HOME:$HOME \
        -v`pwd`:`pwd` \
        -w `pwd` \

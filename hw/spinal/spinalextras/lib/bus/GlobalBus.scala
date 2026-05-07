@@ -226,12 +226,6 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
 
   override def create_bus(): Wishbone = {
     val x = Wishbone(config)
-    if (Component.current == Component.toplevel) {
-//      if(x.ERR != null) {
-//        x.ERR := False
-//        x.ERR.allowOverride()
-//      }
-    }
     x
   }
   def stage_bus(bus : Wishbone) : Wishbone = {
@@ -239,6 +233,10 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
   }
   override def bus_interface(port : Wishbone, mapping: SizeMapping) : WishboneBusInterface = WishboneBusInterface(port, mapping)
   override def slave_factory(port : Wishbone) = {
+    if(port.ERR != null) {
+      port.ERR := False
+      port.ERR.allowOverride()
+    }
     WishboneSlaveFactory(port)
   }
 
