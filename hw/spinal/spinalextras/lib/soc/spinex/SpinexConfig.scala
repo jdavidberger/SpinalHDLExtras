@@ -1,6 +1,6 @@
 package spinalextras.lib.soc.spinex
 
-import spinal.core.{B, ClockDomain, HertzNumber, IntToBuilder, TimeNumber, ifGen, log2Up}
+import spinal.core.{B, BooleanPimped, ClockDomain, HertzNumber, IntToBuilder, TimeNumber, ifGen, log2Up}
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config, Apb3SlaveFactory}
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactoryNonStopWrite, BusSlaveFactoryOnReadAtAddress, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryRead, BusSlaveFactoryWrite, SizeMapping}
 import spinal.lib.com.spi.ddr.{SpiXdrMasterCtrl, SpiXdrParameter}
@@ -88,7 +88,7 @@ case class SpinexConfig(onChipRamSize      : BigInt,
                         withJtag      : Boolean,
                         cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
                         externalInterrupts : Int,
-                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins,
+                        plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins
                        ){
   require(pipelineApbBridge || pipelineMainBus, "At least pipelineMainBus or pipelineApbBridge should be enable to avoid wipe transactions")
 
@@ -116,7 +116,9 @@ object SpinexConfig{
               withUart : Boolean = true,
               withI2C : Boolean = true,
               ram_mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes),
-              rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000)
+              rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
+              genMul : Boolean = true,
+              genDiv : Boolean = true
              ) =  SpinexConfig(
     onChipRamSize         = 0x00010000,
     onChipRamHexFile      = null,
@@ -162,9 +164,9 @@ object SpinexConfig{
       //new CsrPlugin(CsrPluginConfig.small(mtvecInit = if(withXip) 0xE0040020l else 0x80000020l)),
       new CsrPlugin(CsrPluginConfig.small(mtvecInit = null).copy(mtvecAccess = WRITE_ONLY,
         ecallGen = true, wfiGenAsNop = true, withPrivilegedDebug = withJtag, xtvecModeGen = false, debugTriggers = 8)),
-      new MulDivIterativePlugin(
-        genMul = true,
-        genDiv = true,
+      (genMul || genDiv) generate new MulDivIterativePlugin(
+        genMul = genMul,
+        genDiv = genDiv,
         mulUnrollFactor = 1,
         divUnrollFactor = 1
       ),
@@ -203,7 +205,8 @@ object SpinexConfig{
         supervisorPendingsCsrId = 0xDC0
       ),
       new YamlPlugin("cpu0.yaml")
-    ),
+    ).filter(_ != null),
+
     uartCtrlConfig = UartCtrlMemoryMappedConfig(
       uartCtrlConfig = UartCtrlGenerics(
         dataWidthMax      = 8,
@@ -252,7 +255,7 @@ object SpinexConfig{
              ) = {
     val plugins : ArrayBuffer[SpinexPlugin] = mutable.ArrayBuffer(
       IdentificationPlugin(registerLocation = 0x3000),
-      RandomPlugin(registerLocation = 0x3060),
+      //RandomPlugin(registerLocation = 0x3060),
       TimerPlugin(),
       if (withUart) UartCtrlPlugin() else null,
 

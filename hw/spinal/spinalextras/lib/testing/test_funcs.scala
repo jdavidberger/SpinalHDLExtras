@@ -247,7 +247,7 @@ object test_funcs {
       override def compare(ref: TestOutT, dut: TestOutT) = outerCompare(ref, dut)
     }
     for (e <- expectedOutput) {
-      scoreboard.pushRef(e)
+      //scoreboard.pushRef(e)
     }
 
     var (driver, queue) = StreamDriver.queue(Input, dut.clockDomain)

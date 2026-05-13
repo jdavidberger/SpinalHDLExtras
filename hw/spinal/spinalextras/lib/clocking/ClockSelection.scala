@@ -71,8 +71,8 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
       if(out_idx == 0 && bootstrap) reset else cd.isResetActive
     }.setName(s"rst_sync_${name}", weak = true)
 
-    io.clks(out_idx).setName(s"clk_${name}", weak = true)
-    io.resets(out_idx).setName(s"clk_${name}_reset", weak = true)
+    io.clks(out_idx).setPartialName(s"clk_${name}")
+    io.resets(out_idx).setPartialName(s"clk_${name}_reset")
   }
 
   lazy val ClockDomains = clockDomains

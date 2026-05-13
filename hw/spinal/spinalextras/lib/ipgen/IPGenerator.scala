@@ -9,13 +9,14 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.kjetland.jackson.jsonSchema.{JsonSchemaConfig, JsonSchemaGenerator}
 import spinal.core
 import spinal.core._
+import spinal.lib.KeepAttribute
 import spinalextras.lib.Config
 import spinalextras.lib.mipi.GenerateByte2Pixel
 import spinalextras.lib.misc.{HertzDeserializer, Obfuscater, TimeNumberDeserializer}
 import spinalextras.lib.soc.spinex.Spinex
 
-import java.io.{FileReader, FileWriter}
-import java.nio.file.{Files, Paths}
+import java.io.{ByteArrayInputStream, FileInputStream, FileReader, FileWriter, SequenceInputStream}
+import java.nio.file.{Files, OpenOption, Paths, StandardCopyOption}
 import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
 
@@ -24,6 +25,8 @@ case class IPGeneratorOptions(device: Device = Device(vendor = "lattice", family
                               schema_name: String = "",
                               instance_name: String = "",
                               output_dir: String = "hw/gen",
+                              yosys_cmd : String = "yosys",
+                              yosys_opt : Boolean = true,
                               generate_sim: Boolean = false) {
 
 }
@@ -118,15 +121,26 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     UnknownFrequency()
   }
 
+  def Header(options: IPGeneratorOptions, cfg : CFG): String = {
+    s"""
+      |Generator Options:
+      |${yaml_mapper.writeValueAsString(options)}
+      |Config:
+      |${yaml_mapper.writeValueAsString(cfg)}
+      |""".stripMargin
+  }
+
   def SpinalConfig(options: IPGeneratorOptions, cfg : CFG): SpinalConfig = {
     Config.spinal.copy(
       device = options.device,
-      targetDirectory = options.output_dir,
+      targetDirectory = options.output_dir + "/" + options.instance_name,
       defaultClockDomainFrequency = defaultClockDomainFrequency(cfg),
       defaultConfigForClockDomains = ClockDomainConfig(
         resetActiveLevel = LOW,
         resetKind = ASYNC
-      ))
+      ),
+      rtlHeader = Header(options, cfg)
+    )
   }
 
   def processConfig(options : IPGeneratorOptions, config : CFG)
@@ -143,8 +157,9 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
       device = Device(vendor = "lattice", family = "lifcl"),
       obfuscate = false,
       instance_name = instance_name,
-      output_dir = f"hw/gen/${instance_name}",
-      generate_sim = false
+      output_dir = f"hw/gen",
+      generate_sim = false,
+      yosys_opt = true
     )
 
     processConfig(options, config)
@@ -160,16 +175,75 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
 
   def processRtl(options : IPGeneratorOptions, cfg: CFG, dut : () => Component, simDut : () => Component = null): Unit = {
     val config = this.SpinalConfig(options, cfg)
+    val top_signals = new mutable.ArrayBuffer[String]()
+
     val report = config.generateVerilog(
       {
-        val top = dut().setDefinitionName(options.instance_name).noIoPrefix()
+        val top = dut().noIoPrefix()
+        if (options.instance_name.nonEmpty)
+          top.setDefinitionName(options.instance_name)
         top.noIoPrefix()
         if (options.obfuscate) {
           Obfuscater(top)
         }
+
+        top.getAllIo.foreach(w => {
+          val dir = w.getDirection match {
+            case `in`    => "input"
+            case `out`   => "output"
+            case `inout` => "inout"
+          }
+          val size = if (w.getBitsWidth == 1) "" else {
+            s"[${w.getBitsWidth - 1}:0]"
+          }
+          top_signals.append(f"${dir} wire ${size} ${w.getName()}")
+        })
+
         top
       }
     )
+
+    val top_file =
+      s"""
+         |`timescale 1ns/1ps
+         |
+         |module ${report.toplevelName}_top (
+         |    ${top_signals.mkString(",\n    ")}
+         |);
+         |    ${report.toplevelName} top(.*);
+         |endmodule
+         |""".stripMargin
+    Files.write(Paths.get(f"${report.globalData.config.targetDirectory}/${report.toplevelName}_top.sv"), top_file.getBytes)
+
+    if(options.yosys_opt || options.obfuscate) {
+      import scala.sys.process._
+
+      val yosys_in_file =
+        s"""
+          |read_verilog ${report.globalData.config.targetDirectory}/${report.toplevelName}.v
+          |hierarchy -top ${report.toplevelName} -keep_hierarchy
+          |proc
+          |${if (options.obfuscate) "flatten" else ""}
+          |peepopt
+          |wreduce
+          |opt -full
+          |${if (options.obfuscate) "rename -hide" else ""}
+          |write_verilog ${if (options.obfuscate) "-noattr" else ""} ${report.globalData.config.targetDirectory}/${report.toplevelName}.v
+          |""".stripMargin
+
+      val input = new ByteArrayInputStream(yosys_in_file.getBytes)
+      (options.yosys_cmd #< input).!
+
+      if (config.rtlHeader != null) {
+        val f = f"${report.globalData.config.targetDirectory}/${report.toplevelName}.v"
+        val stringToPrepend = new ByteArrayInputStream((f"/***\n${config.rtlHeader}\n***/\n").getBytes)
+        val existingFile = new FileInputStream(f)
+        val combinedStream = new SequenceInputStream(stringToPrepend, existingFile)
+
+        // Writes the combined stream directly to a new (or same) path
+        Files.copy(combinedStream, Paths.get(f), StandardCopyOption.REPLACE_EXISTING)
+      }
+    }
 
     Spinex.generate_ipx(report)
 
@@ -188,7 +262,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
   def cli_main(args: Array[String]): Unit = {
     if (args.length > 0) {
       if (args(0) == "--build-default") {
-        processConfig("Example", ConfigExample)
+        processConfig(Name, ConfigExample)
       } else {
         ProcessFile(args(0))
       }

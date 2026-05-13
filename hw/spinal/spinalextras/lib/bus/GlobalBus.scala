@@ -225,8 +225,7 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
   def addr_width() = config.addressWidth
 
   override def create_bus(): Wishbone = {
-    val x = Wishbone(config)
-    x
+    Wishbone(config)
   }
   def stage_bus(bus : Wishbone) : Wishbone = {
     WishboneStage(bus)

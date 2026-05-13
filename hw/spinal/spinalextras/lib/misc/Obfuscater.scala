@@ -121,15 +121,24 @@ class Obfuscater() {
     }
   }
 
+  var depth = 0
   def processNameable(nameable: Nameable, recurseInto : Boolean = true): Unit = {
     assert(handled.contains(nameable))
+    depth = depth + 1
+    assert(depth < 100)
 
-    if(recurseInto) {
+    val filteredRecurseInto = recurseInto && (nameable match {
+      case p: spinal.core.BaseTypePrimitives[_] => false
+      case _ => true
+    })
+
+    if(filteredRecurseInto) {
       nameable.foreachReflectableNameables(that => apply(that))
     }
     if (nameable.name != null && nameable.name != "") {
       setName(nameable, nextName())
     }
+    depth = depth - 1
   }
 
   def processBundle(component: Bundle): Unit = {

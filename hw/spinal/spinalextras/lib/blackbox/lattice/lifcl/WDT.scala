@@ -21,6 +21,7 @@ class WDT(WDTEN : Boolean = false, WDTMODE : String = "SINGLE", WDTVALUE : Int =
 object WDT {
   def noop() = {
     val wdt = new WDT()
+    wdt.addAttribute("keep")
     wdt.io.assignDontCareToUnasigned()
   }
 }

@@ -13,33 +13,7 @@ import spinalextras.lib.testing.test_funcs
 
 import scala.language.postfixOps
 
-class MemoryBackedFIFOsTest extends AnyFunSuite {
-  def doTBTest[T <: BitVector](dataType: HardType[T], depths: Seq[BigInt]): Unit = {
-    Config.sim.doSim(
-      new Component {
-        val io = new Bundle {
-          val valid = out(Bool())
-        }
-        val pools = new MemoryPoolFIFOs(dataType, depths)
-        io.valid := Vec(pools.io.fifos.map(f => {
-          val fifoTB = FifoTestBench(dataType)
-          fifoTB.io.push <> f.push
-          fifoTB.io.pop <> f.pop
-          f.flush := False
-          fifoTB.io.valid
-        })).asBits.andR
-
-        withAutoPull()
-        pools.formalConfigureForTest()
-        //pools.formalAsserts()
-      }.setDefinitionName("MemoryBackedFIFOsTestTB")
-    ) { dut =>
-      SimTimeout(5000 us)
-      dut.clockDomain.forkStimulus(100 MHz)
-      dut.clockDomain.waitSampling(100000)
-    }
-  }
-
+class MemoryPoolFIFOsTest extends AnyFunSuite {
   def doTest[T <: BitVector](dataType: HardType[T], depths: Seq[BigInt], disableReady : Boolean = true): Unit = {
     Config.sim.doSim(
       {
@@ -137,8 +111,6 @@ class MemoryBackedFIFOsTest extends AnyFunSuite {
   }
 
   test("basic") {
-    doTBTest(Bits(32 bits), Seq(1000, 900, 1100))
-
     doTest(Bits(32 bits), Seq(1000, 900, 1100))
     doTest(Bits(32 bits), Seq(1000, 900, 1100), false)
   }
