@@ -221,7 +221,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
       val yosys_in_file =
         s"""
           |read_verilog ${report.globalData.config.targetDirectory}/${report.toplevelName}.v
-          |hierarchy -top ${report.toplevelName} -keep_hierarchy
+          |hierarchy -top ${report.toplevelName}
           |proc
           |${if (options.obfuscate) "flatten" else ""}
           |peepopt
