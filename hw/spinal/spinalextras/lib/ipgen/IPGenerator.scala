@@ -157,9 +157,9 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
       device = Device(vendor = "lattice", family = "lifcl"),
       obfuscate = false,
       instance_name = instance_name,
-      output_dir = f"hw/gen",
+      output_dir = f"hw/gen/${instance_name}",
       generate_sim = false,
-      yosys_opt = true
+
     )
 
     processConfig(options, config)
