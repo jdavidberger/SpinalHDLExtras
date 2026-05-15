@@ -12,13 +12,40 @@ case class BUF() extends BlackBox {
   noIoPrefix()
 }
 
+case class MULTI_BUF[T <: Data](dataType : HardType[T], stages : Int) extends Component {
+  setDefinitionName(s"MULTI_BUF_${dataType.getBitsWidth}w_${stages}s")
+
+  addAttribute("syn_keep")
+  addAttribute("dont_touch")
+
+  val io = new Bundle {
+    val A = in (dataType())
+    val Z = out(dataType())
+  }
+
+  var c = BUF.keep_wire(io.A.asBits)
+
+  for(i <- 0 until stages) {
+    val n = Bits(io.A.getBitsWidth bits)
+    for(b <- 0 until c.getBitsWidth) {
+      n(b) := BUF(c(b))
+    }
+    c = BUF.keep_wire(n)
+  }
+
+  io.Z.assignFromBits(c)
+}
+
 object BUF {
+  def keep_wire[T <: Data](B : T): T = {
+    CombInit(B).addAttribute("nomerge", 1).addAttribute("keep", 1).addAttribute("syn_keep", 1)
+  }
   def apply(A: Bool): Bool = {
     val buf = BUF()
     buf.setPartialName(s"${A.name}_buffer")
-    buf.addAttribute("keep").addAttribute("nomerge")
-    buf.io.A := A
-    CombInit(buf.io.Z).addAttribute("syn_keep", 1).addAttribute("nomerge", "").addAttribute("keep")
+    buf.addAttribute("keep", 1)
+    buf.io.A := BUF.keep_wire(A)
+    BUF.keep_wire(buf.io.Z)
   }
   def apply(A: Bool, stages : Int): Bool = {
     if(stages == 0)
@@ -27,26 +54,13 @@ object BUF {
     var z = A;
     for(i <- 0 until stages) {
       z = BUF(z)
-      z.setPartialName(s"${A.name}_buf${i}")
     }
     z
   }
 
   def apply[T <: Data](A: T, stages : Int = 1): T = {
-    if(stages == 0)
-      return A
-
-    val z = cloneOf(A)
-
-    val b = Bits(A.getBitsWidth bits)
-    for(i <- 0 until A.getBitsWidth) {
-      val in = A.asBits(i)
-      in.setPartialName(s"${A.name}_${i}", true)
-      b(i) := BUF(in, stages)
-    }
-    z.assignFromBits(b)
-    z.setPartialName(s"${A.name}_buf", true)
-
-    z
+    val dut = MULTI_BUF(A, stages)
+    dut.io.A := keep_wire(A)
+    keep_wire(dut.io.Z)
   }
 }

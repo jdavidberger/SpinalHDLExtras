@@ -159,7 +159,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
       instance_name = instance_name,
       output_dir = f"hw/gen/",
       generate_sim = false,
-      yosys_opt = false
+      yosys_opt = true
     )
 
     processConfig(options, config)
@@ -228,7 +228,8 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
           |wreduce
           |opt -full
           |${if (options.obfuscate) "rename -hide" else ""}
-          |write_verilog ${if (options.obfuscate) "-noattr" else ""} ${report.globalData.config.targetDirectory}/${report.toplevelName}.v
+          |check
+          |write_verilog -decimal ${if (options.obfuscate) "-noattr" else ""} ${report.globalData.config.targetDirectory}/${report.toplevelName}.v
           |""".stripMargin
 
       val input = new ByteArrayInputStream(yosys_in_file.getBytes)
