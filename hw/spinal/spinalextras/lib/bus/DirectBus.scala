@@ -56,7 +56,7 @@ case class DirectBus(config : PipelinedMemoryBusConfig) extends Bundle with IMas
     cmd.write := True
     cmd.assignWordAddress(address)
     cmd.mask.setAll()
-    cmd.data := data
+    cmd.data := data.resized
     valid := True
 
     fire
