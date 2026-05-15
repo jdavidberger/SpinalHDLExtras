@@ -16,8 +16,9 @@ object BUF {
   def apply(A: Bool): Bool = {
     val buf = BUF()
     buf.setPartialName(s"${A.name}_buffer")
+    buf.addAttribute("keep").addAttribute("nomerge")
     buf.io.A := A
-    CombInit(buf.io.Z).addAttribute("syn_keep", 1).addAttribute("nomerge", "")
+    CombInit(buf.io.Z).addAttribute("syn_keep", 1).addAttribute("nomerge", "").addAttribute("keep")
   }
   def apply(A: Bool, stages : Int): Bool = {
     if(stages == 0)
