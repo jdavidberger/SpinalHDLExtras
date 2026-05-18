@@ -99,8 +99,13 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     writer.close()
   }
 
+  def customObjectMapper(mapper : ObjectMapper): Unit = {
+
+  }
+
   lazy val yaml_mapper: ObjectMapper = {
     val mapper = new ObjectMapper(new YAMLFactory())
+    customObjectMapper(mapper)
     mapper.registerModule(DefaultScalaModule)
     val module = new SimpleModule()
     customMappings(module)
@@ -110,6 +115,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
 
   lazy val json_mapper: ObjectMapper = {
     val mapper = new ObjectMapper(new JsonFactory())
+    customObjectMapper(mapper)
     mapper.registerModule(DefaultScalaModule)
     val module = new SimpleModule()
     customMappings(module)

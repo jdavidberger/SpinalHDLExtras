@@ -19,8 +19,11 @@ import scala.reflect.runtime.universe.typeOf
 //}
 
 case class SlavePeripheral (
+                             @JsonPropertyDescription("The name of the peripheral determines the external signal names for the bus access")
                              name: String,
+                             @JsonPropertyDescription("The mapping region for the peripheral. An error occurs if it overlaps with an existing peripheral")
                              address: MaskMapping,
+                             @JsonPropertyDescription("The bus type that should be exposed at the top level. Any of these options maps to the internal data bus on the CPU")
                              busType : BusType
                           ) {
 

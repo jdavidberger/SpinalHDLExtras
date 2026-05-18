@@ -1,5 +1,6 @@
 package spinalextras.lib.mipi.lattice
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.BusSlaveFactory

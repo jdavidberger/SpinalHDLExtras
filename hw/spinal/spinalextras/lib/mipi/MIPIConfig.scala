@@ -1,5 +1,6 @@
 package spinalextras.lib.mipi
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.fasterxml.jackson.core.{JsonGenerator, JsonParser}
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.node.ObjectNode
@@ -98,8 +99,16 @@ object MIPIDataTypes extends Enumeration {
   }
 }
 
-case class MIPIConfig(numRXLanes: Int = 2, rxGear: Int = 8, outputLanes: Int = 1, refDt : MIPIDataTypes,
-                      dphyByteFreq : HertzNumber) {
+case class MIPIConfig(
+                       @JsonPropertyDescription("The number of physical MIPI lanes")
+                       numRXLanes: Int = 2,
+                       @JsonPropertyDescription("The gearing of physical lanes to the output side of the MIPI block.")
+                       rxGear: Int = 8,
+                       outputLanes: Int = 1,
+                       @JsonPropertyDescription("The reference MIPI datatype which represents data in the stream")
+                       refDt : MIPIDataTypes,
+                       @JsonPropertyDescription("The approximate operating frequency of the physical MIPI lane")
+                       dphyByteFreq : HertzNumber) {
   def GEARED_LANES = numRXLanes * rxGear
   def PIX_WIDTH = MIPIDataTypes.bit_width(refDt)
   def DT_WIDTH = outputLanes * MIPIDataTypes.bit_width(refDt)

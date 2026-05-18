@@ -19,7 +19,6 @@ import spinalextras.lib.misc.{ClockSpecification, HertzDeserializer}
 
 import scala.collection.JavaConverters._
 import java.io.FileReader
-import scala.Console.println
 import scala.language.postfixOps
 
 class Byte2PixelConfig(val mipiConfig : MIPIConfig,
