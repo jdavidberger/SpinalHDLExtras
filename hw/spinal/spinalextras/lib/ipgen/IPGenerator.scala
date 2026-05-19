@@ -176,7 +176,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     val mapper = if (filePath.endsWith(".yml")) yaml_mapper else json_mapper
     val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
 
-    processConfig(Paths.get(filePath).getFileName.toString, config)
+    processConfig(Paths.get(filePath).getFileName.toString.split('.').head, config)
   }
 
   def processRtl(options : IPGeneratorOptions, cfg: CFG, dut : () => Component, simDut : () => Component = null): Unit = {

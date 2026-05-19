@@ -44,6 +44,7 @@ class DeviceTree {
   def save(filePath: String) = {
     val name = if (Component.toplevel.definitionName == null) "spinex" else Component.toplevel.definitionName
     val writer = new FileWriter(s"${filePath}/${name}.overlay")
+    writer.write("/dts-v1/;\n\n")
     writer.write(root.str())
     writer.close()
   }

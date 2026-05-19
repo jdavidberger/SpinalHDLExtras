@@ -236,8 +236,9 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       override def appendDeviceTree(dt: DeviceTree): Unit = {
         super.appendDeviceTree(dt)
 
-        dt.addEntry(s"interrupts = <${interruptInfos.map(_._1).mkString(" ")}>;", baseEntryPath: _*)
-        dt.addEntry(s"interrupts-names = ${interruptInfos.map(n => '"' + n._2.name + '"').mkString(",\n                   ")};", baseEntryPath: _*)
+        val sortedInterruptInfos = interruptInfos.toSeq.sortBy(_._1)
+        dt.addEntry(s"interrupts = <${sortedInterruptInfos.map(_._1).mkString(" ")}>;", baseEntryPath: _*)
+        dt.addEntry(s"interrupts-names = ${sortedInterruptInfos.map(n => '"' + n._2.name + '"').mkString(",\n                   ")};", baseEntryPath: _*)
       }
     }
 

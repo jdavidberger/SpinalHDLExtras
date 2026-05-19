@@ -95,6 +95,11 @@ case class SpinexConfig(onChipRamSize      : BigInt,
   def withPlugins(extraPlugins: SpinexPlugin*): SpinexConfig = {
     this.copy(plugins = extraPlugins ++ this.plugins)
   }
+
+  def appendPlugins(extraPlugins: SpinexPlugin*): SpinexConfig = {
+    this.copy(plugins = this.plugins ++ extraPlugins)
+  }
+
 }
 
 object SpinexConfig{

@@ -44,7 +44,7 @@ case class OpenCoresI2CPlugin(mapping: SizeMapping = SizeMapping(0xe0005000L, 32
 
   override def appendDeviceTree(dt: DeviceTree): Unit = {
     super.appendDeviceTree(dt)
-    Seq(f"clock-frequency = <I2C_BITRATE_STANDARD>;", "rtl-version = <1>;").foreach({
+    Seq(f"clock-frequency = <100000>;", "rtl-version = <1>;").foreach({
       dt.addEntry(_, baseEntryPath: _*)
     })
   }

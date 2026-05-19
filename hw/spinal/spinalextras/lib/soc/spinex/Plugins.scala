@@ -13,9 +13,10 @@ import scala.language.postfixOps
 
 class ExternalInterrupts(name : String, externalInterruptBits : Int, requestIdx : Int = -1) extends SpinexPlugin {
   lazy val externalInterrupts = in(Bits(externalInterruptBits bits)) default(0)
+  var interruptIdx = -1
   override def apply(som: Spinex): Unit = {
     som.io.valCallback(externalInterrupts, s"externalInterrupts")
-    som.system.addNamedInterrupt(name, externalInterrupts, requestIdx)
+    interruptIdx = som.system.addNamedInterrupt(name, externalInterrupts, requestIdx)
   }
 }
 
