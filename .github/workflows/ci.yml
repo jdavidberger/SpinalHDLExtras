@@ -70,7 +70,7 @@ jobs:
       - name: Make tests
         run: |
           rm -rf hw/gen
-          make examples          
+          PULL_IMAGE=1 make examples          
 
   test:
     runs-on: ubuntu-latest

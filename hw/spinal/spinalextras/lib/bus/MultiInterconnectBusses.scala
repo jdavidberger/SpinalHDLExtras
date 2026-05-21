@@ -181,7 +181,8 @@ package object bus {
     override def selfClassTag: ClassTag[XipBusFormal] = classTag[XipBusFormal]
 
     def formalAssertEquivalence(that: XipBusFormal): Unit = {
-      ???
+      bus.cmd.formalAssertEquivalence(that.bus.cmd)
+      bus.rsp.formalAssertEquivalence(that.bus.rsp)
     }
   }
   fillins.AddHandler { case bus: XipBus => new XipBusFormal(bus) }
