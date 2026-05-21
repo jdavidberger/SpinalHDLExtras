@@ -47,6 +47,15 @@ class DeviceTree {
     writer.write("/dts-v1/;\n\n")
     writer.write(root.str())
     writer.close()
+
+    import scala.sys.process._
+    try {
+      (s"dtc -I dts -O dtb -o ${filePath}/${name}.dtb -f ${filePath}/${name}.overlay").!
+    } catch {
+      case e : java.io.IOException => {
+        println(f"Could not create dtb file: ${e}")
+      }
+    }
   }
 }
 

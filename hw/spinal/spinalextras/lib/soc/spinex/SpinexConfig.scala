@@ -23,10 +23,12 @@ trait SpinexPlugin {
   def apply(som : Spinex) : Unit
 }
 
-abstract class SpinexRegisterFilePlugin(name : String, mapping : SizeMapping) extends DeviceTreeProvider(mapping.base) with SpinexPlugin {
-  override def compatible : Seq[String] = Seq(s"spinex,${name}")
+abstract class SpinexRegisterFilePlugin(path : String, mapping : SizeMapping) extends DeviceTreeProvider(mapping.base) with SpinexPlugin {
+  override def compatible : Seq[String] = Seq(s"spinex,${entryName}")
 
-  override def entryName: String = name
+  override def baseEntryPath: Seq[String] = Seq("/") ++ path.split('/').filter(_.nonEmpty)
+
+  override def entryName: String = path.split('/').last
 
   override def regs : Seq[(String, SizeMapping)] = Seq(("base" -> SizeMapping(0, mapping.size)))
 }
@@ -124,7 +126,7 @@ object SpinexConfig{
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
               genMul : Boolean = true,
               genDiv : Boolean = true,
-              ram_name : String = "spinex_ram"
+              ram_name : String = ""
              ) =  SpinexConfig(
     onChipRamSize         = 0x00010000,
     onChipRamHexFile      = null,
@@ -258,7 +260,7 @@ object SpinexConfig{
               withI2C : Boolean = true,
               ram_mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes),
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
-              ram_name : String = "spinex_ram"
+              ram_name : String = ""
              ) = {
     val plugins : ArrayBuffer[SpinexPlugin] = mutable.ArrayBuffer(
       IdentificationPlugin(registerLocation = 0x3000),
@@ -267,7 +269,7 @@ object SpinexConfig{
       if (withUart) UartCtrlPlugin() else null,
 
       if (withI2C) OpenCoresI2CPlugin() else null,
-      SystemRam(ram_name, mapping = ram_mapping),
+      SystemRam(if (ram_name.isEmpty) "/soc/sram0" else ram_name, mapping = ram_mapping),
       PrintAPBMapping()
     )
 

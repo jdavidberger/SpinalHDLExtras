@@ -3,7 +3,7 @@ FROM debian:bookworm
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
-    git unzip zip iverilog g++ libboost-dev wget make ghdl ghdl-mcode zlib1g-dev \
+    git unzip zip iverilog g++ libboost-dev wget make ghdl ghdl-mcode zlib1g-dev device-tree-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -s "https://get.sdkman.io" | bash

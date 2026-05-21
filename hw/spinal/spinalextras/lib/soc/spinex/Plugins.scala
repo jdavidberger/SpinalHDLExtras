@@ -31,7 +31,7 @@ object ExternalInterrupts {
   }
 }
 
-case class SystemRam(var name : String = "spinex_ram", mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes)) extends SpinexRegisterFilePlugin(name, mapping) {
+case class SystemRam(var name : String = "/soc/sram0", mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes)) extends SpinexRegisterFilePlugin(name, mapping) {
   var mem : HardwareMemory[Bits] = null
   override def apply(som: Spinex): Unit = {
     mem = Memories(MemoryRequirement(Bits(32 bits), mapping.size / 4,
