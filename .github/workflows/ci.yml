@@ -52,6 +52,26 @@ jobs:
           tags: ${{ steps.build.outputs.tags }}
           registry: ghcr.io/${{ env.REPO_LC }}
 
+  build-examples:
+    runs-on: ubuntu-latest
+    needs: build-container
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Log in to the Container registry
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} #
+
+      - name: Make tests
+        run: |
+          rm -rf hw/gen
+          make examples          
+
   test:
     runs-on: ubuntu-latest
     needs: build-container

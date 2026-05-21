@@ -10,7 +10,7 @@ import spinalextras.lib.soc.spinex.{Spinex, SpinexConfig}
 
 import scala.language.postfixOps
 
-class SpinexMinimal(file : String) extends Component {
+class SpinexMinimal(file : Option[String]) extends Component {
   val io = new Bundle {
     val led = out Bool()
   }
@@ -19,7 +19,7 @@ class SpinexMinimal(file : String) extends Component {
 
   val som = Spinex(SpinexConfig.minimal)
 
-  som.init_rom(file)
+  file.foreach(som.init_rom)
 
   io.led.setAsReg() init(False)
   val t = Timeout(3 sec)
@@ -46,7 +46,7 @@ object SpinexMinimal{
       targetDirectory = s"hw/gen/SpinexMinimal",
       defaultClockDomainFrequency = FixedFrequency(60 MHz),
       //device = Device(vendor = "???", family = "???"),
-    ).generateVerilog(new SpinexMinimal(args(0)))
+    ).generateVerilog(new SpinexMinimal(args.headOption))
 
     Spinex.generate_ipx(report)
   }

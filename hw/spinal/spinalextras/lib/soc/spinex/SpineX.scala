@@ -392,7 +392,7 @@ class SpinexWithClock extends Component {
   //val spinexClockDomain = rst_sync(ClockDomain.current)
 
   var connectionArea = new ClockingArea(clockDomain = spinexClockDomain) {
-    val som = Spinex(SpinexConfig.default.withPlugins(EventLoggerPlugin()))
+    val som = Spinex(SpinexConfig.default)
 
     val counter = Timeout(1 sec)
     val led = RegInit(False)
