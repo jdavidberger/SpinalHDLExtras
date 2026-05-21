@@ -44,7 +44,7 @@ class StridedAccessFIFOReaderAsyncFormalTest extends AnyFunSuite with FormalTest
 
   override def CoverConfig(): SpinalFormalConfig = formalConfig.withCover(15)
 
-  override def ProveConfig(): SpinalFormalConfig = formalConfig.withProve(2)
+  override def ProveConfig(): SpinalFormalConfig = formalConfig.withProve(4)
 
   override def generateRtl() = Seq(
     (s"${suiteName}_tiny", () => StridedAccessFIFOReaderAsyncFormal(UInt(2 bits), 27, 0, 3, busConfig = PipelinedMemoryBusConfig(32, 3))),

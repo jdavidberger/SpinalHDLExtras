@@ -31,7 +31,7 @@ class IMasterSlaveExt(data : Bundle with IMasterSlave) extends FormalMasterSlave
    */
   override def formalIsProducerValid(): Seq[FormalProperty] = {
     elementsWithProperties.flatMap {
-      case ims: FormalMasterSlave => ims.formalIsProducerValid()
+      case ims: FormalMasterSlave => ims.formalIsValidAs(true)
       case formalData: FormalData => formalData.formalIsStateValid()
       case _ => Seq()
     }
@@ -39,7 +39,7 @@ class IMasterSlaveExt(data : Bundle with IMasterSlave) extends FormalMasterSlave
 
   override def formalIsConsumerValid(): Seq[FormalProperty] = {
     elementsWithProperties.flatMap {
-      case ims: FormalMasterSlave => ims.formalIsConsumerValid()
+      case ims: FormalMasterSlave => ims.formalIsValidAs(false)
       case _ => Seq()
     }
   }

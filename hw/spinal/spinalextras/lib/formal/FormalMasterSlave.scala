@@ -24,4 +24,14 @@ trait FormalMasterSlave extends FormalData {
   def asIMasterSlave = this.asInstanceOf[IMasterSlave]
 
   override def underlyingData: Data = this.asIMasterSlave.asInstanceOf[Data]
+
+  def formalIsValidAs(producer : Boolean) : Seq[FormalProperty] = {
+    require(asIMasterSlave.isSlaveInterface || asIMasterSlave.isMasterInterface)
+
+    if (this.asIMasterSlave.isMasterInterface ^ !producer) {
+      formalIsProducerValid()
+    } else {
+      formalIsConsumerValid()
+    }
+  }
 }

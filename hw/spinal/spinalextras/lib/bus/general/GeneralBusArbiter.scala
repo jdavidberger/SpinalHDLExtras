@@ -1,10 +1,9 @@
 package spinalextras.lib.bus.general
 
 import spinal.core._
-
 import spinal.lib._
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters, XipCmd}
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.misc.StreamFifoExt
 import vexriscv.ip._
 import vexriscv.plugin.{DBusSimpleBus, DBusSimpleCmd, DBusSimpleRsp}
@@ -23,7 +22,6 @@ class GeneralBusArbiter[T <: Data with IMasterSlave](val busAccesor: GeneralBusI
   }
   val logic = if(portCount == 1) {
     io.output <> io.inputs(0)
-
     null
   } else new Area {
     val arbiterFactory = StreamArbiterFactory().lowerFirst
@@ -71,7 +69,45 @@ class GeneralBusArbiter[T <: Data with IMasterSlave](val busAccesor: GeneralBusI
     }
   }
 
-//  override lazy val formalValidInputs = Vec(io.inputs.map(_.isProducerValid)).andR && io.output.isConsumerValid
+  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties {
+        val multi = if(logic != null) new Area {
+          val rspsInQueue = logic.rspQueue.rspRouteFifo.formalFold(Vec(U(0), portCount)) {
+            case (acc: Vec[UInt], c: TupleBundle2[Bits, UInt], isValid: Bool) => {
+              val newAcc = acc
+              addFormalProperty(!isValid || CountOne(c._1) <= 1)
+              newAcc(OHToUInt(c._1.asUInt)) := Mux(isValid, c._2 +^ 1, U(0))
+              newAcc
+            }
+          }
+          import logic._
+          import logic.rspQueue._
+
+          val inFlightRsps = io.inputs.indices.map(i => Mux(
+            OHToUInt(rspRouteOh) === i, rsp_counter /*+^ busAccesor.rsp_fire(io.inputs(i)).asUInt*/ , U(0)))
+
+          val cmdStalled = io.inputs.indices.map(i => OHToUInt(logic.arbiter.io.chosenOH) === i &&
+            logic.rspQueue.outputCmdFork.valid &&
+            !logic.rspQueue.routeCmdFork.valid)
+
+          val routeStalled = io.inputs.indices.map(i => OHToUInt(logic.arbiter.io.chosenOH) === i &&
+            !logic.rspQueue.outputCmdFork.valid &&
+            logic.rspQueue.routeCmdFork.valid)
+
+          val stalledToOutput = cmdStalled.map(Mux(_, logic.rspQueue.rspRequired, U(0)))
+          val stalledToRoute = routeStalled.map(Mux(_, logic.rspQueue.rspRequired, U(0)))
+          val totalStalledToRoute = stalledToRoute.fold(U(0))((x, y) => x +^ y)
+
+          for (i <- io.inputs.indices) {
+            addFormalProperty(
+              (rspsInQueue(i) /*+^ inFlightRsps(i)*/) ===
+                (io.inputs(i).formalRspPending +^ stalledToOutput(i) +^ inFlightRsps(i))
+            )
+          }
+
+        }
+  }
+
+  //  override lazy val formalValidInputs = Vec(io.inputs.map(_.isProducerValid)).andR && io.output.isConsumerValid
 //  override def formalChecks()(implicit useAssumes: Boolean) = new Composite(this, "formalChecks") {
 //    withAutoPull()
 //

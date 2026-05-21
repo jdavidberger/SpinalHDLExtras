@@ -54,9 +54,9 @@ class PixelFlowMetaProvider(WIDTH : Int) extends Component {
 }
 
 object PixelFlowMetaProvider {
-  def apply(pixelFragment: Flow[Fragment[Bits]])(implicit symbol: SymbolName): Flow[PixelFlowMeta] = {
+  def apply(pixelFragment: Flow[Fragment[Bits]]): Flow[PixelFlowMeta] = {
     val dut = new PixelFlowMetaProvider(pixelFragment.payload.getWidth)
     dut.io.pixelFragment <> pixelFragment
-    dut.io.meta.setName(symbol.name)
+    dut.io.meta
   }
 }
