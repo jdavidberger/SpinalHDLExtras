@@ -32,6 +32,7 @@ object Axi4Formal {
     val fifo = StreamFifo(cloneOf(f.payload), maxQueue, latency = latency)
     f.toStream(fifoOverflow) <> fifo.io.push
     assume(!fifoOverflow)
+    DefaultProperties(fifo).formalAssumeProperties()
 
     fifo
   }
@@ -56,6 +57,8 @@ object Axi4Formal {
     }
 
     val counter = Counter(config.lenWidth bits, inc = io.r.fire)
+    findInternalFormalProperties(counter).map(_.formalAssumeProperties())
+
     val arFifo = createFifo(io.arComplete, maxQueue, latency = 1)
     io.outstandingBursts := arFifo.io.occupancy
 
@@ -198,6 +201,7 @@ object Axi4Formal {
     // The spec allows AW and W to stream through independently. So we can have all the W beats first and then the
     // AW beats follow or vice versa. This means we have to track this.
     val beatCounter = Counter(aw.len.maxValue, inc = w.fire)
+    findInternalFormalProperties(beatCounter).map(_.formalAssumeProperties())
 
     val beatLengthFifo = createFifo(w.takeWhen(w.last).translateWith(beatCounter.value), maxQueue, latency = 0)
     when(beatLengthFifo.io.push.fire) {

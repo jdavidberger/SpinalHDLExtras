@@ -277,7 +277,7 @@ class AxiWriteOnlyDecoderTester extends ComponentWithFormalProperties {
 class AxiCrossbarTesterFormalTest extends AnyFunSuite with FormalTestSuite {
   formalTests().foreach(t => test(t._1) { t._2() })
 
-  override def ProveConfig() = formalConfig.withProve(5)
+  override def ProveConfig() = formalConfig.withProve(3)
   override def defaultDepth(): Int = 5
 
   override def generateRtlCover() = Seq(

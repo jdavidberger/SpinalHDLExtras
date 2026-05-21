@@ -165,7 +165,7 @@ package object bus {
     addFormalProperty(outstandingReads >= 0, "XIP outstanding reads should be above 0")
   }
 
-  class XipBusFormal(bus : XipBus) extends FormalMasterSlave with FormalDataWithEquivalnce[XipBusFormal] {
+  class XipBusFormal(val bus : XipBus) extends FormalMasterSlave with FormalDataWithEquivalnce[XipBusFormal] {
     override type Self = XipBusFormal
 
     override def clone(): Bundle = new XipBus(bus.p)

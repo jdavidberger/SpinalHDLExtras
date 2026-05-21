@@ -5,7 +5,7 @@ import spinal.lib._
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty, HasFormalProperties}
 
 class StreamFifoFormalProperties[T <: Data](val fifo: StreamFifo[T]) extends HasFormalProperties {
-  override protected def formalProperties(): Seq[FormalProperty] = new FormalProperties(fifo){
+  lazy val _formalProperties = new FormalProperties(fifo){
     import fifo._
     val logic_option = Option(logic)
 
@@ -72,5 +72,7 @@ class StreamFifoFormalProperties[T <: Data](val fifo: StreamFifo[T]) extends Has
       }
     }
   }
+
+  override protected def formalProperties(): Seq[FormalProperty] = _formalProperties
 
 }
