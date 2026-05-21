@@ -130,12 +130,15 @@ object ComponentWithFormalProperties {
   }
 
   object DefaultProperties {
+    val defaultPropertiesMap = new mutable.WeakHashMap[Component, DefaultProperties]()
     def apply(c : Component) = {
-      val restore = Component.push(c)
-      val defaultProperties = new DefaultProperties(c)
-      handlers.foreach(_.lift(c))
-      restore.restore()
-      defaultProperties
+      defaultPropertiesMap.getOrElseUpdate(c, {
+        val restore = Component.push(c)
+        val defaultProperties = new DefaultProperties(c)
+        handlers.foreach(_.lift(c))
+        restore.restore()
+        defaultProperties
+      })
     }
   }
 
