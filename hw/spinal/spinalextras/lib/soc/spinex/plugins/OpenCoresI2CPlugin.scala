@@ -4,6 +4,7 @@ import spinal.core.{Analog, Bool, CombInit, IntToBuilder, inout}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.wishbone.Wishbone
 import spinalextras.lib.blackbox.opencores.i2c_master_top
+import spinalextras.lib.logging.{GlobalLogger, SignalLogger, WishboneBusLogger}
 import spinalextras.lib.peripherals.i2c.I2cMaster
 import spinalextras.lib.soc.DeviceTree
 import spinalextras.lib.soc.spinex.{Spinex, SpinexRegisterFilePlugin}
@@ -25,18 +26,24 @@ case class OpenCoresI2CPlugin(mapping: SizeMapping = SizeMapping(0xe0005000L, 32
       val i2cCtrl = new i2c_master_top()
       i2cCtrl.attachi2c(scl, sda)
 
-      som.system.addInterrupt(CombInit(i2cCtrl.io.wb_inta_o).setName("i2c_int", weak = true), 3)
+      val irq = CombInit(i2cCtrl.io.wb_inta_o).setName("i2c_int", weak = true)
+      som.system.addInterrupt(irq, 3)
 
-      val wb32 = new Wishbone(i2cCtrl.io.wb.config.copy(dataWidth = 32))
+      val wb32 = new Wishbone(i2cCtrl.io.wb.config.copy(dataWidth = 32)).setPartialName("i2c_wb")
       wb32.connectTo(i2cCtrl.io.wb, allowDataResize = true, allowAddressResize = true)
       som.add_slave(wb32, name, mapping, "dBus")
+
+      GlobalLogger(Set("i2c"),
+        WishboneBusLogger.flows(wb32),
+      )
     } else {
       val i2cCtrl = new I2cMaster()
       i2cCtrl.attachi2c(scl, sda)
 
-      som.system.addInterrupt(CombInit(i2cCtrl.io.interrupt).setName("i2c_int", weak = true), 3)
+      val irq = CombInit(i2cCtrl.io.interrupt).setName("i2c_int", weak = true)
+      som.system.addInterrupt(irq, 3)
 
-      val wb32 = new Wishbone(i2cCtrl.io.wb.config.copy(dataWidth = 32))
+      val wb32 = new Wishbone(i2cCtrl.io.wb.config.copy(dataWidth = 32)).setPartialName("i2c_wb")
       wb32.connectTo(i2cCtrl.io.wb, allowDataResize = true, allowAddressResize = true)
       som.add_slave(wb32, name, mapping, "dBus")
     }

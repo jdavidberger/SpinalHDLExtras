@@ -54,7 +54,7 @@ case class i2c_master_top() extends BlackBox {
       i2c0_sda := io.sda_pad_o
     }
 
-    GlobalLogger(
+    GlobalLogger(Set("i2c"),
       SignalLogger.concat("i2c",
         io.scl_pad_i, io.scl_pad_o, io.scl_padoen_o,
         io.sda_pad_i, io.sda_pad_o, io.sda_padoen_o, io.wb_inta_o

@@ -25,7 +25,7 @@ def global_logger_parse_field(tx, bit_offset: int, bit_width: int) -> int:
     ) & mask
 
 def global_logger_full_time(tx, gtime: int, log_bits: int, time_bit_width: int) -> int:
-    time_part = global_logger_parse_field(tx, log_bits - time_bit_width, 64)
+    time_part = global_logger_parse_field(tx, log_bits - time_bit_width, time_bit_width)
     if time_bit_width >= 64:
         return time_part
     next_incr = 1 << time_bit_width
@@ -76,7 +76,6 @@ def decode_log_stream(stream, event_def_metadata):
 
             if reserved_usage_id == 0:
                 gtime = global_logger_parse_field(tx, index_size + 8, 64)
-
                 yield {
                     "event_id": index,
                     "event": "time_sync",

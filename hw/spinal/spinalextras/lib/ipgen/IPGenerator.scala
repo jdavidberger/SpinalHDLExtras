@@ -228,6 +228,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
         s"""
           |read_verilog ${report.globalData.config.targetDirectory}/${report.toplevelName}.v
           |hierarchy -top ${report.toplevelName}
+          |tribuf
           |proc
           |${if (options.obfuscate) "flatten" else ""}
           |peepopt

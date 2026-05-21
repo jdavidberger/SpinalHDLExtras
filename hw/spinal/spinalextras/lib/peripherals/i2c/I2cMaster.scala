@@ -159,14 +159,35 @@ case class I2cMaster() extends Component {
   withAutoPull()
 
   GlobalLogger(
-    Set("i2c"),
+    Set("i2c", "i2c-io"),
     SignalLogger.concat("i2c",
       io.sda, io.scl, io.interrupt
     )
   )
 
   GlobalLogger(
-    Set("i2c-dbg"),
+    Set("i2c", "i2c-regs"),
+    SignalLogger.concat("i2c_regs",
+      sta,
+      sto,
+      rd,
+      wr,
+      ack,
+      iack,
+
+      rxack,
+      i2c_busy,
+      al,
+      tip,
+      irq_flag,
+
+      core_en,
+      ien
+    )
+  )
+
+  GlobalLogger(
+    Set("i2c", "i2c-dbg"),
     WishboneBusLogger.flows(io.wb)
   )
 }

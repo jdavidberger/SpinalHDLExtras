@@ -53,27 +53,39 @@ class DeviceTree {
 case class DeviceTreeProviderTag(provider : DeviceTreeProvider) extends SpinalTag {
 
 }
-abstract class DeviceTreeProvider(val regBase : BigInt = 0, val regSize : Int = 4) {
+abstract class DeviceTreeProvider(val regBase : BigInt = 0, val regSize : Long = 4) {
   if (Component.current != null) {
     Component.toplevel.addTag(new DeviceTreeProviderTag(this))
   }
 
+  def isOverride : Boolean = entryName.startsWith("&")
+
   def regs : Seq[(String, SizeMapping)] = Seq(("base" -> SizeMapping(0, regSize)))
   def entryName : String = getClass.getSimpleName.toLowerCase
-  def baseEntryPath = Seq("/", f"${entryName}@${regBase.toString(16)}")
-  def compatible : Seq[String] = Seq(s"spinex,${entryName}")
+  def baseEntryPath = {
+    if(isOverride) {
+      Seq(entryName)
+    } else {
+      Seq("/", f"${entryName}@${regBase.toString(16)}")
+    }
+  }
+  def compatible : Seq[String] = {
+    Seq(s"spinex,${entryName}")
+  }
 
   def interrupts : Seq[(Int, Int)] = Seq()
 
   def appendDeviceTree(dt : DeviceTree): Unit = {
-    if(compatible.nonEmpty) {
-      dt.addEntry(
-        f"compatible = ${compatible.map('"' + _ + '"').mkString(", ")};",
-        baseEntryPath:_*)
+    if(!isOverride) {
+      if (compatible.nonEmpty) {
+        dt.addEntry(
+          f"compatible = ${compatible.map('"' + _ + '"').mkString(", ")};",
+          baseEntryPath: _*)
+      }
+      dt.addEntry("""status = "okay";""", baseEntryPath: _*)
+      dt.addEntry("#address-cells = <1>;", baseEntryPath: _*)
+      dt.addEntry("#size-cells = <0>;", baseEntryPath: _*)
     }
-    dt.addEntry("""status = "okay";""", baseEntryPath:_*)
-    dt.addEntry("#address-cells = <1>;", baseEntryPath:_*)
-    dt.addEntry("#size-cells = <0>;", baseEntryPath:_*)
 
     if (regBase != 0) {
       dt.addEntry(s"reg = <${regs.map(_._2).map(m => s"0x${(m.base + regBase).toString(16)} 0x${(1 + m.highestBound - m.lowerBound).toString(16)}").mkString("\n       ")}>;", baseEntryPath: _*)

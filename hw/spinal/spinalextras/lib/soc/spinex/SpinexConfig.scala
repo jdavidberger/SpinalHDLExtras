@@ -123,7 +123,8 @@ object SpinexConfig{
               ram_mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes),
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
               genMul : Boolean = true,
-              genDiv : Boolean = true
+              genDiv : Boolean = true,
+              ram_name : String = "spinex_ram"
              ) =  SpinexConfig(
     onChipRamSize         = 0x00010000,
     onChipRamHexFile      = null,
@@ -232,7 +233,7 @@ object SpinexConfig{
       rxFifoDepth = 16
     ),
     externalInterrupts = 8,
-    plugins = plugins(withJtag = withJtag, xipConfig, flashClockDomain, withUart = withUart, withI2C = withI2C, ram_mapping = ram_mapping, rom_mapping = rom_mapping)
+    plugins = plugins(withJtag = withJtag, xipConfig, flashClockDomain, withUart = withUart, withI2C = withI2C, ram_mapping = ram_mapping, rom_mapping = rom_mapping, ram_name = ram_name)
   )
 
   def fast = {
@@ -257,6 +258,7 @@ object SpinexConfig{
               withI2C : Boolean = true,
               ram_mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes),
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
+              ram_name : String = "spinex_ram"
              ) = {
     val plugins : ArrayBuffer[SpinexPlugin] = mutable.ArrayBuffer(
       IdentificationPlugin(registerLocation = 0x3000),
@@ -264,8 +266,8 @@ object SpinexConfig{
       TimerPlugin(),
       if (withUart) UartCtrlPlugin() else null,
 
-      if (withI2C) OpenCoresI2CPlugin(use_external = false) else null,
-      SystemRam(mapping = ram_mapping),
+      if (withI2C) OpenCoresI2CPlugin() else null,
+      SystemRam(ram_name, mapping = ram_mapping),
       PrintAPBMapping()
     )
 
