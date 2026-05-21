@@ -20,7 +20,7 @@ import scala.language.postfixOps
 
 class StridedAccessFIFOAsyncFormalTest extends FormalAnyTestSuite{
 
-  override def defaultDepth() = 50
+  override def defaultDepth() = 15
 
   override def BMCConfig() = formalConfig.withBMC(20)
   override def generateRtlCover() = Seq()

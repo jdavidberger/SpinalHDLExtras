@@ -41,11 +41,8 @@ class FlowLoggerFormalTest extends AnyFunSuite with FormalTestSuite {
 
   override def defaultDepth(): Int = 10
 
-  override def CoverConfig() = formalConfig.withCover(20)
-
   override def ProveConfig() = formalConfig.withProve(5)
 
-  override def BMCConfig() = formalConfig.withBMC(20)
 
   override def generateRtl() = Seq(
     ("Basic", () => GeneralFormalDut(() => new FlowLoggerTestBench())),

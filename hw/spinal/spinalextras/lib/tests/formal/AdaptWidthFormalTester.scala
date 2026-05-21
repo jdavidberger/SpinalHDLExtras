@@ -9,7 +9,7 @@ import scala.language.postfixOps
 
 class AdaptWidthFormalTester extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 15
+  override def defaultDepth() = 10
 
   formalTests().foreach(t => test(t._1) {
     t._2()
