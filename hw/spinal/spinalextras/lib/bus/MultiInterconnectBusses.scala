@@ -10,47 +10,29 @@ import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
 
 import scala.language.postfixOps
 import spinalextras.lib.bus.general._
+import spinalextras.lib.bus.general.vexii.{CachelessBusExtImpl, FetchL1BusExtImpl, LsuCachelessBusExtImpl}
 import spinalextras.lib.formal.FormalMasterSlave
 import spinalextras.lib.formal.StreamFormal.StreamExt
 import spinalextras.lib.formal._
 import spinalextras.lib.formal.fillins.Wishbone._
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal._
 import spinalextras.lib.misc.StreamFragmentWidthAdapterWithOccupancy
+import vexiiriscv.execute.lsu.{LsuCachelessBus, LsuCachelessRsp}
+import vexiiriscv.fetch.{CachelessBus, CachelessRsp, FetchL1Bus}
 
 import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
-
-case class PipelinedMemoryBusMultiBus(bus : PipelinedMemoryBus,
-                                      pendingMax : Int = 1,
-                                      pendingRspMax : Int = 1, rspRouteQueue : Boolean = false, transactionLock : Boolean = true) extends MultiBusInterface {
-  override def address_width = bus.config.addressWidth
-  override def create_decoder(mappings:  Seq[AddressMapping]) = new Composite(bus, "") {
-    val decoder = new PipelinedMemoryBusDecoder(bus.config, mappings, pendingMax)
-    decoder.io.input <> bus
-    val outputs = decoder.io.outputs.map(outputBus => copy(bus = outputBus))
-  }.outputs
-
-  override def create_arbiter(size:  Int)  = new Composite(bus, "") {
-    val arbiter = new PipelinedMemoryBusArbiter(bus.config, size, pendingRspMax, rspRouteQueue, transactionLock)
-    arbiter.io.output <> bus
-    val inputs = arbiter.io.inputs.map(inputBus => copy(bus = inputBus))
-  }.inputs
-
-  override def isValidProducer: Bool = PipelinedMemoryBusFormalExt(bus).formalIsProducerValid().map(_.condition).andR
-
-  override def isValidConsumer: Bool = PipelinedMemoryBusFormalExt(bus).formalIsConsumerValid().map(_.condition).andR
-}
-
-object PipelinedMemoryBusMultiBus {
-  MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: PipelinedMemoryBusMultiBus) => PipelinedMemoryBusConnectors.direct(m.bus, s.bus)}
-}
-
-
 import vexriscv.plugin.IBusSimpleBus
 import vexriscv.ip.InstructionCacheMemBus
 import vexriscv.plugin.DBusSimpleBus
 
 package object bus {
+  implicit class CachelessBusExt(bus: CachelessBus) extends GeneralBusMultiBus[CachelessBus](bus, CachelessBusExtImpl(bus.p))
+
+  implicit class FetchL1BusExt(bus: FetchL1Bus) extends GeneralBusMultiBus[FetchL1Bus](bus, FetchL1BusExtImpl(bus.p))
+
+  implicit class LsuCachelessBusExt(bus: LsuCachelessBus) extends GeneralBusMultiBus[LsuCachelessBus](bus, LsuCachelessBusExtImpl(bus.p))
+
   implicit class ISimpleBusExt(bus: IBusSimpleBus) extends PipelinedMemoryBusMultiBus(bus.toPipelinedMemoryBus()) {
 
   }
@@ -59,6 +41,7 @@ package object bus {
     override def toString = bus.toString()
 
     override def address_width = bus.p.addressWidth
+
     override def create_decoder(mappings: Seq[AddressMapping]): Seq[InstructionCacheMemBusExt] = new Composite(bus) {
       val decoder = new GeneralBusDecoder(InstructionCacheMemBusInterfaceExtImpl(bus), mappings)
       decoder.setWeakName(s"${bus.name}_decoder")
@@ -66,7 +49,7 @@ package object bus {
       val outputs = decoder.io.outputs.map(outputBus => InstructionCacheMemBusExt(bus = outputBus))
     }.outputs
 
-    override def create_arbiter(size:  Int): Seq[InstructionCacheMemBusExt] = new Composite(bus) {
+    override def create_arbiter(size: Int): Seq[InstructionCacheMemBusExt] = new Composite(bus) {
       val arbiter = new GeneralBusArbiter(InstructionCacheMemBusInterfaceExtImpl(bus), size)
       arbiter.io.output <> bus
       val inputs = arbiter.io.inputs.map(inputBus => InstructionCacheMemBusExt(bus = inputBus))
@@ -78,10 +61,13 @@ package object bus {
   }
 
   implicit class DBusSimpleBusExt(val bus: DBusSimpleBus) extends MultiBusInterface {
+
     import spinalextras.lib.bus.general._
+
     override def toString = bus.toString()
 
     override def address_width = bus.cmd.address.getWidth
+
     override def create_decoder(mappings: Seq[AddressMapping]): Seq[DBusSimpleBusExt] = new Composite(bus) {
       val decoder = new GeneralBusDecoder(DSimpleBusInterfaceExtImpl(bus), mappings)
       decoder.setWeakName(s"${bus.name}_decoder")
@@ -89,7 +75,7 @@ package object bus {
       val outputs = decoder.io.outputs.map(outputBus => DBusSimpleBusExt(bus = outputBus))
     }.outputs
 
-    override def create_arbiter(size:  Int): Seq[DBusSimpleBusExt] = new Composite(bus) {
+    override def create_arbiter(size: Int): Seq[DBusSimpleBusExt] = new Composite(bus) {
       val arbiter = new GeneralBusArbiter(DSimpleBusInterfaceExtImpl(bus), size)
       arbiter.io.output <> bus
       val inputs = arbiter.io.inputs.map(inputBus => DBusSimpleBusExt(bus = inputBus))
@@ -102,10 +88,11 @@ package object bus {
 
   val dbusSimpleContracts = new mutable.WeakHashMap[DBusSimpleBus, DBusSimpleContract]()
 
-  class DBusSimpleContract(bus : DBusSimpleBus) extends FormalProperties(bus) {
+  class DBusSimpleContract(bus: DBusSimpleBus) extends FormalProperties(bus) {
+
     import bus._
 
-    val outstandingReads = Reg(SInt(33 bits)) init(0)
+    val outstandingReads = Reg(SInt(33 bits)) init (0)
 
     val toAdd = (cmd.fire && !cmd.wr) ? U(1) | U(0)
     outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.ready.asUInt.intoSInt).resized
@@ -118,24 +105,29 @@ package object bus {
     addFormalProperty(outstandingReads >= 0, "DBus outstanding reads should be above 0")
   }
 
-  class DBusSimpleFormal(val bus : DBusSimpleBus) extends FormalMasterSlave {
+  class DBusSimpleFormal(val bus: DBusSimpleBus) extends FormalMasterSlave {
     def contract = dbusSimpleContracts.getOrElseUpdate(bus, new DBusSimpleContract(bus))
+
     override def asIMasterSlave = bus
+
     override def formalIsProducerValid(): Seq[FormalProperty] = bus.cmd.formalIsProducerValid()
+
     override def formalIsConsumerValid(): Seq[FormalProperty] = contract
   }
+
   fillins.AddHandler { case bus: DBusSimpleBus => new DBusSimpleFormal(bus) }
 
 
   implicit class BMBBusExt(val bus: Bmb) extends MultiBusInterface {
     override def address_width = bus.p.access.addressWidth
-    override def create_decoder(mappings: Seq[AddressMapping]): Seq[BMBBusExt]   = new Composite(bus) {
+
+    override def create_decoder(mappings: Seq[AddressMapping]): Seq[BMBBusExt] = new Composite(bus) {
       val decoder = BmbDecoder(bus.p, mappings, capabilities = mappings.map(_ => bus.p))
       decoder.io.input <> bus
       val outputs = decoder.io.outputs.map(BMBBusExt)
     }.outputs
 
-    override def create_arbiter(size:  Int): Seq[BMBBusExt]  = new Composite(bus) {
+    override def create_arbiter(size: Int): Seq[BMBBusExt] = new Composite(bus) {
       val arbiter = BmbArbiter(Array.fill(size)(bus.p), bus.p, lowerFirstPriority = false, 0)
       arbiter.io.output <> bus
       val inputs = arbiter.io.inputs.map(BMBBusExt)
@@ -151,10 +143,11 @@ package object bus {
 
   val xipContracts = new mutable.WeakHashMap[XipBus, XipBusContract]()
 
-  class XipBusContract(bus : XipBus) extends FormalProperties(bus) {
+  class XipBusContract(bus: XipBus) extends FormalProperties(bus) {
+
     import bus._
 
-    val outstandingReads = Reg(SInt(32 bits)) init(0)
+    val outstandingReads = Reg(SInt(32 bits)) init (0)
 
     val toAdd = cmd.fire ? (cmd.length + 1) | U(0)
     outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.fire.asUInt.intoSInt).resized
@@ -165,7 +158,7 @@ package object bus {
     addFormalProperty(outstandingReads >= 0, "XIP outstanding reads should be above 0")
   }
 
-  class XipBusFormal(val bus : XipBus) extends FormalMasterSlave with FormalDataWithEquivalnce[XipBusFormal] {
+  class XipBusFormal(val bus: XipBus) extends FormalMasterSlave with FormalDataWithEquivalnce[XipBusFormal] {
     override type Self = XipBusFormal
 
     override def clone(): Bundle = new XipBus(bus.p)
@@ -185,14 +178,17 @@ package object bus {
       bus.rsp.formalAssertEquivalence(that.bus.rsp)
     }
   }
+
   fillins.AddHandler { case bus: XipBus => new XipBusFormal(bus) }
 
   implicit class XipBusExt(val bus: XipBus) extends MultiBusInterface {
     override def toString = bus.toString()
 
     override def address_width = bus.p.addressWidth
-    override def create_decoder(mappings:  Seq[AddressMapping]): Seq[MultiBusInterface] = ???
-    override def create_arbiter(size:  Int): Seq[MultiBusInterface] = new Composite(bus, "arbiter") {
+
+    override def create_decoder(mappings: Seq[AddressMapping]): Seq[MultiBusInterface] = ???
+
+    override def create_arbiter(size: Int): Seq[MultiBusInterface] = new Composite(bus, "arbiter") {
       val arbiter = new GeneralBusArbiter(new XipBusMemBusInterfaceExtImpl(bus.p), size)
       arbiter.io.output <> bus
       val inputs = arbiter.io.inputs.map(inputBus => XipBusExt(bus = inputBus))
@@ -208,8 +204,10 @@ package object bus {
     override def toString = bus.toString()
 
     override def address_width = bus.config.addressWidth
-    override def create_decoder(mappings:  Seq[AddressMapping]): Seq[MultiBusInterface] = ???
-    override def create_arbiter(size:  Int): Seq[MultiBusInterface] = ???
+
+    override def create_decoder(mappings: Seq[AddressMapping]): Seq[MultiBusInterface] = ???
+
+    override def create_arbiter(size: Int): Seq[MultiBusInterface] = ???
 
     override def isValidProducer: Bool = bus.formalIsProducerValid().map(_.condition).andR
 
@@ -220,7 +218,7 @@ package object bus {
     val pmb = m.bus
 
     val bmb =
-      if(s.bus.p.access.dataWidth != pmb.config.dataWidth) {
+      if (s.bus.p.access.dataWidth != pmb.config.dataWidth) {
         val mappedP = BmbUpSizerBridge.outputParameterFrom(s.bus.p.access, pmb.config.dataWidth)
 
         val pmb_bmb = Bmb(mappedP)
@@ -248,13 +246,20 @@ package object bus {
       rsp.data := r.data
       rsp
     }).toFlow >> pmb.rsp
-  }}
+  }
+  }
+
+  MultiInterconnectConnectFactory.AddHandler { case (m: GeneralBusMultiBus[_], s: Any) => new Composite(m.bus, "to_xip") {
+    MultiInterconnectConnectFactory(m.bus, s)
+  }
+  }
+
 
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: XipBusExt) => new Composite(m.bus, "to_xip") with HasFormalProperties {
     val wordWidth = (m.bus.cmd.data.getWidth / 8)
     m.bus.cmd.discardWhen(m.bus.cmd.write).map(c => {
       val cmd = cloneOf(s.bus.cmd.payload)
-      cmd.address := c.address.resized//(c.address << log2Up(m.bus.config.dataWidth / 8)).resized
+      cmd.address := c.address.resized //(c.address << log2Up(m.bus.config.dataWidth / 8)).resized
       cmd.length := m.bus.config.dataWidth / 8 - 1
       cmd
     }) >> s.bus.cmd
@@ -272,7 +277,8 @@ package object bus {
       val xipReads = (new XipBusFormal(s.bus).contract.outstandingReads.asUInt +^ adapter.io.occupancy)
       addFormalProperty(new PipelinedMemoryBusFormalExt(m.bus).contract.outstandingReads * wordWidth === xipReads, "Outstanding reads should match")
     }
-  }}
+  }
+  }
 
 
   MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip") with HasFormalProperties {
@@ -298,14 +304,15 @@ package object bus {
       val xipReads = (new XipBusFormal(s.bus).contract.outstandingReads.asUInt +^ adapater.io.occupancy)
       addFormalProperty(new DBusSimpleFormal(m.bus).contract.outstandingReads.asUInt * wordWidth === xipReads, "Outstanding reads should match")
     }
-  }}
+  }
+  }
 
   MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: InstructionCacheMemBusExt) => new Composite(m.bus) {
     m.bus <> s.bus
   }
   }
 
-  MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip"){
+  MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip") {
     m.bus.cmd.map(c => {
       val wordShift = log2Up(c.address.getWidth / 8)
       val cmd = cloneOf(s.bus.cmd.payload)
@@ -323,16 +330,19 @@ package object bus {
       rsp.error := False
       rsp
     }).toFlow >> m.bus.rsp
-  }}
+  }
+  }
 
   MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: PipelinedMemoryBusMultiBus) => {
     m.bus.toPipelinedMemoryBus() >> s.bus
-  }}
+  }
+  }
 
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: WishboneMultiBusInterface) => {
     val wb = PipelinedMemoryBusToWishbone(m.bus, s.bus.config)
     wb >> s.bus
-  }}
+  }
+  }
 
   def toWishbone(dbus: DBusSimpleBus) = {
     import dbus._
@@ -341,10 +351,10 @@ package object bus {
     val cmdStage = cmd
 
     bus.ADR := cmdStage.address >> 2
-    bus.CTI :=B"000"
+    bus.CTI := B"000"
     bus.BTE := "00"
     bus.SEL := genMask(cmdStage).resized
-    bus.WE  := cmdStage.wr
+    bus.WE := cmdStage.wr
     bus.DAT_MOSI := cmdStage.data
 
     cmdStage.ready := cmdStage.valid && (bus.ACK || bus.ERR)
@@ -352,14 +362,15 @@ package object bus {
     bus.STB := cmdStage.valid
 
     rsp.ready := cmdStage.valid && !bus.WE && (bus.ACK || bus.ERR)
-    rsp.data  := bus.DAT_MISO
+    rsp.data := bus.DAT_MISO
     rsp.error := bus.ERR
     bus
   }
+
   MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: WishboneMultiBusInterface) => new Composite(m.bus, "dbus_to_wb") with HasFormalProperties {
     val dbus_as_wb = toWishbone(m.bus)
     dbus_as_wb.connectToGranularity(s.bus, allowAddressResize = true, allowDataResize = true)
-    if(dbus_as_wb.ERR != null && s.bus.ERR == null) {
+    if (dbus_as_wb.ERR != null && s.bus.ERR == null) {
       dbus_as_wb.ERR := False
     }
 
@@ -367,7 +378,8 @@ package object bus {
       addFormalProperty(new DBusSimpleFormal(m.bus).contract.outstandingReads === 0
         , "Enforce syncronous operation")
     }
-  }}
+  }
+  }
 
   MultiInterconnectConnectFactory.AddHandler { case (m: DBusSimpleBusExt, s: PipelinedMemoryBusMultiBus) => new Composite(m.bus, "dbus_to_pmb") with HasFormalProperties {
     m.bus.toPipelinedMemoryBus() >> s.bus
@@ -376,5 +388,6 @@ package object bus {
     override protected def formalProperties() = new FormalProperties(this) {
       addFormalProperty(new DBusSimpleFormal(m.bus).contract.outstandingReads.asUInt === s.bus.contract.outstandingReads.value, "Oustanding reads match")
     }
-  }}
+  }
+  }
 }

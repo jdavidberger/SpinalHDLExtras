@@ -28,6 +28,8 @@ trait GeneralBusInterface[BUS <: Data with IMasterSlave with Nameable] {
   type RSP <: Data
 
   val dataType : HardType[BUS]
+  def data_width: Int = ???
+
   def decodeMissTarget() : BUS = ???
   def address(cmd : CMD) : UInt
   def bus_address(bus : BUS) : UInt = address(cmd(bus).payload)
@@ -54,6 +56,8 @@ trait GeneralBusInterface[BUS <: Data with IMasterSlave with Nameable] {
   def map_rsp(input : BUS, output : BUS)
   def set_rsp_idle(input : BUS) : Unit = {}
   def set_rsp_blocked(input : BUS) : Unit = {}
+  def set_rsp_ready(input : BUS, v : Bool) : Unit = {}
+  def get_rsp_ready(bus: BUS) = True
 
   def formalRspPending(input : BUS) : UInt = formalContract(input).outstandingRsp
 
@@ -90,6 +94,8 @@ trait GeneralBusInterface[BUS <: Data with IMasterSlave with Nameable] {
 
   case class MapRsp(bus : BUS) {
     def setBlocked() = set_rsp_blocked(bus)
+    def setReady(v : Bool) = set_rsp_ready(bus, v)
+    def ready() : Bool = get_rsp_ready(bus)
     def setIdle() = set_rsp_idle(bus)
     def connect(that : MapRsp) = map_rsp(bus, that.bus)
     def readError() : Unit = map_rsp_read_error(bus)
@@ -108,7 +114,7 @@ trait GeneralBusInterface[BUS <: Data with IMasterSlave with Nameable] {
     def isConsumerValid = self.isConsumerValid(bus)
     def formalRspPending = self.formalRspPending(bus)
 
-    def byteaAddress = self.bus_address(bus)
+    def byteAddress = self.bus_address(bus)
     val rsp = MapRsp(bus)
   }
 }

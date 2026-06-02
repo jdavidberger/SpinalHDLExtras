@@ -1,5 +1,6 @@
 package spinalextras.lib.soc.spinex
 
+import spinal.core.fiber.{Lock, hardFork}
 import spinal.core.{B, BooleanPimped, ClockDomain, HertzNumber, IntToBuilder, TimeNumber, ifGen, log2Up}
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config, Apb3SlaveFactory}
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactoryNonStopWrite, BusSlaveFactoryOnReadAtAddress, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryRead, BusSlaveFactoryWrite, SizeMapping}
@@ -8,6 +9,7 @@ import spinal.lib.com.uart.{UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemory
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
 import spinalextras.lib.soc.spinex.plugins.{I2CPlugin, IdentificationPlugin, JTagPlugin, OpenCoresI2CPlugin, TimerPlugin, Uart16550CtrlPlugin}
+import vexiiriscv.ParamSimple
 import vexriscv.ip.InstructionCacheConfig
 import vexriscv.{VexRiscv, plugin}
 import vexriscv.plugin.CsrAccess.WRITE_ONLY
@@ -20,7 +22,23 @@ import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
 trait SpinexPlugin {
-  def apply(som : Spinex) : Unit
+    def apply(som : Spinex) : Unit
+}
+
+class SpinexPluginAsync extends SpinexPlugin {
+  val lock = Lock()
+  def apply(som : Spinex) : Unit = {
+    lock.release()
+  }
+  def onDone(): Unit = {
+
+  }
+
+  lock.retain()
+  hardFork {
+    lock.await()
+    onDone()
+  }
 }
 
 abstract class SpinexRegisterFilePlugin(path : String, mapping : SizeMapping) extends DeviceTreeProvider(mapping.base) with SpinexPlugin {
@@ -79,6 +97,10 @@ abstract class SpinexRegisterFileApbPlugin(name : String, mapping : SizeMapping)
 
 }
 
+trait SpinexCpuConfig {
+  def apply(cfg : SpinexConfig, spinex : Spinex) : Any
+}
+
 case class SpinexConfig(onChipRamSize      : BigInt,
                         onChipRamHexFile   : String,
                         pipelineDBus       : Boolean,
@@ -88,7 +110,8 @@ case class SpinexConfig(onChipRamSize      : BigInt,
                         uartCtrlConfig     : UartCtrlMemoryMappedConfig,
                         hardwareBreakpointCount : Int,
                         withJtag      : Boolean,
-                        cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
+                        //cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]],
+                        cpuConfig : SpinexCpuConfig,
                         externalInterrupts : Int,
                         plugins : Seq[SpinexPlugin] = SpinexConfig.defaultPlugins
                        ){
@@ -117,7 +140,7 @@ object SpinexConfig{
   )
 
   def default : SpinexConfig = default()
-  def default(bigEndian : Boolean = false, withJtag : Boolean = true,
+  def default(withJtag : Boolean = true,
               xipConfig          : Option[SpiXdrMasterCtrl.MemoryMappingParameters] = Some(XipFlashPlugin.defaultConfig),
               flashClockDomain   : ClockDomain = null,
               withUart : Boolean = true,
@@ -126,7 +149,8 @@ object SpinexConfig{
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
               genMul : Boolean = true,
               genDiv : Boolean = true,
-              ram_name : String = ""
+              ram_name : String = "",
+              vexiiRisc : Boolean = true
              ) =  SpinexConfig(
     onChipRamSize         = 0x00010000,
     onChipRamHexFile      = null,
@@ -136,7 +160,19 @@ object SpinexConfig{
     gpioWidth = 32,
     hardwareBreakpointCount = 3,
     withJtag = withJtag,
-    cpuPlugins = ArrayBuffer( //DebugPlugin added by the toplevel
+    cpuConfig = if(vexiiRisc) {
+      val params = new ParamSimple()
+
+      params.embeddedJtagTap = withJtag
+      params.privParam.withDebug = withJtag
+      params.fetchL1Enable = true
+
+      params.privParam.imsicInterrupts = 64
+      params.addISA("smcsrind", "sscsrind")
+
+      VexiiRiscCPU(params)
+    }
+    else VexRiscCPU(ArrayBuffer( //DebugPlugin added by the toplevel
       new IBusCachedPlugin(
         config = InstructionCacheConfig(
           cacheSize = 2048,
@@ -167,7 +203,7 @@ object SpinexConfig{
         catchAddressMisaligned = true,
         catchAccessFault = true,
         earlyInjection = true,
-        bigEndian = bigEndian
+        bigEndian = false
       ),
       //new CsrPlugin(CsrPluginConfig.small(mtvecInit = if(withXip) 0xE0040020l else 0x80000020l)),
       new CsrPlugin(CsrPluginConfig.small(mtvecInit = null).copy(mtvecAccess = WRITE_ONLY,
@@ -212,8 +248,9 @@ object SpinexConfig{
         supervisorMaskCsrId = 0x9C0,
         supervisorPendingsCsrId = 0xDC0
       ),
-      new YamlPlugin("cpu0.yaml")
-    ).filter(_ != null),
+      new YamlPlugin("cpu0.yaml"),
+    ).filter(_ != null))
+    ,
 
     uartCtrlConfig = UartCtrlMemoryMappedConfig(
       uartCtrlConfig = UartCtrlGenerics(
@@ -237,21 +274,6 @@ object SpinexConfig{
     externalInterrupts = 8,
     plugins = plugins(withJtag = withJtag, xipConfig, flashClockDomain, withUart = withUart, withI2C = withI2C, ram_mapping = ram_mapping, rom_mapping = rom_mapping, ram_name = ram_name)
   )
-
-  def fast = {
-    val config = default
-
-    //Replace HazardSimplePlugin to get datapath bypass
-    config.cpuPlugins(config.cpuPlugins.indexWhere(_.isInstanceOf[HazardSimplePlugin])) = new HazardSimplePlugin(
-      bypassExecute = true,
-      bypassMemory = true,
-      bypassWriteBack = true,
-      bypassWriteBackBuffer = true
-    )
-    //    config.cpuPlugins(config.cpuPlugins.indexWhere(_.isInstanceOf[LightShifterPlugin])) = new FullBarrelShifterPlugin()
-
-    config
-  }
 
   def plugins(withJtag : Boolean = true,
               xipConfig          : Option[SpiXdrMasterCtrl.MemoryMappingParameters] = Some(XipFlashPlugin.defaultConfig),

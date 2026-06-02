@@ -1,5 +1,6 @@
 package spinalextras.lib.bus
 
+import spinal.core.fiber.{Lock, hardFork}
 import spinal.core.{Bool, Component, MultiData, log2Up}
 import spinal.lib.bus.misc._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig, PipelinedMemoryBusSlaveFactory}
@@ -11,6 +12,7 @@ import scala.collection.mutable
 trait MultiBusInterface {
   def bus : MultiData with IMasterSlave
   def address_width : Int
+  def data_width: Int = ???
   def create_decoder(mappings : Seq[AddressMapping]) : Seq[MultiBusInterface]
   def create_arbiter(size : Int) : Seq[MultiBusInterface]
 
@@ -19,11 +21,11 @@ trait MultiBusInterface {
 }
 
 object MultiInterconnectConnectFactory {
-  type HandlerFunction = PartialFunction[(MultiBusInterface, MultiBusInterface), Any]
+  type HandlerFunction = PartialFunction[(Any, Any), Any]
 
   private var handlers = mutable.ArrayBuffer[HandlerFunction]()
 
-  def apply(m: MultiBusInterface, s: MultiBusInterface): Any = {
+  def apply(m: Any, s: Any): Any = {
     for (handler <- handlers) {
       val factoryFunc = handler.lift((m,s))
       if(factoryFunc.nonEmpty)
@@ -130,6 +132,13 @@ class MultiInterconnect {
 
 class MultiInterconnectByTag(name : String = "multiinterconnect") extends MultiInterconnect with BusSlaveProvider {
   val component = Component.current
+  val lock = Lock()
+  lock.retain()
+
+  hardFork {
+    lock.await()
+    build()
+  }
 
   val tags = new mutable.HashMap[MultiBusInterface, mutable.Set[String]]()
 

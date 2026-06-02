@@ -82,7 +82,7 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
     for ((slaveBus, memorySpace, hit) <- (outputsWithDefault, mappingsWithDefault, hits).zipped) yield {
       hit := (memorySpace match {
         case DefaultMapping => !hits.filterNot(_ == hit).orR
-        case _ => memorySpace.hit(io.input.byteaAddress)
+        case _ => memorySpace.hit(io.input.byteAddress)
       })
 
       slaveBus.cmd.valid := input_cmd.valid && hit
@@ -109,6 +109,10 @@ case class GeneralBusDecoder[T <: Data with IMasterSlave](val busAccesor: Genera
     output_rsp.valid := outputsWithDefault.map(_.rsp.fire).orR
     output_rsp.payload := outputsWithDefault.map(_.rsp.payload).read(OHToUInt(rspHits))
     busAccesor.map_rsp(io.input, output_rsp)
+
+    outputsWithDefault.zip(rspHits).foreach(x => {
+      x._1.rsp.setReady(x._2 && io.input.rsp.ready())
+    })
 
     val cmdWait = (io.input.cmd.valid && rspPending && hits =/= rspHits) || (!rspPendingCounter.io.increaseBy.ready && latchFirstValid)
     when(cmdWait) {

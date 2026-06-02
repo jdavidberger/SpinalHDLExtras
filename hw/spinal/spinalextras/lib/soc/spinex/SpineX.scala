@@ -1,8 +1,9 @@
 package spinalextras.lib.soc.spinex
 
 import spinal.core._
-import spinal.lib._
+import spinal.core.fiber.hardFork
 import spinal.core.sim.{SimClockDomainHandlePimper, SimClockDomainPimper, sleep}
+import spinal.lib._
 import spinal.lib.bus.amba3.apb._
 import spinal.lib.bus.misc.{AddressMapping, DefaultMapping, SizeMapping}
 import spinal.lib.bus.simple._
@@ -10,15 +11,18 @@ import spinal.lib.bus.wishbone.Wishbone
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBus
 import spinal.lib.cpu.riscv.debug._
 import spinalextras.lib.Config
-import spinalextras.lib.blackbox.lattice.lifcl.WDT
 import spinalextras.lib.bus.{MultiBusInterface, MultiInterconnectByTag, PipelinedMemoryBusMultiBus}
 import spinalextras.lib.clocking.ClockSelection
 import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
 import spinalextras.lib.misc.ClockSpecification
+import spinalextras.lib.soc.spinex.plugins.JTagPlugin
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
-import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
+import vexiiriscv._
+import vexiiriscv.execute.lsu.{LsuCachelessBus, LsuCachelessPlugin, LsuL1Plugin}
+import vexiiriscv.fetch.{CachelessBus, FetchCachelessPlugin, FetchL1Bus, FetchL1Plugin}
+import vexiiriscv.misc.PrivilegedPlugin
 import vexriscv.ip.InstructionCacheMemBus
 import vexriscv.plugin.{CsrPlugin, DBusSimpleBus, DBusSimplePlugin, DebugPlugin, EmbeddedRiscvJtag, ExternalInterruptArrayPlugin, IBusCachedPlugin, IBusSimpleBus, IBusSimplePlugin}
 import vexriscv.{ExceptionCause, VexRiscv, VexRiscvConfig}
@@ -26,10 +30,10 @@ import vexriscv.{ExceptionCause, VexRiscv, VexRiscvConfig}
 import java.nio.file.{Files, StandardCopyOption}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import scala.language.postfixOps
+import scala.language.{postfixOps, reflectiveCalls}
 import scala.reflect.ClassTag
 
-case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Component{
+case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Component {
   import config._
   val self = this
 
@@ -86,31 +90,13 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       dataWidth = 32
     )
 
-    if(config.withJtag) {
-      cpuPlugins += //new DebugPlugin(debugClockDomain, hardwareBreakpointCount),
-        new EmbeddedRiscvJtag(
-          p = DebugTransportModuleParameter(
-            addressWidth = 7,
-            version      = 1,
-            idle         = 7
-          ),
-          debugCd = debugClockDomain,
-          withTunneling = false,
-          withTap = true
-        )
-    }
+    val timerInterrupt = False
+    //Checkout plugins used to instanciate the CPU to connect them to the SoC
+    val externalInterrupts = Bits(32 bits)
+    externalInterrupts := 0
 
     //Instanciate the CPU
-    val cpu = new VexRiscv(
-      config = VexRiscvConfig(
-        plugins = cpuPlugins,
-      )
-    )
-
-    //Checkout plugins used to instanciate the CPU to connect them to the SoC
-    val timerInterrupt = False
-    private val externalInterrupts = Bits(32 bits)
-    externalInterrupts := 0
+    val cpu : Any = config.cpuConfig(config, self)
 
     var interruptInfos = new mutable.HashMap[Int, Data]()
     def addInterrupt(signal : Data, requestedIrq : Int = -1) = {
@@ -127,61 +113,6 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
     def addNamedInterrupt(name : String, signal : Data, requestedIrq : Int = -1) = {
       addInterrupt(CombInit(signal).setName(name, weak = true), requestedIrq)
-    }
-
-    for(plugin <- cpu.plugins) plugin match{
-      case plugin : IBusCachedPlugin =>
-        add_master(plugin.iBus)
-      case plugin : IBusSimplePlugin =>
-        add_master(plugin.iBus)
-      case plugin : DBusSimplePlugin => {
-        add_master(plugin.dBus.cmdHalfPipe().setName("dBus_staged"))
-        //add_master(plugin.dBus.cmdS2mPipe().setName("dBus_staged"))
-      }
-      case plugin : CsrPlugin        => {
-        plugin.timerInterrupt := timerInterrupt
-        withAutoPull()
-
-        if(plugin.config.withPrivilegedDebug) {
-          GlobalLogger(Set("cpu"),
-            FlowLogger.flows(plugin.debugBus.dmToHart),
-            FlowLogger.flows(plugin.debugBus.hartToDm),
-          )
-        }
-
-        GlobalLogger(Set("cpu"),
-          FlowLogger.flows(plugin.exceptionPortsInfos.map({ ec =>
-            class ExceptionCauseWithPC() extends ExceptionCause(ec.port.codeWidth) {
-              val pc = UInt(32 bits)
-            }
-
-            val rtn = Flow(new ExceptionCauseWithPC())
-            rtn.payload.pc := ec.stage.input(plugin.pipeline.config.PC)
-            rtn.payload.badAddr := ec.port.badAddr
-            rtn.payload.code := ec.port.code
-            rtn.valid := ec.port.valid
-            rtn.setName(ec.port.refOwner.toString + "_" + ec.port.name + "WithPC")
-            rtn
-          }):_*)
-        )
-      }
-      case plugin : ExternalInterruptArrayPlugin => {
-        plugin.externalInterruptArray := externalInterrupts
-      }
-      case plugin : DebugModule => {
-        GlobalLogger(Set("cpu"),
-          FlowLogger.flows(plugin.io.harts.map(_.hartToDm):_*),
-          FlowLogger.flows(plugin.io.harts.map(_.dmToHart):_*)
-        )
-      }
-      case plugin : DebugPlugin         => plugin.debugClockDomain{
-        resetCtrl.systemReset setWhen(RegNext(plugin.io.resetOut))
-        getPlugin[JTagPlugin].get.jtags.append(plugin.io.bus.fromJtag())
-      }
-      case plugin : EmbeddedRiscvJtag => {
-        getPlugin[JTagPlugin].get.jtags.append(plugin.jtag)
-      }
-      case _ =>
     }
 
     //******** APB peripherals *********
@@ -243,12 +174,21 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     }
 
     Component.toplevel.addPrePopTask(() => {
-      directInterconnect.build()
-      interconnect.build()
+      directInterconnect.lock.release()
+      interconnect.lock.release()
     })
   }
 
   import spinalextras.lib.bus.bus._
+  def add_master(bus : FetchL1Bus): Unit = {
+    directInterconnect.addMaster(bus, "iBus")
+  }
+  def add_master(bus : CachelessBus): Unit = {
+    directInterconnect.addMaster(bus, "iBus")
+  }
+  def add_master(bus : LsuCachelessBus): Unit = {
+    directInterconnect.addMaster(bus, "dBus")
+  }
 
   def add_master(bus: IBusSimpleBus): Unit = {
     interconnect.addMaster(bus, "iBus")
@@ -380,6 +320,18 @@ object Spinex{
   }
 }
 
+object VexiiRiscvMain {
+  def main(args: Array[String]) {
+    val report = Config.spinal.generateVerilog({
+      val plugins = new vexiiriscv.ParamSimple().plugins()
+      ParamSimple.setPma(plugins, ParamSimple.defaultPma)
+
+      VexiiRiscv(plugins)
+    })
+    IPX.generate_ipx(report)
+  }
+}
+
 class SpinexWithClock extends Component {
   val io = new Bundle {
     val led = out(Bool())
@@ -387,7 +339,7 @@ class SpinexWithClock extends Component {
   noIoPrefix()
   withAutoPull()
 
-  val clocks = new ClockSelection(Seq(ClockSpecification(100 MHz)))
+  val clocks = new ClockSelection(Seq(ClockSpecification(75 MHz)))
   val spinexClockDomain = clocks.ClockDomains.last
   //val spinexClockDomain = rst_sync(ClockDomain.current)
 
@@ -410,7 +362,7 @@ object SpinexWithClock{
   def main(args: Array[String]) {
     val report = Config.spinal.copy(
       targetDirectory = s"hw/gen/SpinexWithClock",
-      defaultClockDomainFrequency = FixedFrequency(75 MHz)
+      defaultClockDomainFrequency = FixedFrequency(60 MHz)
     ).generateVerilog(new SpinexWithClock())
 
     Spinex.generate_ipx(report)

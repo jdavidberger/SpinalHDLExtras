@@ -21,6 +21,10 @@ val vexRiscv = if(file(s"${gitRoot}VexRiscv/").exists())
   ProjectRef(file("../VexRiscv/"), "root") else
   ProjectRef(uri("https://github.com/jdavidberger/VexRiscv.git"), "root")
 
+val vexiiRiscv = if(file(s"${gitRoot}VexRiscv/").exists())
+  ProjectRef(file("../VexiiRiscv/"), "ret") else
+  ProjectRef(uri("https://github.com/SpinalHDL/VexiiRiscv.git"), "root")
+
 lazy val SpinalHDLExtras = (project in file("."))
   .settings(
     Compile / scalaSource := baseDirectory.value / "hw" / "spinal",
@@ -39,6 +43,6 @@ lazy val SpinalHDLExtras = (project in file("."))
       "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % "2.17.2",
       "com.kjetland" %% "mbknor-jackson-jsonschema" % "1.0.39",
     )
-  ).dependsOn(vexRiscv)
+  ).dependsOn(vexRiscv, vexiiRiscv)
 
 fork := true
