@@ -387,7 +387,7 @@ class SpinexWithClock extends Component {
   noIoPrefix()
   withAutoPull()
 
-  val clocks = new ClockSelection(Seq(ClockSpecification(100 MHz)))
+  val clocks = new ClockSelection(Seq(ClockSpecification(70 MHz)))
   val spinexClockDomain = clocks.ClockDomains.last
   //val spinexClockDomain = rst_sync(ClockDomain.current)
 
@@ -410,7 +410,7 @@ object SpinexWithClock{
   def main(args: Array[String]) {
     val report = Config.spinal.copy(
       targetDirectory = s"hw/gen/SpinexWithClock",
-      defaultClockDomainFrequency = FixedFrequency(75 MHz)
+      defaultClockDomainFrequency = FixedFrequency(60 MHz)
     ).generateVerilog(new SpinexWithClock())
 
     Spinex.generate_ipx(report)

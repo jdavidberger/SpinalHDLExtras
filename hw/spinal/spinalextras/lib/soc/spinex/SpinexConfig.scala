@@ -8,10 +8,10 @@ import spinal.lib.com.uart.{UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemory
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
 import spinalextras.lib.soc.spinex.plugins.{I2CPlugin, IdentificationPlugin, JTagPlugin, OpenCoresI2CPlugin, TimerPlugin, Uart16550CtrlPlugin}
-import vexriscv.ip.InstructionCacheConfig
+import vexriscv.ip.{DataCacheConfig, InstructionCacheConfig}
 import vexriscv.{VexRiscv, plugin}
 import vexriscv.plugin.CsrAccess.WRITE_ONLY
-import vexriscv.plugin.{BranchPlugin, CsrPlugin, CsrPluginConfig, DBusSimplePlugin, DecoderSimplePlugin, ExternalInterruptArrayPlugin, HazardSimplePlugin, IBusCachedPlugin, IBusSimplePlugin, IntAluPlugin, LightShifterPlugin, MulDivIterativePlugin, Plugin, RegFilePlugin, STATIC, SrcPlugin, StaticMemoryTranslatorPlugin, YamlPlugin}
+import vexriscv.plugin.{BranchPlugin, CsrPlugin, CsrPluginConfig, DBusCachedPlugin, DBusSimplePlugin, DecoderSimplePlugin, ExternalInterruptArrayPlugin, FullBarrelShifterPlugin, HazardSimplePlugin, IBusCachedPlugin, IBusSimplePlugin, IntAluPlugin, LightShifterPlugin, MulDivIterativePlugin, MulPlugin, Plugin, RegFilePlugin, STATIC, SrcPlugin, StaticMemoryTranslatorPlugin, YamlPlugin}
 
 import java.io.File
 import java.nio.file.Files
@@ -122,11 +122,28 @@ object SpinexConfig{
               flashClockDomain   : ClockDomain = null,
               withUart : Boolean = true,
               withI2C : Boolean = true,
-              ram_mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes),
+              ram_mapping : SizeMapping = SizeMapping(0x40000000L, 0x00010000 Bytes),
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
               genMul : Boolean = true,
               genDiv : Boolean = true,
-              ram_name : String = ""
+              genMulIterative : Boolean = true,
+              ram_name : String = "",
+              // Takes roughly 200 gates; but is much faster performance. 55 -> 73 c/s
+              withFullBarrel : Boolean = false,
+              icacheConfig : Option[InstructionCacheConfig] = Some(InstructionCacheConfig(
+                cacheSize = 2048,
+                bytePerLine = 32,
+                wayCount = 1,
+                addressWidth = 32,
+                cpuDataWidth = 32,
+                memDataWidth = 32,
+                catchIllegalAccess = true,
+                catchAccessFault = true,
+                asyncTagMemory = false,
+                twoCycleRam = true,
+                twoCycleCache = true
+              )),
+              dcacheConfig : Option[DataCacheConfig] = None
              ) =  SpinexConfig(
     onChipRamSize         = 0x00010000,
     onChipRamHexFile      = null,
@@ -137,43 +154,42 @@ object SpinexConfig{
     hardwareBreakpointCount = 3,
     withJtag = withJtag,
     cpuPlugins = ArrayBuffer( //DebugPlugin added by the toplevel
-      new IBusCachedPlugin(
-        config = InstructionCacheConfig(
-          cacheSize = 2048,
-          bytePerLine = 32,
-          wayCount = 1,
-          addressWidth = 32,
-          cpuDataWidth = 32,
-          memDataWidth = 32,
-          catchIllegalAccess = true,
+      icacheConfig.map(cfg =>
+        new IBusCachedPlugin(config = cfg,
+          resetVector = resetVector,
+          prediction = STATIC,
+          compressedGen = false,
+          relaxedPcCalculation = false,
+          memoryTranslatorPortConfig = null)
+      ).getOrElse(
+        new IBusSimplePlugin(
+          resetVector = resetVector,
+          cmdForkOnSecondStage = false,
+          cmdForkPersistence = false,
           catchAccessFault = true,
-          asyncTagMemory = false,
-          twoCycleRam = true,
-          twoCycleCache = true
-        ),
-        resetVector = resetVector,
-        prediction = STATIC,
-        compressedGen = false,
-        relaxedPcCalculation = true,
-        memoryTranslatorPortConfig = null
+          prediction = STATIC,
+          compressedGen = false,
+        )
       ),
-//      new IBusSimplePlugin(
-//        resetVector = resetVector, cmdForkOnSecondStage = false, cmdForkPersistence = false,
-//        catchAccessFault = true,
-//        prediction = STATIC,
-//        compressedGen = false,
-//      ),
-      new DBusSimplePlugin(
+      dcacheConfig.map(cfg =>
+        new DBusCachedPlugin(
+          config = cfg,
+        )
+      ).getOrElse(new DBusSimplePlugin(
         catchAddressMisaligned = true,
         catchAccessFault = true,
-        earlyInjection = true,
+        earlyInjection = false,
         bigEndian = bigEndian
-      ),
-      //new CsrPlugin(CsrPluginConfig.small(mtvecInit = if(withXip) 0xE0040020l else 0x80000020l)),
+      )),
       new CsrPlugin(CsrPluginConfig.small(mtvecInit = null).copy(mtvecAccess = WRITE_ONLY,
         ecallGen = true, wfiGenAsNop = true, withPrivilegedDebug = withJtag, xtvecModeGen = false, debugTriggers = 8)),
-      (genMul || genDiv) generate new MulDivIterativePlugin(
-        genMul = genMul,
+
+      (genMul && !genMulIterative) generate new MulPlugin(
+        inputBuffer = true,
+        outputBuffer = false
+      ),
+      (genMulIterative || genDiv) generate new MulDivIterativePlugin(
+        genMul = genMulIterative,
         genDiv = genDiv,
         mulUnrollFactor = 1,
         divUnrollFactor = 1
@@ -188,10 +204,13 @@ object SpinexConfig{
       new IntAluPlugin,
       new SrcPlugin(
         separatedAddSub = false,
+        // false, false here gives ~78mhz @ 3217 gates
+        // false, true here gives ~85mhz @ 3275
+        // true, false here gives ~80mhz @ 3272
         executeInsertion = false,
-        decodeAddSub = true,
+        decodeAddSub = false,
       ),
-      new LightShifterPlugin,
+      if(withFullBarrel) new FullBarrelShifterPlugin else new LightShifterPlugin,
       new HazardSimplePlugin(
         bypassExecute = true,
         bypassMemory = true,
@@ -260,7 +279,8 @@ object SpinexConfig{
               withI2C : Boolean = true,
               ram_mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes),
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
-              ram_name : String = ""
+              ram_name : String = "",
+              withFullBarrel : Boolean = true,
              ) = {
     val plugins : ArrayBuffer[SpinexPlugin] = mutable.ArrayBuffer(
       IdentificationPlugin(registerLocation = 0x3000),

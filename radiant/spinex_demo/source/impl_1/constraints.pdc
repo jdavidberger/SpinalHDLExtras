@@ -9,6 +9,12 @@ ldc_set_location -site {E1} [get_ports scl]
 ldc_set_location -site {E2} [get_ports sda]
 ldc_set_port -iobuf {PULLMODE=NONE OPENDRAIN=ON} [get_ports scl]
 ldc_set_port -iobuf {PULLMODE=NONE OPENDRAIN=ON} [get_ports sda]
+
+ldc_set_location -site {E1} [get_ports i2c0_scl]
+ldc_set_location -site {E2} [get_ports i2c0_sda]
+ldc_set_port -iobuf {PULLMODE=NONE OPENDRAIN=ON} [get_ports i2c0_scl]
+ldc_set_port -iobuf {PULLMODE=NONE OPENDRAIN=ON} [get_ports i2c0_sda]
+
 # Clock input from the PLL:
 ldc_set_location -site {H8} [get_ports clk_2]
 ldc_set_location -site {H8} [get_ports clk]
