@@ -19,8 +19,8 @@ import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
 import spinalextras.lib.misc.ClockSpecification
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
-import vexriscv.ip.InstructionCacheMemBus
-import vexriscv.plugin.{CsrPlugin, DBusSimpleBus, DBusSimplePlugin, DebugPlugin, EmbeddedRiscvJtag, ExternalInterruptArrayPlugin, IBusCachedPlugin, IBusSimpleBus, IBusSimplePlugin}
+import vexriscv.ip.{DataCacheMemBus, InstructionCacheMemBus}
+import vexriscv.plugin.{CsrPlugin, DBusCachedPlugin, DBusSimpleBus, DBusSimplePlugin, DebugPlugin, EmbeddedRiscvJtag, ExternalInterruptArrayPlugin, FpuPlugin, IBusCachedPlugin, IBusSimpleBus, IBusSimplePlugin}
 import vexriscv.{ExceptionCause, VexRiscv, VexRiscvConfig}
 
 import java.nio.file.{Files, StandardCopyOption}
@@ -136,6 +136,11 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
         add_master(plugin.iBus)
       case plugin : DBusSimplePlugin => {
         add_master(plugin.dBus.cmdHalfPipe().setName("dBus_staged"))
+        //add_master(plugin.dBus.cmdS2mPipe().setName("dBus_staged"))
+        assert(!cpu.serviceExist(classOf[FpuPlugin]), "FPU requires a data cache")
+      }
+      case plugin : DBusCachedPlugin => {
+        add_master(plugin.dBus)
         //add_master(plugin.dBus.cmdS2mPipe().setName("dBus_staged"))
       }
       case plugin : CsrPlugin        => {
@@ -273,6 +278,10 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     )
   }
 
+  def add_master(bus: DataCacheMemBus): Unit = {
+    directInterconnect.addMaster(bus, "dBus")
+  }
+
   def add_master(bus: DBusSimpleBus): Unit = new Composite(this, "add_master") {
     directInterconnect.addMaster(bus, "dBus")
     val dbusRspFlow = Flow(cloneOf(bus.rsp))
@@ -315,7 +324,6 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     if(systemClockDomain == ClockDomain.current) {
       system.apbMapping += apb -> registerMapping
     } else {
-      assert(ClockDomain.current.frequency.getValue <= systemClockDomain.frequency.getValue)
       val cc = Apb3CC(apb.config, systemClockDomain, ClockDomain.current)
       cc.io.output <> apb
       system.apbMapping += cc.io.input -> registerMapping
@@ -387,12 +395,13 @@ class SpinexWithClock extends Component {
   noIoPrefix()
   withAutoPull()
 
-  val clocks = new ClockSelection(Seq(ClockSpecification(70 MHz)))
+  val clocks = new ClockSelection(Seq(ClockSpecification(125 MHz), ClockSpecification(70 MHz)))
+  val flashCd = clocks.ClockDomains.head
   val spinexClockDomain = clocks.ClockDomains.last
   //val spinexClockDomain = rst_sync(ClockDomain.current)
 
   var connectionArea = new ClockingArea(clockDomain = spinexClockDomain) {
-    val som = Spinex(SpinexConfig.default)
+    val som = Spinex(SpinexConfig.default(flashClockDomain = flashCd))
 
     val counter = Timeout(1 sec)
     val led = RegInit(False)

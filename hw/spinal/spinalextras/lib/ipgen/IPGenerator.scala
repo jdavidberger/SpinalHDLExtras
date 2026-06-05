@@ -1,9 +1,10 @@
 package spinalextras.lib.ipgen
 
+import com.fasterxml.jackson.annotation.{JsonAutoDetect, PropertyAccessor}
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}
+import com.fasterxml.jackson.databind.{JsonNode, MapperFeature, ObjectMapper}
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.kjetland.jackson.jsonSchema.{JsonSchemaConfig, JsonSchemaGenerator}

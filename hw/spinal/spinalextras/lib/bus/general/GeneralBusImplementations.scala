@@ -5,14 +5,20 @@ import spinal.lib.{Fragment, Stream}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters, XipCmd}
 import spinal.lib.cpu.riscv.debug.DebugModuleCmdErr.BUS
 import spinalextras.lib.bus.general.GeneralBusInterface
-import vexriscv.ip.{InstructionCacheConfig, InstructionCacheMemBus, InstructionCacheMemCmd, InstructionCacheMemRsp}
+import vexriscv.ip.{DataCacheConfig, DataCacheMemBus, DataCacheMemCmd, DataCacheMemRsp, InstructionCacheConfig, InstructionCacheMemBus, InstructionCacheMemCmd, InstructionCacheMemRsp}
 import vexriscv.plugin.{DBusSimpleBus, DBusSimpleCmd, DBusSimpleRsp}
+
+import scala.language.implicitConversions
 
 
 package object general {
 
   object DSimpleBusInterfaceExtImpl {
     implicit def apply(bus: DBusSimpleBus) = new DSimpleBusInterfaceExtImpl(bus.bigEndian)
+  }
+
+  object DCacheBusInterfaceExtImpl {
+    implicit def apply(bus: DataCacheMemBus) : DCacheBusInterfaceExtImpl = new DCacheBusInterfaceExtImpl(bus.p)
   }
 
   implicit class DSimpleBusInterfaceExtImpl(bigEndian : Boolean = false) extends GeneralBusInterface[DBusSimpleBus] {
@@ -51,6 +57,48 @@ package object general {
 
     override def map_rsp_read_error(input: BUS): Unit = {
       input.rsp.ready := True
+      input.rsp.error := True
+      input.rsp.data.assignDontCare()
+    }
+  }
+
+  implicit class DCacheBusInterfaceExtImpl(p : DataCacheConfig) extends GeneralBusInterface[DataCacheMemBus] {
+    override type CMD = DataCacheMemCmd
+    override type RSP = DataCacheMemRsp
+
+    type BUS = DataCacheMemBus
+    override  val dataType: HardType[DataCacheMemBus] = new BUS(p)
+    override def cmd_requires_response(cmd:  CMD): Bool = !cmd.wr
+    override def rsp_fire(bus:  DataCacheMemBus): Bool = bus.rsp.fire
+    override def cmd(bus:  DataCacheMemBus): Stream[CMD] = bus.cmd
+    override def map_rsp(input:  DataCacheMemBus, output:  Stream[RSP]): Unit = {
+      output.ready := True
+      input.rsp.valid := output.valid
+      input.rsp.error := output.payload.error
+      input.rsp.data := output.payload.data
+    }
+
+    override def decodeMissTarget() = {
+      val bus = DataCacheMemBus(p)
+      bus.cmd.ready := True
+      bus.rsp.valid := RegNext(bus.cmd.valid && !bus.cmd.wr) init(False)
+      bus.rsp.error := True
+      bus.rsp.data := 0xDEADBEEFL
+      bus
+    }
+
+    override def map_rsp(input:  DataCacheMemBus, output: DataCacheMemBus): Unit = {
+      input.rsp := output.rsp
+    }
+    override def address(cmd:  CMD): UInt = cmd.address
+    override def rsp_payload(bus:  BUS): RSP = bus.rsp
+
+    override def rsp_required_count(bus : DataCacheMemBus) : UInt = Mux(bus.cmd.wr, 0, 1)
+
+    //
+
+    override def map_rsp_read_error(input: BUS): Unit = {
+      input.rsp.valid := True
       input.rsp.error := True
       input.rsp.data.assignDontCare()
     }

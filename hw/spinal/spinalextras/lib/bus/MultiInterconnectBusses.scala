@@ -17,6 +17,11 @@ import spinalextras.lib.formal.fillins.Wishbone._
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal._
 import spinalextras.lib.misc.StreamFragmentWidthAdapterWithOccupancy
 
+import vexriscv.ip.DataCacheMemBus
+import vexriscv.plugin.IBusSimpleBus
+import vexriscv.ip.InstructionCacheMemBus
+import vexriscv.plugin.DBusSimpleBus
+
 import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
 
@@ -45,11 +50,6 @@ object PipelinedMemoryBusMultiBus {
   MultiInterconnectConnectFactory.AddHandler { case (m: PipelinedMemoryBusMultiBus, s: PipelinedMemoryBusMultiBus) => PipelinedMemoryBusConnectors.direct(m.bus, s.bus)}
 }
 
-
-import vexriscv.plugin.IBusSimpleBus
-import vexriscv.ip.InstructionCacheMemBus
-import vexriscv.plugin.DBusSimpleBus
-
 package object bus {
   implicit class ISimpleBusExt(bus: IBusSimpleBus) extends PipelinedMemoryBusMultiBus(bus.toPipelinedMemoryBus()) {
 
@@ -75,6 +75,30 @@ package object bus {
     override def isValidProducer: Bool = InstructionCacheMemBusInterfaceExtImpl(bus).isProducerValid(bus)
 
     override def isValidConsumer: Bool = InstructionCacheMemBusInterfaceExtImpl(bus).isConsumerValid(bus)
+  }
+
+
+  implicit class DataCacheMemBusExt(val bus: DataCacheMemBus) extends MultiBusInterface {
+    import spinalextras.lib.bus.general._
+    override def toString = bus.toString()
+
+    override def address_width = bus.cmd.address.getWidth
+    override def create_decoder(mappings: Seq[AddressMapping]): Seq[DataCacheMemBusExt] = new Composite(bus) {
+      val decoder = new GeneralBusDecoder(DCacheBusInterfaceExtImpl(bus), mappings)
+      decoder.setWeakName(s"${bus.name}_decoder")
+      decoder.io.input <> bus
+      val outputs = decoder.io.outputs.map(outputBus => DataCacheMemBusExt(bus = outputBus))
+    }.outputs.toSeq
+
+    override def create_arbiter(size:  Int): Seq[DataCacheMemBusExt] = new Composite(bus) {
+      val arbiter = new GeneralBusArbiter(DCacheBusInterfaceExtImpl(bus), size)
+      arbiter.io.output <> bus
+      val inputs = arbiter.io.inputs.map(inputBus => DataCacheMemBusExt(bus = inputBus))
+    }.inputs.toSeq
+
+    override def isValidProducer: Bool = DCacheBusInterfaceExtImpl(bus).isProducerValid(bus)
+
+    override def isValidConsumer: Bool = DCacheBusInterfaceExtImpl(bus).isConsumerValid(bus)
   }
 
   implicit class DBusSimpleBusExt(val bus: DBusSimpleBus) extends MultiBusInterface {
@@ -300,6 +324,28 @@ package object bus {
     }
   }}
 
+  MultiInterconnectConnectFactory.AddHandler { case (m: DataCacheMemBusExt, s: XipBusExt) => new Composite(m.bus, "to_xip") with HasFormalProperties {
+    val wordWidth = (m.bus.cmd.data.getWidth / 8)
+
+    m.bus.cmd.throwWhen(m.bus.cmd.wr).map(c => {
+      val wordShift = log2Up(c.address.getWidth / 8)
+      val cmd = cloneOf(s.bus.cmd.payload)
+      cmd.address := ((c.address >> wordShift) << wordShift).resized //(c.address << log2Up(m.bus.config.dataWidth / 8)).resized
+      cmd.length := wordWidth - 1
+      cmd
+    }) >> s.bus.cmd
+
+    val output = Stream(Fragment(Bits(m.bus.cmd.data.getWidth bits)))
+    val adapater = StreamFragmentWidthAdapterWithOccupancy(s.bus.rsp, output)
+
+    output.ready := True
+    m.bus.rsp.valid := output.valid
+    m.bus.rsp.data := output.payload.fragment
+    m.bus.rsp.error := False
+
+    override protected def formalProperties() = ???
+  }}
+
   MultiInterconnectConnectFactory.AddHandler { case (m: InstructionCacheMemBusExt, s: InstructionCacheMemBusExt) => new Composite(m.bus) {
     m.bus <> s.bus
   }
@@ -376,5 +422,12 @@ package object bus {
     override protected def formalProperties() = new FormalProperties(this) {
       addFormalProperty(new DBusSimpleFormal(m.bus).contract.outstandingReads.asUInt === s.bus.contract.outstandingReads.value, "Oustanding reads match")
     }
+  }}
+
+  MultiInterconnectConnectFactory.AddHandler { case (m: DataCacheMemBusExt, s: PipelinedMemoryBusMultiBus) => new Composite(m.bus, "dbus_to_pmb") with HasFormalProperties {
+    m.bus.toPipelinedMemoryBus() >> s.bus
+    //m.bus.rsp.error := False
+
+    override protected def formalProperties() = ???
   }}
 }

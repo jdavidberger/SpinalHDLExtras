@@ -1,5 +1,6 @@
 package spinalextras.lib.soc.spinex
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import spinal.core.{B, BooleanPimped, ClockDomain, HertzNumber, IntToBuilder, TimeNumber, ifGen, log2Up}
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config, Apb3SlaveFactory}
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactoryNonStopWrite, BusSlaveFactoryOnReadAtAddress, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryRead, BusSlaveFactoryWrite, SizeMapping}
@@ -8,10 +9,11 @@ import spinal.lib.com.uart.{UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemory
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.soc.peripherals.{UartCtrlPlugin, XipFlashPlugin}
 import spinalextras.lib.soc.spinex.plugins.{I2CPlugin, IdentificationPlugin, JTagPlugin, OpenCoresI2CPlugin, TimerPlugin, Uart16550CtrlPlugin}
+import vexriscv.ip.fpu.FpuParameter
 import vexriscv.ip.{DataCacheConfig, InstructionCacheConfig}
 import vexriscv.{VexRiscv, plugin}
 import vexriscv.plugin.CsrAccess.WRITE_ONLY
-import vexriscv.plugin.{BranchPlugin, CsrPlugin, CsrPluginConfig, DBusCachedPlugin, DBusSimplePlugin, DecoderSimplePlugin, ExternalInterruptArrayPlugin, FullBarrelShifterPlugin, HazardSimplePlugin, IBusCachedPlugin, IBusSimplePlugin, IntAluPlugin, LightShifterPlugin, MulDivIterativePlugin, MulPlugin, Plugin, RegFilePlugin, STATIC, SrcPlugin, StaticMemoryTranslatorPlugin, YamlPlugin}
+import vexriscv.plugin.{BranchPlugin, CsrPlugin, CsrPluginConfig, DBusCachedPlugin, DBusSimplePlugin, DecoderSimplePlugin, ExternalInterruptArrayPlugin, FpuPlugin, FullBarrelShifterPlugin, HazardSimplePlugin, IBusCachedPlugin, IBusSimplePlugin, IntAluPlugin, LightShifterPlugin, MulDivIterativePlugin, MulPlugin, Plugin, RegFilePlugin, STATIC, SrcPlugin, StaticMemoryTranslatorPlugin, YamlPlugin}
 
 import java.io.File
 import java.nio.file.Files
@@ -103,6 +105,13 @@ case class SpinexConfig(onChipRamSize      : BigInt,
   }
 
 }
+case class SpinexMulDivOptions(@JsonPropertyDescription("The unroll factor of the multiplication operation. Multiplication will take ~ 32 / unroll_factor cycles. Higher values impose greater timing restrictions. If set to none, a DSP resource is used instead which takes ~1 cycle and fewer gates.")
+                               mulUnrollFactor : Int = 1,
+                               @JsonPropertyDescription("The unroll factor of the division operation. Division will take ~ 32 / unroll_factor cycles. Higher values here impose greater timing restrictions.")
+                               divUnrollFactor : Int = 1
+                              ) {
+
+}
 
 object SpinexConfig{
   val resetVector = 0x20200000
@@ -112,8 +121,8 @@ object SpinexConfig{
     xipConfig = None,//Some(XipFlashPlugin.defaultConfig),
     withI2C = false,
     withUart = true,
-    ram_mapping = SizeMapping(0x40000000l, 0x0004000 Bytes),
-    rom_mapping = SizeMapping(0x20200000, 0x00010000)
+    ram_mapping = SizeMapping(0x40000000L, 0x0004000 Bytes),
+    rom_mapping = SizeMapping(0x20200000L, 0x00010000)
   )
 
   def default : SpinexConfig = default()
@@ -124,9 +133,11 @@ object SpinexConfig{
               withI2C : Boolean = true,
               ram_mapping : SizeMapping = SizeMapping(0x40000000L, 0x00010000 Bytes),
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
-              genMul : Boolean = true,
-              genDiv : Boolean = true,
-              genMulIterative : Boolean = true,
+              mulDivOptions: Option[SpinexMulDivOptions] = Some(SpinexMulDivOptions(
+                1,
+                1
+              )),
+              hwFpu : Option[FpuParameter] = None,
               ram_name : String = "",
               // Takes roughly 200 gates; but is much faster performance. 55 -> 73 c/s
               withFullBarrel : Boolean = false,
@@ -183,17 +194,17 @@ object SpinexConfig{
       )),
       new CsrPlugin(CsrPluginConfig.small(mtvecInit = null).copy(mtvecAccess = WRITE_ONLY,
         ecallGen = true, wfiGenAsNop = true, withPrivilegedDebug = withJtag, xtvecModeGen = false, debugTriggers = 8)),
-
-      (genMul && !genMulIterative) generate new MulPlugin(
+      hwFpu.map(x => new FpuPlugin(p = x)).orNull,
+      mulDivOptions.map(_.mulUnrollFactor == 0 generate new MulPlugin(
         inputBuffer = true,
         outputBuffer = false
-      ),
-      (genMulIterative || genDiv) generate new MulDivIterativePlugin(
-        genMul = genMulIterative,
-        genDiv = genDiv,
-        mulUnrollFactor = 1,
-        divUnrollFactor = 1
-      ),
+      )).orNull,
+      mulDivOptions.map(x => new MulDivIterativePlugin(
+        genMul = x.mulUnrollFactor != 0,
+        genDiv = true,
+        mulUnrollFactor = x.mulUnrollFactor,
+        divUnrollFactor = x.divUnrollFactor
+      )).orNull,
       new DecoderSimplePlugin(
         catchIllegalInstruction = true
       ),
@@ -280,7 +291,6 @@ object SpinexConfig{
               ram_mapping : SizeMapping = SizeMapping(0x40000000l, 0x00010000 Bytes),
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
               ram_name : String = "",
-              withFullBarrel : Boolean = true,
              ) = {
     val plugins : ArrayBuffer[SpinexPlugin] = mutable.ArrayBuffer(
       IdentificationPlugin(registerLocation = 0x3000),
