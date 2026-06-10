@@ -74,7 +74,7 @@ object ClockUtils {
   def makeActiveHighClock(cd: ClockDomain): ClockDomain = {
     cd.config.resetActiveLevel match {
       case HIGH => cd
-      case LOW => cd.copy(reset = cd.isResetActive, config = cd.config.copy(resetActiveLevel = HIGH))
+      case LOW => cd.copy(reset = cd.isResetActive, config = cd.config.copy(resetActiveLevel = HIGH, resetKind = ASYNC))
     }
   }
 }

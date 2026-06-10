@@ -395,23 +395,25 @@ class SpinexWithClock extends Component {
   noIoPrefix()
   withAutoPull()
 
-  val clocks = new ClockSelection(Seq(ClockSpecification(125 MHz), ClockSpecification(70 MHz)))
+  val clocks = new ClockSelection(Seq(ClockSpecification(80 MHz)))//, ClockSpecification(70 MHz)))
   val flashCd = clocks.ClockDomains.head
   val spinexClockDomain = clocks.ClockDomains.last
   //val spinexClockDomain = rst_sync(ClockDomain.current)
 
   var connectionArea = new ClockingArea(clockDomain = spinexClockDomain) {
     val som = Spinex(SpinexConfig.default(flashClockDomain = flashCd))
+  }
 
+  var flashArea = new ClockingArea(clockDomain = flashCd) {
     val counter = Timeout(1 sec)
     val led = RegInit(False)
     when(counter) {
       counter.clear()
       led := ~led
     }
+    io.led := led
   }
 
-  io.led := connectionArea.led
   buildInterconnect(Seq(connectionArea.som), io)
 }
 

@@ -145,7 +145,8 @@ object GenerateSpinex extends IPGenerator_[SpinexSpecification] {
     processRtl(
       options,
       config,
-      () => Spinex(config.toSpinexConfig())
+      () => Spinex(config.toSpinexConfig()),
+      () => Spinex(config.toSpinexConfig()),
     )
   }
 

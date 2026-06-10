@@ -17,14 +17,14 @@ case class SpinexSim(memoryFile : String = "") extends Component {
 
   GSR.no_op()
 
-  val oscd = new OSCD(OSCDConfig.create(ClockSpecification(80 MHz)))
+  val oscd = new OSCD(OSCDConfig.create(ClockSpecification(60 MHz)))
   ClockDomain.push(oscd.hf_clk().get.withBootReset())
 
-  val clocks = new ClockSelection(Seq(ClockSpecification(75 MHz)))
-  val spinexClockDomain = clocks.ClockDomains.last
+  val (locks, clocks) = ClockSelection(Seq(ClockSpecification(70 MHz), ClockSpecification(133 MHz)))
+  val spinexClockDomain = clocks.head
 
   var connectionArea = new ClockingArea(clockDomain = spinexClockDomain) {
-    val som = Spinex(SpinexConfig.default)
+    val som = Spinex(SpinexConfig.default(flashClockDomain = clocks.last))
     val flash = new W25Q128JVxIM_quad(memoryFile)
 
     val flashPlugin = som.getPlugin[XipFlashPlugin].get
@@ -60,6 +60,15 @@ object SpinexSim {
     if(args.contains("--lattice-lifcl")) {
       config = config.copy(device = Device("lattice", "lifcl"))
     }
-    config.generateSystemVerilog(SpinexSim(args(0)))
+    var filename = args(0)
+    if (filename.endsWith("bin")) {
+      import scala.sys.process._
+      val del = "\""
+      println((s"hexdump -ve '1/1 ${del}%02x${del} ${del}\\n${del}' ${filename} > ${filename}.hex"))
+      Seq("bash", "-c", (s"hexdump -ve '1/1 ${del}%02x${del} ${del}\\n${del}' ${filename} > ${filename}.hex")).!
+      filename = filename + ".hex"
+    }
+
+    config.generateSystemVerilog(SpinexSim(filename))
   }
 }

@@ -17,7 +17,7 @@ object XipFlashPlugin {
         dataWidth = 4,
         ioRate = 1,
         ssWidth = 1))
-      .addFullDuplex(id = 0)
+      .addFullDuplex(id = 0, rate = 1, ddr = false)
       .addHalfDuplex(id = 1, rate = 1, ddr = false, spiWidth = 4, lateSampling = false),
     cmdFifoDepth = 32,
     rspFifoDepth = 32,
@@ -25,12 +25,14 @@ object XipFlashPlugin {
 
     modInit = 0,
     xipInstructionModInit = 0,
-    xipAddressModInit  = 0,
-    xipDummyModInit  = 0,
+    xipAddressModInit  = 1,
+    xipDummyModInit  = 1,
     xipPayloadModInit  = 1,
-    xipInstructionDataInit = 0x6B,
-    xipDummyDataInit = 0xa5,
+    //xipInstructionDataInit = 0x6B,
+    xipInstructionDataInit = 0xeb,
 
+    xipDummyDataInit = 0xFF,
+    xipDummyCountInit = 2,
     //xipConfigWritable = false,
 
     xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 5)
@@ -39,7 +41,7 @@ object XipFlashPlugin {
 case class XipFlashPlugin(config: MemoryMappingParameters = XipFlashPlugin.defaultConfig,
                           memoryMapping : SizeMapping = SizeMapping(0x20000000L, 0x01000000),
                           registerMapping : SizeMapping = SizeMapping(0x01000, 1 KiB),
-                          clockDomain : ClockDomain = ClockDomain.current,
+                          var clockDomain : ClockDomain = ClockDomain.current,
                           name : String = "spiflash") extends SpinexPlugin {
 
   lazy val spiflash_clk = out(Bool())
@@ -52,6 +54,9 @@ case class XipFlashPlugin(config: MemoryMappingParameters = XipFlashPlugin.defau
     som.io.valCallbackRec(spiflash_clk, s"${name}_clk")
     som.io.valCallbackRec(spiflash_cs_n, s"${name}_cs_n")
     som.io.valCallbackRec(spiflash_dq, s"${name}_dq")
+    if (clockDomain == null) {
+      clockDomain = ClockDomain.current
+    }
 
     val clockArea = new ClockingArea(if (clockDomain == null) ClockDomain.current else clockDomain) {
       val ctrl = Apb3SpiXdrMasterCtrl(config)
@@ -77,13 +82,13 @@ case class XipFlashPlugin(config: MemoryMappingParameters = XipFlashPlugin.defau
       val ref_xip = clockArea.ctrl.io.xip
       val cc_xip = new XipBus(ref_xip.p)
       cc_xip.cmd.queue(4, systemClockDomain, flashClockDomain) >> ref_xip.cmd
-      ref_xip.rsp.ccToggle(flashClockDomain, systemClockDomain) >> cc_xip.rsp
+      ref_xip.rsp.queue(4, flashClockDomain, systemClockDomain) >> cc_xip.rsp
       cc_xip
     }
     som.add_slave(xip, "xip", memoryMapping, "iBus", "dBus")
 
     Constraints.create_clock(spiflash_clk, clockDomain.frequency.getValue)
-    Constraints.set_max_skew(0.1 ns, spiflash_clk, spiflash_cs_n, spiflash_dq)
+    Constraints.set_max_skew(1 ns, spiflash_clk, spiflash_cs_n, spiflash_dq)
 
     def spread(d: Data) = {
       (0 to d.getBitsWidth).map(idx => s"${d.getRtlPath()}[${idx}]").mkString(" ")
