@@ -11,7 +11,7 @@ import com.kjetland.jackson.jsonSchema.{JsonSchemaConfig, JsonSchemaGenerator}
 import spinal.core
 import spinal.core._
 import spinal.lib.KeepAttribute
-import spinalextras.lib.Config
+import spinalextras.lib.{Config, Constraints}
 import spinalextras.lib.mipi.GenerateByte2Pixel
 import spinalextras.lib.misc.{HertzDeserializer, Obfuscater, TimeNumberDeserializer}
 import spinalextras.lib.soc.spinex.Spinex
@@ -29,7 +29,7 @@ case class IPGeneratorOptions(device: Device = Device(vendor = "lattice", family
                               yosys_cmd : String = "yosys",
                               yosys_opt : Boolean = true,
                               generate_sim: Boolean = false) {
-
+  def sanitized_instance_name = instance_name.replace(" ", "_")
 }
 
 abstract class IPGenerator {
@@ -160,11 +160,12 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
   }
 
   def processConfig(instance_name : String, config : CFG) : Unit = {
+    val sanitized_nanme = instance_name.replace(" ", "_")
     val options = IPGeneratorOptions(
       device = Device(vendor = "lattice", family = "lifcl"),
-      obfuscate = false,
-      instance_name = instance_name,
-      output_dir = f"hw/gen/${instance_name}",
+      obfuscate = true,
+      instance_name = sanitized_nanme,
+      output_dir = f"hw/gen/${sanitized_nanme}",
       generate_sim = false,
       yosys_opt = true
     )
@@ -188,10 +189,11 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
       {
         val top = dut().noIoPrefix()
         if (options.instance_name.nonEmpty)
-          top.setDefinitionName(options.instance_name)
+          top.setDefinitionName(options.sanitized_instance_name)
         top.noIoPrefix()
         if (options.obfuscate) {
           Obfuscater(top)
+          Constraints.keep_key_heirarchy(top)
         }
 
         top.getAllIo.foreach(w => {
@@ -257,7 +259,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
 
     if(simDut != null && options.generate_sim) {
       config.generateVerilog({
-        val top = simDut().setDefinitionName(options.instance_name).noIoPrefix()
+        val top = simDut().setDefinitionName(options.sanitized_instance_name).noIoPrefix()
         top.noIoPrefix()
         if (options.obfuscate) {
           Obfuscater(top)
