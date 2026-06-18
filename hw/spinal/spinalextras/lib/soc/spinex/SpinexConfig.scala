@@ -106,7 +106,7 @@ case class SpinexConfig(onChipRamSize      : BigInt,
 
 }
 case class SpinexMulDivOptions(@JsonPropertyDescription("The unroll factor of the multiplication operation. Multiplication will take ~ 32 / unroll_factor cycles. Higher values impose greater timing restrictions. If set to none, a DSP resource is used instead which takes ~1 cycle and fewer gates.")
-                               mulUnrollFactor : Int = 1,
+                               mulUnrollFactor : Option[BigInt] = Some(1),
                                @JsonPropertyDescription("The unroll factor of the division operation. Division will take ~ 32 / unroll_factor cycles. Higher values here impose greater timing restrictions.")
                                divUnrollFactor : Int = 1
                               ) {
@@ -134,7 +134,7 @@ object SpinexConfig{
               ram_mapping : SizeMapping = SizeMapping(0x40000000L, 0x00010000 Bytes),
               rom_mapping : SizeMapping = SizeMapping(0x20000000L, 0x00010000),
               mulDivOptions: Option[SpinexMulDivOptions] = Some(SpinexMulDivOptions(
-                1,
+                Some(1),
                 1
               )),
               hwFpu : Option[FpuParameter] = None,
@@ -202,7 +202,7 @@ object SpinexConfig{
       mulDivOptions.map(x => new MulDivIterativePlugin(
         genMul = x.mulUnrollFactor != 0,
         genDiv = true,
-        mulUnrollFactor = x.mulUnrollFactor,
+        mulUnrollFactor = x.mulUnrollFactor.map(_.toInt).getOrElse(0),
         divUnrollFactor = x.divUnrollFactor
       )).orNull,
       new DecoderSimplePlugin(

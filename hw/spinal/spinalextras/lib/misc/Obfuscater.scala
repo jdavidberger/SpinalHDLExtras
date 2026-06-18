@@ -31,8 +31,12 @@ class Obfuscater() {
     _id
   }
 
+  def signalPrefix() : String = {
+    "zzz_"
+  }
+
   def nextName() : String = {
-    s"s${gprefix}_${id}"
+    s"${signalPrefix()}${gprefix}_${id}"
   }
 
   def shouldExclude(n : Nameable): Boolean = {

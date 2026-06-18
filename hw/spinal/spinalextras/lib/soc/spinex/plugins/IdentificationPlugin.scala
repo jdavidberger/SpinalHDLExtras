@@ -52,6 +52,22 @@ object IdentificationPlugin {
     }
   }
 
+  def getGitVersion(): String = {
+    import scala.sys.process._
+    try {
+      "git describe --tags --always".!!.trim
+    } catch {
+      case _: Exception => {
+        val version = System.getenv ("SPINALHDLEXTRAS_VERSION_TAG")
+        if (version == null) {
+          ""
+        } else {
+          version
+        }
+      }
+    }
+  }
+
   // Helper to get build timestamp
   def getBuildTimestamp(): BigInt = {
     BigInt(System.currentTimeMillis() / 1000) // Unix timestamp

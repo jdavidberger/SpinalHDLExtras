@@ -32,21 +32,48 @@ case class SlavePeripheral (
 
 }
 
+case class SpinexFpuParameter( withDouble : Boolean = true,
+                         asyncRegFile : Boolean = false,
+                         mulWidthA : Int = 18,
+                         mulWidthB : Int = 18,
+                         schedulerM2sPipe : Boolean = false,
+                         sim : Boolean = false,
+                         withAdd : Boolean = true,
+                         withMul : Boolean = true,
+                         withDivSqrt : Boolean = false,
+                         withDiv : Boolean = true,
+                         withSqrt : Boolean = true,
+                         withShortPipMisc : Boolean = true) {
+  def apply() : FpuParameter = {
+    new FpuParameter(withDouble, asyncRegFile, mulWidthA, mulWidthB, schedulerM2sPipe, sim, withAdd, withMul, withDivSqrt, withDiv, withSqrt, withShortPipMisc)
+  }
+}
+
+case class SpinexCacheConfig( cacheSize : Int = 2048,
+                              bytePerLine : Int = 32,
+                              wayCount : Int = 1,
+                              catchIllegalAccess : Boolean = true,
+                              catchAccessFault : Boolean = true,
+                              asyncTagMemory : Boolean = false) {
+
+}
+
 case class SpinexPerformanceOptions(
-                                   useIcache : Boolean = true,
-                                   useDcache : Boolean = false,
+                                   iCache : Option[SpinexCacheConfig] = Some(SpinexCacheConfig()),
+                                   dCache : Option[SpinexCacheConfig] = None,
                                     @JsonPropertyDescription("If set to none, HW mul/div will not be supported and will require SW support.")
                                     hwMulDiv : Option[SpinexMulDivOptions] = Some(
                                       SpinexMulDivOptions()
                                     ),
-                                    hwFpu : Option[FpuParameter] = None,
+                                    hwFpu : Option[SpinexFpuParameter] = None,
                                     @JsonPropertyDescription("Whether or not to implement a faster shift operation. The full barrel option costs ~200 gates for a ~20 coremark/sec gain.")
                                     withFullBarrel : Boolean = false,
                                    ) {
 
 }
 
-case class SpinexSpecification(frequency: HertzNumber = 75 MHz,
+case class SpinexSpecification(@JsonPropertyDescription("The target CPU clock. This is also the default clock for peripheral busses")
+                               frequency: HertzNumber = 75 MHz,
                                @JsonPropertyDescription("Clock speed to run the SPI flash at. Defaults to the CPU clock. Higher values are possible for faster instruction access at the cost of an additional clock generated and additional gates used for a cross clock FIFO")
                                val spiflashClock: Option[ClockSpecification] = None,
                                onChipRamSize: BigInt = 0x10000,
@@ -84,32 +111,33 @@ case class SpinexSpecification(frequency: HertzNumber = 75 MHz,
       withUart = withUart,
       withI2C = withI2C,
       mulDivOptions = performanceOptions.hwMulDiv,
-      dcacheConfig = if (performanceOptions.useDcache) Some(DataCacheConfig(
-        cacheSize = 2048,
-        bytePerLine = 32,
-        wayCount = 1,
+      dcacheConfig = performanceOptions.dCache.map(cfg => (DataCacheConfig(
+        cacheSize = cfg.cacheSize,
+        bytePerLine = cfg.bytePerLine,
+        wayCount = cfg.wayCount,
         addressWidth = 32,
         cpuDataWidth = 32,
         memDataWidth = 32,
-        catchAccessError = true,
-        catchIllegal = true,
+        catchAccessError = cfg.catchAccessFault,
+        catchIllegal = cfg.catchIllegalAccess,
+        asyncTagMemory = cfg.asyncTagMemory,
         catchUnaligned = true
-      )) else None,
-      icacheConfig = if (performanceOptions.useIcache) Some(InstructionCacheConfig(
-        cacheSize = 2048,
-        bytePerLine = 32,
-        wayCount = 1,
+      ))),
+      icacheConfig = performanceOptions.iCache.map(cfg => InstructionCacheConfig(
+        cacheSize = cfg.cacheSize,
+        bytePerLine = cfg.bytePerLine,
+        wayCount = cfg.wayCount,
         addressWidth = 32,
         cpuDataWidth = 32,
         memDataWidth = 32,
-        catchIllegalAccess = true,
-        catchAccessFault = true,
-        asyncTagMemory = false,
+        catchIllegalAccess = cfg.catchIllegalAccess,
+        catchAccessFault = cfg.catchAccessFault,
+        asyncTagMemory = cfg.asyncTagMemory,
         twoCycleRam = true,
         twoCycleCache = true
-      )) else None,
+      )),
       withFullBarrel = performanceOptions.withFullBarrel,
-      hwFpu = performanceOptions.hwFpu
+      hwFpu = performanceOptions.hwFpu.map(_())
     ).copy(
       onChipRamSize = onChipRamSize,
       pipelineDBus = pipelineDBus,

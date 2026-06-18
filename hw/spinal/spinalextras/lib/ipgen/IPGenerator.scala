@@ -140,7 +140,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
   def SpinalConfig(options: IPGeneratorOptions, cfg : CFG): SpinalConfig = {
     Config.spinal.copy(
       device = options.device,
-      targetDirectory = options.output_dir + "/" + options.instance_name,
+      targetDirectory = options.output_dir,
       defaultClockDomainFrequency = defaultClockDomainFrequency(cfg),
       defaultConfigForClockDomains = ClockDomainConfig(
         resetActiveLevel = LOW,
@@ -164,7 +164,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
       device = Device(vendor = "lattice", family = "lifcl"),
       obfuscate = false,
       instance_name = instance_name,
-      output_dir = f"hw/gen/",
+      output_dir = f"hw/gen/${instance_name}",
       generate_sim = false,
       yosys_opt = true
     )
@@ -235,7 +235,6 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
           |peepopt
           |wreduce
           |opt -full
-          |${if (options.obfuscate) "rename -hide" else ""}
           |check
           |write_verilog -decimal ${if (options.obfuscate) "-noattr" else ""} ${report.globalData.config.targetDirectory}/${report.toplevelName}.v
           |""".stripMargin

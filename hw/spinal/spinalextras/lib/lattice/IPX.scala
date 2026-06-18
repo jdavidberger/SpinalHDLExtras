@@ -2,8 +2,10 @@ package spinalextras.lib.lattice
 import scala.io.Source
 import spinal.core._
 import spinalextras.lib.Constraints
+import spinalextras.lib.soc.spinex.plugins.IdentificationPlugin
 
 import java.io.{File, PrintWriter}
+import java.util.Calendar
 
 object IPX {
   def generate_ipx[T <: Component](report : SpinalReport[T]): Unit = {
@@ -12,7 +14,7 @@ object IPX {
 
     file.write(
       s"""<?xml version="1.0" ?>
-        |<RadiantModule generator="ipgen" module="custom" name="${report.toplevelName}" source_format="Verilog" >
+        |<RadiantModule generator="ipgen" module="${report.toplevel.definitionName}" name="${report.toplevelName}" source_format="Verilog" version="${IdentificationPlugin.getGitVersion()}" date="${Calendar.getInstance().getTime}">
         | <Package>
         |""".stripMargin)
 
