@@ -195,14 +195,14 @@ object SpinexConfig{
       new CsrPlugin(CsrPluginConfig.small(mtvecInit = null).copy(mtvecAccess = WRITE_ONLY,
         ecallGen = true, wfiGenAsNop = true, withPrivilegedDebug = withJtag, xtvecModeGen = false, debugTriggers = 8)),
       hwFpu.map(x => new FpuPlugin(p = x)).orNull,
-      mulDivOptions.map(_.mulUnrollFactor == 0 generate new MulPlugin(
+      mulDivOptions.map(_.mulUnrollFactor.getOrElse(0) == 0 generate new MulPlugin(
         inputBuffer = true,
         outputBuffer = false
       )).orNull,
       mulDivOptions.map(x => new MulDivIterativePlugin(
-        genMul = x.mulUnrollFactor != 0,
+        genMul = x.mulUnrollFactor.getOrElse(0) != 0,
         genDiv = true,
-        mulUnrollFactor = x.mulUnrollFactor.map(_.toInt).getOrElse(0),
+        mulUnrollFactor = x.mulUnrollFactor.map(_.toInt).getOrElse(1),
         divUnrollFactor = x.divUnrollFactor
       )).orNull,
       new DecoderSimplePlugin(

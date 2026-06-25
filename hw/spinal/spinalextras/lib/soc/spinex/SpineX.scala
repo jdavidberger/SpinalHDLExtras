@@ -234,6 +234,19 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     )
 
     new DeviceTreeProvider(0, 0) {
+      override def entryName: String = "clocks/cpu_clock"
+
+      override def compatible: Seq[String] = Seq(s"fixed-clock")
+
+      override def appendDeviceTree(dt: DeviceTree): Unit = {
+        super.appendDeviceTree(dt)
+
+        dt.addEntry(s"clock-frequency = <${systemClockDomain.frequency.getValue.toDouble.round.toInt}>;", baseEntryPath: _*)
+        dt.addEntry("#clock-cells = < 0x0 >;", baseEntryPath: _* )
+      }
+    }
+
+    new DeviceTreeProvider(0, 0) {
       override def entryName: String = "spinex_irqs"
 
       override def compatible: Seq[String] = Seq(s"spinex,irqs")
