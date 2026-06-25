@@ -169,7 +169,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
 
     val fileName = Paths.get(filePath).getFileName.toString.split('.').head
-    processConfig(options.copy(instance_name = if (options.instance_name.isEmpty) fileName else options.instance_name ), config)
+    processConfig(options.copy(instance_name = if (options.instance_name.isEmpty) fileName else options.instance_name), config)
   }
 
   def processConfig(instance_name : String, config : CFG) : Unit = {

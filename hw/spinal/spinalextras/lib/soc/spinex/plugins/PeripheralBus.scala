@@ -68,7 +68,7 @@ case class PeripheralBus(name : String, mapping : SizeMapping,
   lazy val bus = busType match {
     case BusType.Wishbone =>
       new WishboneMultiBusInterface(
-        master(new Wishbone(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE)))
+        master(new Wishbone(WishboneConfig(32, 32, addressGranularity = AddressGranularity.BYTE, useERR = true)))
       )
     case BusType.PipelinedMemoryBus =>
       new PipelinedMemoryBusMultiBus(
