@@ -19,9 +19,10 @@ import spinalextras.lib.misc.AutoInterconnect.buildInterconnect
 import spinalextras.lib.misc.ClockSpecification
 import spinalextras.lib.soc.{DeviceTree, DeviceTreeProvider}
 import spinalextras.lib.soc.spinex.plugins.{EventLoggerPlugin, JTagPlugin}
+import vexriscv.Riscv.{CSRRW, DIV, FENCE_I, MULH}
 import vexriscv.ip.{DataCacheMemBus, InstructionCacheMemBus}
-import vexriscv.plugin.{CsrPlugin, DBusCachedPlugin, DBusSimpleBus, DBusSimplePlugin, DebugPlugin, EmbeddedRiscvJtag, ExternalInterruptArrayPlugin, FpuPlugin, IBusCachedPlugin, IBusSimpleBus, IBusSimplePlugin}
-import vexriscv.{ExceptionCause, VexRiscv, VexRiscvConfig}
+import vexriscv.plugin.{CsrPlugin, DBusCachedPlugin, DBusSimpleBus, DBusSimplePlugin, DebugPlugin, DecoderSimplePlugin, EmbeddedRiscvJtag, ExternalInterruptArrayPlugin, FpuPlugin, IBusCachedPlugin, IBusSimpleBus, IBusSimplePlugin, MulDivIterativePlugin, MulPlugin}
+import vexriscv.{DecoderService, ExceptionCause, VexRiscv, VexRiscvConfig}
 
 import java.nio.file.{Files, StandardCopyOption}
 import scala.collection.mutable
@@ -234,7 +235,8 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     )
 
     new DeviceTreeProvider(0, 0) {
-      override def entryName: String = "clocks/cpu_clock"
+      override def baseEntryPath = Seq("/", "clocks", "cpu_clock: cpu_clock")
+      override def entryName: String = "cpu_clock"
 
       override def compatible: Seq[String] = Seq(s"fixed-clock")
 
@@ -243,6 +245,48 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
 
         dt.addEntry(s"clock-frequency = <${systemClockDomain.frequency.getValue.toDouble.round.toInt}>;", baseEntryPath: _*)
         dt.addEntry("#clock-cells = < 0x0 >;", baseEntryPath: _* )
+      }
+    }
+
+    new DeviceTreeProvider() {
+      override def entryName = s"/soc/cpus/cpu0: cpu"
+
+      override def compatible : Seq[String] = Seq("tinyvision,vexriscv-standard", "riscv")
+
+      def isa = {
+        val decoderService = cpu.service(classOf[DecoderSimplePlugin])
+        val has_math = decoderService.encodings.exists(_._1 == DIV) && decoderService.encodings.exists(_._1 == MULH)
+        val has_fencei = decoderService.encodings.exists(_._1 == FENCE_I)
+        val has_csr = decoderService.encodings.exists(_._1 == CSRRW)
+
+        "rv32" + Seq((has_math, "im"), (has_csr, "zicsr"), (has_fencei, "zifencei")).filter(_._1).map(_._2).mkString("_")
+      }
+
+      override def appendDeviceTree(dt : DeviceTree): Unit = {
+        super.appendDeviceTree(dt)
+
+        dt.addEntry("clocks = < &cpu_clock >;", this.baseEntryPath: _*)
+        dt.addEntry("device_type = \"cpu\";", this.baseEntryPath: _*)
+        dt.addEntry("riscv,isa = \"" + isa + "\";", this.baseEntryPath: _*)
+      }
+    }
+
+    new DeviceTreeProvider(0xbc0) {
+      override def entryName = s"/soc/intc0: interrupt-controller"
+
+      override def compatible : Seq[String] = Seq("litex,vexriscv-intc0")
+      override def regs: Seq[(String, SizeMapping)] = super.regs ++
+        Seq(
+          ("irq_mask", SizeMapping(0, 4)),
+          ("irq_pending", SizeMapping(0xfc0 - 0xbc0, 4)),
+        )
+
+      override def appendDeviceTree(dt : DeviceTree): Unit = {
+        super.appendDeviceTree(dt)
+
+        dt.addEntry("interrupt-controller;", this.baseEntryPath: _*)
+        dt.addEntry("riscv,max-priority = <7>;", this.baseEntryPath: _*)
+        dt.addEntry("#interrupt-cells = <2>;", this.baseEntryPath: _*)
       }
     }
 
@@ -255,8 +299,9 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
         super.appendDeviceTree(dt)
 
         val sortedInterruptInfos = interruptInfos.toSeq.sortBy(_._1)
-        dt.addEntry(s"interrupts = <${sortedInterruptInfos.map(_._1).mkString(" ")}>;", baseEntryPath: _*)
+        dt.addEntry(s"interrupts = <${sortedInterruptInfos.map(x => s"${x._1} 0").mkString(" ")}>;", baseEntryPath: _*)
         dt.addEntry(s"interrupts-names = ${sortedInterruptInfos.map(n => '"' + n._2.name + '"').mkString(",\n                   ")};", baseEntryPath: _*)
+        dt.addEntry(s"interrupt-parent = <&intc0>;", baseEntryPath: _*)
       }
     }
 

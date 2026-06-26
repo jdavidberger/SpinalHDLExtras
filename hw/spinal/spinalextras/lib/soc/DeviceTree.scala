@@ -13,19 +13,42 @@ class DeviceTree {
     str.split("\n").map((" " * (tabs*3) + _)).mkString("\n")
   }
   case class TreeNode(children: mutable.HashMap[String, TreeNode] = new mutable.HashMap[String, TreeNode](),
-                      values: mutable.ArrayBuffer[String] = new ArrayBuffer[String]()) {
+                      values: mutable.ArrayBuffer[String] = new ArrayBuffer[String](),
+                      parent: TreeNode = null
+                     ) {
     def addValue(path: Seq[String], value: String): Unit = {
       if (path.isEmpty) {
         values.append(value)
       } else {
-        children.getOrElseUpdate(path.head, new TreeNode()).addValue(path.drop(1), value)
+        children.getOrElseUpdate(path.head, new TreeNode(parent = this)).addValue(path.drop(1), value)
       }
     }
 
+    def cells_size() : (String, String) = {
+      val default_cell_size = if (parent == null) {
+        ("#address-cells = < 0x1 >;", "#size-cells = < 0x1 >;")
+      } else parent.cells_size()
+
+      (
+        values.find(_.startsWith("#address-cells")).getOrElse(default_cell_size._1),
+        values.find(_.startsWith("#size-cells")).getOrElse(default_cell_size._2)
+      )
+    }
+    private def hasReg = {
+      this.values.exists(_.startsWith("reg "))
+    }
+
     def str(tabs: Int = 0): String = {
-      indent((values.map(x => {
-        x
-      }) ++
+      val sizes = this.cells_size()
+
+      val has_reg_children = this.children.exists(_._2.hasReg)
+
+      val filtered_values = {
+        if (!has_reg_children) values else
+        Seq(sizes._1, sizes._2) ++ this.values.filterNot(v => v.startsWith("#address-cells") || v.startsWith("#size-cells"))
+      }
+
+      indent((filtered_values ++
         children.map(x => {
           f"""|${x._1} {
               |${x._2.str(tabs + 1)}
@@ -75,7 +98,12 @@ abstract class DeviceTreeProvider(val regBase : BigInt = 0, val regSize : Long =
     if(isOverride) {
       Seq(entryName)
     } else {
-      Seq("/", f"${entryName}@${regBase.toString(16)}")
+      val entryPath = entryName.split("/").filter(_.nonEmpty)
+      val name = if(regBase == 0)
+        entryPath.last
+      else
+        f"${entryPath.last}@${regBase.toString(16)}"
+      Seq("/") ++ entryPath.dropRight(1) ++ Seq(name)
     }
   }
   def compatible : Seq[String] = {
@@ -92,8 +120,6 @@ abstract class DeviceTreeProvider(val regBase : BigInt = 0, val regSize : Long =
           baseEntryPath: _*)
       }
       dt.addEntry("""status = "okay";""", baseEntryPath: _*)
-      dt.addEntry("#address-cells = <1>;", baseEntryPath: _*)
-      dt.addEntry("#size-cells = <0>;", baseEntryPath: _*)
     }
 
     if (regBase != 0) {
@@ -114,9 +140,11 @@ class BusIfDeviceTreeProvider(busIf : BusIf) extends DeviceTreeProvider(
   busIf.orderdRegInsts.head.addr,
   (busIf.orderdRegInsts.last.addr - busIf.orderdRegInsts.head.addr).toInt
 ) {
+  private val busInterfaceName : String = busIf.name
+
   override def compatible : Seq[String] = Seq(s"spinex,reg-file")
 
-  override def entryName: String = busIf.name
+  override def entryName: String = busInterfaceName
 
   override def appendDeviceTree(dt: DeviceTree): Unit = {
     super.appendDeviceTree(dt)

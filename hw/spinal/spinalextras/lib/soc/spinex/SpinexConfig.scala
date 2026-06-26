@@ -28,9 +28,12 @@ trait SpinexPlugin {
 abstract class SpinexRegisterFilePlugin(path : String, mapping : SizeMapping) extends DeviceTreeProvider(mapping.base) with SpinexPlugin {
   override def compatible : Seq[String] = Seq(s"spinex,${entryName}")
 
-  override def baseEntryPath: Seq[String] = Seq("/") ++ path.split('/').filter(_.nonEmpty)
+  override def baseEntryPath: Seq[String] = {
+    val filtered_path = path.split('/').filter(_.nonEmpty)
+    Seq("/") ++ filtered_path.dropRight(1) ++ Seq(entryName)
+  }
 
-  override def entryName: String = path.split('/').last
+  override def entryName: String = path.split('/').last + s"@${mapping.base.toString(16)}"
 
   override def regs : Seq[(String, SizeMapping)] = Seq(("base" -> SizeMapping(0, mapping.size)))
 }

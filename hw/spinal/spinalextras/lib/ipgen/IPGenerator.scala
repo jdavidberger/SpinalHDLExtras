@@ -30,6 +30,16 @@ case class IPGeneratorOptions(device: Device = Device(vendor = "lattice", family
                               yosys_opt : Boolean = true,
                               generate_sim: Boolean = false) {
   def sanitized_instance_name = instance_name.replace(" ", "_")
+
+  def with_defaults(instance_name_hint : String) : IPGeneratorOptions = {
+    val this_instance_name = if (instance_name.isEmpty) instance_name_hint else instance_name
+    val sanitized_nanme = this_instance_name.replace(" ", "_")
+
+    copy(
+      instance_name = sanitized_nanme,
+      output_dir = f"hw/gen/${sanitized_nanme}",
+    )
+  }
 }
 
 abstract class IPGenerator {
@@ -37,6 +47,7 @@ abstract class IPGenerator {
   def Name : String
   def SaveSchema(fn : String)
   def SaveDefaultJson(fn : String)
+  def ProcessFile(filePath : String) : Unit
   def ProcessFile(options : IPGeneratorOptions, filePath : String) : Unit
   def Description : String = ""
   def Labels: Seq[String] = Seq()
@@ -156,7 +167,9 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     val reader = new FileReader(filePath)
     val mapper = if (filePath.endsWith(".yml")) yaml_mapper else json_mapper
     val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
-    processConfig(options, config)
+
+    val fileName = Paths.get(filePath).getFileName.toString.split('.').head
+    processConfig(options.copy(instance_name = if (options.instance_name.isEmpty) fileName else options.instance_name ), config)
   }
 
   def processConfig(instance_name : String, config : CFG) : Unit = {
@@ -173,12 +186,35 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     processConfig(options, config)
   }
 
-  def ProcessFile(filePath : String) : Unit = {
-    val reader = new FileReader(filePath)
+  override def ProcessFile(filePath : String) : Unit = {
+    var reader = new FileReader(filePath)
     val mapper = if (filePath.endsWith(".yml")) yaml_mapper else json_mapper
-    val config: CFG = mapper.readValue(reader, classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]])
+    val fileName = Paths.get(filePath).getFileName.toString.split('.').head
 
-    processConfig(Paths.get(filePath).getFileName.toString.split('.').head, config)
+    val root = mapper.readTree(reader)
+    val cfgClassTag = classTag[CFG].runtimeClass.asInstanceOf[Class[CFG]]
+    try {
+      val options = mapper.treeToValue(
+        root.get("options"),
+        classOf[IPGeneratorOptions]
+      ).with_defaults(fileName)
+
+      val config = mapper.treeToValue(
+        root.get("config"),
+        cfgClassTag
+      )
+
+      processConfig(options, config)
+    } catch {
+      case ex : Exception => {
+        reader = new FileReader(filePath)
+        val config: CFG = mapper.treeToValue(
+          root,
+          cfgClassTag
+        )
+        processConfig(Paths.get(filePath).getFileName.toString.split('.').head, config)
+      }
+    }
   }
 
   def processRtl(options : IPGeneratorOptions, cfg: CFG, dut : () => Component, simDut : () => Component = null): Unit = {
@@ -318,15 +354,33 @@ object IPGenerator {
           gen.SaveDefaultJson(f"${dir}/${name}.example.json")
         }
       } else {
-        val options = IPGeneratorOptions.Load(args(0))
+        val reader = new FileReader(args(0))
+        val mapper = new ObjectMapper(new YAMLFactory())
+        mapper.registerModule(DefaultScalaModule)
+        val loaded_file = mapper.readValue(reader, classOf[Map[String, Any]])
 
-        KnownGenerators.get(options.schema_name) match {
-          case Some(g) => {
-            val gen = g()
-            gen.ProcessFile(options = options, filePath = args(1))
+
+        val (options, schema_name) = loaded_file.get("options").map {
+          case s : Map[String, Any] => {
+            (None, s.get("schema_name").asInstanceOf[Option[String]].get)
           }
+        }.getOrElse({
+          val options = IPGeneratorOptions.Load(args(0))
+          (Some(options), options.schema_name)
+        })
+
+
+        KnownGenerators.get(schema_name) match {
+          case Some(g) =>
+            val gen = g()
+            options match {
+              case Some(o) =>
+                gen.ProcessFile(options = o, filePath = args(1))
+              case None =>
+                gen.ProcessFile(filePath = args(0))
+            }
           case None => {
-            System.err.println(f"Could not find generator with name ${options.schema_name}")
+            System.err.println(f"Could not find generator with name ${schema_name}")
             for ((name, gen_factory) <- KnownGenerators) {
               System.err.println(f"- ${name}")
             }
