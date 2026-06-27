@@ -59,8 +59,6 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
     clockDomains = clockDomains.patch(outputClocksRefIdx, Seq(currentClockDomainWithPLLReset), 0)
   }
 
-  val actualMhzLabels = clockDomains.map(cd => (cd.frequency.getValue.toDouble / 1e6).round.toInt)
-
   for (out_idx <- outputClocks.indices) {
     val cd = clockDomains(out_idx)
 
@@ -68,14 +66,19 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
       if (out_idx == 0 && bootstrap) dcs_out.readClockWire else cd.readClockWire
     }
 
-    val mhz = actualMhzLabels(out_idx)
-    val name = if (actualMhzLabels.count(_ == mhz) > 1) s"${mhz}mhz_$out_idx" else s"${mhz}mhz"
+    val mhz = (cd.frequency.getValue.toDouble / 1e6)
+
+    var name = f"$mhz%.2f"
+    while(name.last == '0' || name.last == '.') {
+      name = name.dropRight(1)
+    }
+    name = name.replace(".", "p") + "mhz"
     io.resets(out_idx) := {
       if(out_idx == 0 && bootstrap) reset else cd.isResetActive
     }.setName(s"rst_sync_${name}", weak = true)
 
-    io.clks(out_idx).setPartialName(s"clk_${name}")
-    io.resets(out_idx).setPartialName(s"clk_${name}_reset")
+    io.clks(out_idx).setPartialName(s"clk_${name}", weak = true)
+    io.resets(out_idx).setPartialName(s"clk_${name}_reset", weak = true)
   }
 
   lazy val ClockDomains = clockDomains

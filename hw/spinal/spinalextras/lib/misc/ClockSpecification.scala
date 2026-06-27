@@ -1,11 +1,13 @@
 package spinalextras.lib.misc
 
-import com.fasterxml.jackson.core.{JsonParser, TreeNode}
-import com.fasterxml.jackson.databind.DeserializationContext
+import com.fasterxml.jackson.core.{JsonGenerator, JsonParser, TreeNode}
+import com.fasterxml.jackson.databind.{DeserializationContext, SerializerProvider}
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.databind.ser.std.StdSerializer
 import spinal.core.ClockDomain.ClockFrequency
 import spinal.core.{ClockDomain, FixedFrequency, HertzNumber, TimeNumber}
+import spinalextras.lib.misc.ClockToleranceType.{AtMost, Centered}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -52,11 +54,60 @@ case class TimeNumberDeserializer() extends StdDeserializer[TimeNumber](classOf[
   }
 }
 
+sealed trait ClockToleranceType
+object ClockToleranceType {
+  case object Centered extends ClockToleranceType;
+  case object AtLeast extends ClockToleranceType;
+  case object AtMost extends ClockToleranceType;
+}
+
+case class ClockToleranceTypeDeserializer() extends StdDeserializer[ClockToleranceType](classOf[ClockToleranceType]) {
+  override def deserialize(p: JsonParser, ctxt: DeserializationContext) = {
+    p.getText match {
+      case "AtLeast" => ClockToleranceType.AtLeast
+      case "AtMost" => ClockToleranceType.AtMost
+      case _ => ClockToleranceType.Centered
+    }
+  }
+}
+
+case class ClockToleranceTypeSerializer() extends StdSerializer[ClockToleranceType](classOf[ClockToleranceType]) {
+
+  override def serialize(value: ClockToleranceType, gen: JsonGenerator, provider: SerializerProvider) = {
+    gen.writeString(value.toString)
+  }
+}
+
 case class ClockSpecification(freq: HertzNumber,
-                              phaseOffset: Double = 0, tolerance: Double = 0.01) {
+                              phaseOffset: Double = 0, tolerance: Double = 0.01,
+                              toleranceType: ClockToleranceType = ClockToleranceType.Centered) {
   assert(tolerance < 1, "Tolerance is specified between 0 and 1; 0.5 for instance means 50% tolerance")
   def toClockFrequency() = {
     FixedFrequency(freq)
+  }
+
+  def LowestFrequency: HertzNumber = toleranceType match {
+    case ClockToleranceType.AtLeast => freq
+    case _ => freq * (1 - tolerance)
+  }
+
+  def HighestFrequency: HertzNumber = {
+    toleranceType match {
+      case ClockToleranceType.AtMost => freq
+      case _ => (freq * (1 + tolerance))
+    }
+  }
+
+  def normalize : ClockSpecification = {
+    toleranceType match {
+      case ClockToleranceType.Centered => this
+      case _ => {
+        val newCenter = (LowestFrequency + HighestFrequency) / 2
+        val newTolerance = 1 - (LowestFrequency / newCenter)
+        new ClockSpecification(freq = newCenter,
+          phaseOffset = phaseOffset, tolerance = newTolerance.doubleValue(), toleranceType = Centered)
+      }
+    }
   }
 }
 
@@ -69,7 +120,7 @@ object ClockSpecification {
   }
   def removeRedundant(specs : Seq[ClockSpecification]): Seq[ClockSpecification] = {
     val allTolerances = new mutable.HashMap[(HertzNumber, Double), mutable.ArrayBuffer[Double]]()
-    specs.foreach(x => allTolerances.getOrElseUpdate((x.freq, x.phaseOffset), new ArrayBuffer[Double]()).append(x.tolerance))
+    specs.map(_.normalize).foreach(x => allTolerances.getOrElseUpdate((x.freq, x.phaseOffset), new ArrayBuffer[Double]()).append(x.tolerance))
     val minTolerances = allTolerances.mapValues(_.min)
     minTolerances.filter(x => x._1._1.toInt != 0).map(x => ClockSpecification(x._1._1, x._1._2, x._2)).toSeq
   }
