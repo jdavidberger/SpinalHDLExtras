@@ -79,12 +79,16 @@ package object StreamFormal {
     }
 
     def merge(group : StreamContractGroup): Unit = {
-      //println(s"Merging ${n.name} and ${group.n.name}")
+      val needs_merge = group != this && group.parent != this
 
-      group.exceptions.foreach(this.addFormalException)
-      group.payloadInvarianceExceptions.foreach(this.addFormalPayloadInvarianceException)
+      if(needs_merge) {
+        //println(s"Merging ${n.getDisplayName()} and ${group.n.getDisplayName()}")
 
-      group.setParent(this)
+        group.exceptions.foreach(this.addFormalException)
+        group.payloadInvarianceExceptions.foreach(this.addFormalPayloadInvarianceException)
+
+        group.setParent(this)
+      }
     }
   }
 
