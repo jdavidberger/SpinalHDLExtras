@@ -19,7 +19,7 @@ lazy val gitRoot: String = {
 
 val vexRiscv = if(file(s"${gitRoot}VexRiscv/").exists())
   ProjectRef(file("../VexRiscv/"), "root") else
-  ProjectRef(uri("https://github.com/jdavidberger/VexRiscv.git"), "root")
+  ProjectRef(uri("https://github.com/jdavidberger/VexRiscv.git#freeze_branch"), "root")
 
 lazy val SpinalHDLExtras = (project in file("."))
   .settings(
