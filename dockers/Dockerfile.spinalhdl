@@ -33,7 +33,7 @@ RUN ssh-keyscan github.com >> $HOME/.ssh/known_hosts
 ENV PATH=$HOME/oss-cad-suite/bin:$HOME/.sdkman/candidates/sbt/current/bin:$HOME/.sdkman/candidates/java/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN git clone https://github.com/SpinalHDL/SpinalHDL.git && \
-    cd SpinalHDL && git reset --hard b0e42f78a5c5e84402b2f49d42f8270749a7736f && sbt publishLocal && cd .. && rm -rf SpinalHDL
+    cd SpinalHDL && git reset --hard 8fd2882770c6d389fec5806a705393d9089c7197 && sbt publishLocal && cd .. && rm -rf SpinalHDL
 
 ENV GIT_CONFIG_COUNT=1
 ENV GIT_CONFIG_KEY_0=safe.directory
