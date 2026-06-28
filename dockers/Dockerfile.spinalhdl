@@ -12,7 +12,7 @@ ENV HOME=/root
 ENV SDKMAN_DIR="$HOME/.sdkman"
 
 ENV SCALA_VERSION=2.12.18
-ENV SBT_VERSION=1.10.0
+ENV SBT_VERSION=1.10.2
 ENV JAVA_VERSION=17.0.12-tem
 
 RUN echo "sdkman_auto_answer=true" > $SDKMAN_DIR/etc/config
@@ -33,7 +33,7 @@ RUN ssh-keyscan github.com >> $HOME/.ssh/known_hosts
 ENV PATH=$HOME/oss-cad-suite/bin:$HOME/.sdkman/candidates/sbt/current/bin:$HOME/.sdkman/candidates/java/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN git clone https://github.com/SpinalHDL/SpinalHDL.git && \
-    cd SpinalHDL && git reset --hard 8fd2882770c6d389fec5806a705393d9089c7197 && sbt publishLocal && cd .. && rm -rf SpinalHDL
+    cd SpinalHDL && git reset --hard 5681e96ef265be7c54a1941ab8fc96901e89d91c && sbt publishLocal && cd .. && rm -rf SpinalHDL
 
 ENV GIT_CONFIG_COUNT=1
 ENV GIT_CONFIG_KEY_0=safe.directory
