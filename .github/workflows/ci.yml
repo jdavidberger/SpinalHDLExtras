@@ -88,12 +88,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }} #
 
-      - name: Make failed test
-        run: |
-          rm -rf .podman
-          ls -al
-          PULL_IMAGE=1 ./dockers/run-spinal-image.sh sbt --no-colors "testOnly *.GeneralBusArbiterFormalTest*"
-
       - name: Make tests
         run: |
           rm -rf .podman

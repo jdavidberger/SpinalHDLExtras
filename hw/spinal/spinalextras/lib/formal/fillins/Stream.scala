@@ -79,7 +79,7 @@ package object StreamFormal {
     }
 
     def merge(group : StreamContractGroup): Unit = {
-      val needs_merge = group != this && group.parent != this
+      val needs_merge = group != this && group.parent != this && root != group.root
 
       if(needs_merge) {
         //println(s"Merging ${n.getDisplayName()} and ${group.n.getDisplayName()}")

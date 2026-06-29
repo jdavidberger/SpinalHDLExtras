@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb.{Bmb, BmbArbiter, BmbDecoder, BmbDownSizerBridge, BmbParameter, BmbUpSizerBridge}
 import spinal.lib.bus.misc.AddressMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusConnectors, PipelinedMemoryBusDecoder, PipelinedMemoryBusRsp}
-import spinal.lib.bus.wishbone.Wishbone
+import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
 
 import scala.language.postfixOps
@@ -16,7 +16,6 @@ import spinalextras.lib.formal._
 import spinalextras.lib.formal.fillins.Wishbone._
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal._
 import spinalextras.lib.misc.StreamFragmentWidthAdapterWithOccupancy
-
 import vexriscv.ip.DataCacheMemBus
 import vexriscv.plugin.IBusSimpleBus
 import vexriscv.ip.InstructionCacheMemBus
@@ -382,7 +381,7 @@ package object bus {
 
   def toWishbone(dbus: DBusSimpleBus) = {
     import dbus._
-    val wishboneConfig = DBusSimpleBus.getWishboneConfig()
+    val wishboneConfig = DBusSimpleBus.getWishboneConfig().copy(addressGranularity = AddressGranularity.BYTE)
     val bus = Wishbone(wishboneConfig)
     val cmdStage = cmd
 
