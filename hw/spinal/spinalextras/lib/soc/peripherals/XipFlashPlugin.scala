@@ -48,6 +48,12 @@ case class XipFlashPlugin(config: MemoryMappingParameters = XipFlashPlugin.defau
   lazy val spiflash_cs_n = out(Bool())
   lazy val spiflash_dq = inout(Analog(Bits(config.ctrl.spi.dataWidth bits)))
 
+  def export_signals() = {
+    spiflash_cs_n <> out(Bool()).setName("spiflash_cs_n")
+    spiflash_clk <> out(Bool()).setName("spiflash_clk")
+    spiflash_dq <> inout(Analog(Bits(4 bits)).setName("spiflash_dq"))
+  }
+
   override def apply(som: Spinex): Unit = {
     val systemClockDomain = ClockDomain.current
 

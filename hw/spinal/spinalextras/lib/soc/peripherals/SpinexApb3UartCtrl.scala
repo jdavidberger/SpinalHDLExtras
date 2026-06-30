@@ -6,6 +6,7 @@ import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, BusSlaveFactoryAddr
 import spinal.lib.com.uart.{Apb3UartCtrl, Uart, UartCtrl, UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemoryMappedConfig, UartParityType, UartStopType}
 import spinal.lib.{StreamFifo, master, slave}
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
+import spinalextras.lib.misc.GlobalSignals
 import spinalextras.lib.soc.spinex.{Spinex, SpinexPlugin, SpinexRegisterFileApbPlugin}
 import spinalextras.lib.soc.{CSREventManager, DeviceTree, EventSourceProcess}
 
@@ -150,6 +151,8 @@ case class UartCtrlPlugin(config: UartCtrlMemoryMappedConfig = UartCtrlPlugin.de
       Set("uart_io"),
       SignalLogger.concat("uart_io", uart.rxd, uart.txd, uart.cts, uart.rts, uartCtrl.io.interrupt.setName("uart_irq"))
     )
+
+    GlobalSignals.export_toplevel_if_unused(uart)
 
     super.apply(som)
   }

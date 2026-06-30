@@ -5,6 +5,7 @@ import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.wishbone.Wishbone
 import spinalextras.lib.blackbox.opencores.i2c_master_top
 import spinalextras.lib.logging.{GlobalLogger, SignalLogger, WishboneBusLogger}
+import spinalextras.lib.misc.GlobalSignals
 import spinalextras.lib.peripherals.i2c.I2cMaster
 import spinalextras.lib.soc.DeviceTree
 import spinalextras.lib.soc.spinex.{Spinex, SpinexRegisterFilePlugin}
@@ -47,6 +48,13 @@ case class OpenCoresI2CPlugin(mapping: SizeMapping = SizeMapping(0xe0005000L, 32
       wb32.connectTo(i2cCtrl.io.wb, allowDataResize = true, allowAddressResize = true)
       som.add_slave(wb32, name, mapping, "dBus")
     }
+  }
+
+  def export_signals(): Unit = {
+    val i2c0_scl = inout(Analog(Bool()))
+    val i2c0_sda = inout(Analog(Bool()))
+    scl <> i2c0_scl.setName("scl")
+    sda <> i2c0_sda.setName("sda")
   }
 
   override def appendDeviceTree(dt: DeviceTree): Unit = {

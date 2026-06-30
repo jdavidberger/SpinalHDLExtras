@@ -15,16 +15,31 @@ object GlobalSignals {
       externalize(payload, (t : T) => cloneOf(t), topComponent)
   }
 
-  def export_toplevel[T <: Data](payload : T, name : String) = {
-    val signal =
+  def export_toplevel_if_unused[T <: Data](payload : T, name : String = null) = {
+    Component.toplevel.addPrePopTask(() => {
+      var needs_export = false
+      payload.flattenForeach { e => {
+        if (!e.hasAssignement) {
+          needs_export = true
+        }
+      }}
+      if(needs_export) {
+        export_toplevel(payload = payload, name = name)
+      }
+    })
+  }
+
+  def export_toplevel[T <: Data](payload : T, name : String = null) = {
+
+    val signal : T  =
       if (payload.component == null && payload.name == "clk")
-        Component.toplevel.clockDomain.readClockWire
+        Component.toplevel.clockDomain.readClockWire.asInstanceOf[T]
       else externalize(payload, topComponent = null)
     val ctx = Component.push(Component.toplevel)
-    val export_signal = out(cloneOf(signal))
-    export_signal.addAttribute("syn_keep", 1).addAttribute("nomerge", "")
-    export_signal.setName(name)
-    export_signal := signal
+    val dir = direction_function(payload)
+    val export_signal = dir(cloneOf(signal))
+    export_signal.setName(if (name == null) payload.name else name)
+    export_signal <> signal
     ctx.restore()
     export_signal
   }

@@ -9,7 +9,7 @@ import scala.language.postfixOps
 
 class GeneralBusArbiterFormalTest extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 5
+  override def defaultDepth() = 8
 
   formalTests().foreach(t => test(t._1) { t._2() })
 

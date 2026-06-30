@@ -4,6 +4,7 @@ import spinal.core.{Analog, Bool, CombInit, IntToBuilder, inout}
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.wishbone.Wishbone
 import spinalextras.lib.blackbox.opencores.i2c_master_top
+import spinalextras.lib.misc.GlobalSignals
 import spinalextras.lib.peripherals.i2c.I2cMaster
 import spinalextras.lib.soc.DeviceTree
 import spinalextras.lib.soc.spinex.{Spinex, SpinexRegisterFilePlugin}

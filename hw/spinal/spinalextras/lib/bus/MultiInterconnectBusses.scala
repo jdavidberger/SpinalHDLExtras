@@ -174,7 +174,7 @@ package object bus {
 
   val xipContracts = new mutable.WeakHashMap[XipBus, XipBusContract]()
 
-  class XipBusContract(bus : XipBus) extends FormalProperties(bus) {
+  class XipBusContract(bus : XipBus) extends FormalProperties(bus, "xipBusContract") {
     import bus._
 
     val outstandingReads = Reg(SInt(32 bits)) init(0)
@@ -182,7 +182,7 @@ package object bus {
     val toAdd = cmd.fire ? (cmd.length + 1) | U(0)
     outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.fire.asUInt.intoSInt).resized
 
-    addFormalProperty(outstandingReads > 0 || !rsp.fire)
+    addFormalProperty(outstandingReads > 0 || !rsp.fire, "XIP outstanding reads should be > 0 when rsp fires")
     addFormalProperties(rsp.formalIsProducerValid())
     addFormalProperties(cmd.formalIsConsumerValid())
     addFormalProperty(outstandingReads >= 0, "XIP outstanding reads should be above 0")
