@@ -15,7 +15,7 @@ import spinalextras.lib.ipgen.{IPGenerator, IPGeneratorOptions, IPGenerator_}
 import spinalextras.lib.lattice.IPX
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.mipi.MIPIDataTypes.{MIPIDataTypes, RAW10}
-import spinalextras.lib.misc.{ClockSpecification, HertzDeserializer}
+import spinalextras.lib.misc.{ClockSpecification, ClockToleranceType, ClockToleranceTypeDeserializer, ClockToleranceTypeSerializer, HertzDeserializer}
 
 import scala.collection.JavaConverters._
 import java.io.FileReader
@@ -301,6 +301,8 @@ class GenerateByte2Pixel extends IPGenerator_[Byte2PixelConfig]{
     super.customMappings(module)
     module.addDeserializer(classOf[MIPIDataTypes], MIPIDatatypeDeserializer())
     module.addSerializer(classOf[MIPIDataTypes], MIPIDatatypeSerializer())
+    module.addSerializer(classOf[ClockToleranceType], ClockToleranceTypeSerializer())
+    module.addDeserializer(classOf[ClockToleranceType], ClockToleranceTypeDeserializer())
     module.addDeserializer(classOf[HertzNumber], HertzDeserializer())
   }
 

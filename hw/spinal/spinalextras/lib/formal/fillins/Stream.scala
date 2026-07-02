@@ -44,6 +44,11 @@ package object StreamFormal {
     _formalPayloadInvarianceExceptionalState.setPartialName(n, "formalPayloadInvarianceExceptionalState", true)
 
     var parent : StreamContractGroup = null
+    var children = new mutable.HashSet[StreamContractGroup]()
+    def relatedGroups(): mutable.HashSet[StreamContractGroup] = {
+      children ++ children.flatMap(_.relatedGroups())
+    }
+    def relatedNameables() = relatedGroups().map(_.n).toSeq
 
     val exceptions, payloadInvarianceExceptions = new ArrayBuffer[Bool]()
 
@@ -67,6 +72,7 @@ package object StreamFormal {
 
     def setParent(r : StreamContractGroup): StreamContractGroup = {
       parent = r
+      parent.children.add(this)
       val restore = push(Component.toplevel)
       when(r._formalExceptionalState) { _formalExceptionalState := True}
       when(r._formalPayloadInvarianceExceptionalState) { _formalPayloadInvarianceExceptionalState := True}
@@ -79,12 +85,18 @@ package object StreamFormal {
     }
 
     def merge(group : StreamContractGroup): Unit = {
-      //println(s"Merging ${n.name} and ${group.n.name}")
+      val needs_merge = group != this && group.parent != this && root != group.root
 
-      group.exceptions.foreach(this.addFormalException)
-      group.payloadInvarianceExceptions.foreach(this.addFormalPayloadInvarianceException)
+      if(needs_merge) {
+        println(s"Merging ${n.getDisplayName()} and ${group.n.getDisplayName()}")
 
-      group.setParent(this)
+        group.exceptions.foreach(this.addFormalException)
+        group.payloadInvarianceExceptions.foreach(this.addFormalPayloadInvarianceException)
+
+        group.setParent(this)
+      } else {
+        println(s"Not merging ${n.getDisplayName()} and ${group.n.getDisplayName()}; common root: ${root.relatedNameables()}")
+      }
     }
   }
 
@@ -115,11 +127,20 @@ package object StreamFormal {
     }
   }
 
-  var contracts = new mutable.HashMap[Stream[_], StreamContract]()
+  var contracts = new mutable.WeakHashMap[Stream[_], StreamContract]()
+
+  var _topLevel : Component = null
+  def getContract(stream : Stream[_]): StreamContract = {
+    if (_topLevel != Component.toplevel) {
+      _topLevel = Component.toplevel
+      contracts.clear()
+    }
+    contracts.getOrElseUpdate(stream, new StreamContract(stream))
+  }
 
   implicit class StreamExt[T <: Data](val stream: Stream[T]) extends FormalMasterSlave with FormalDataWithEquivalnce[StreamExt[T]] with HasDefinedEquivalence {
 
-    lazy val contract = contracts.getOrElseUpdate(stream, new StreamContract(stream))
+    lazy val contract = getContract(stream)
 
     def addFormalPayloadInvarianceException(b : Bool = True) = {
       contract.addFormalPayloadInvarianceException(b)

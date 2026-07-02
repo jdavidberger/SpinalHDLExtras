@@ -1029,8 +1029,8 @@ object PLLConfig {
   }
 
   def create_clock_config(vco_freq : Rational, vco_tolerance : Double, spec : ClockSpecification): (Double, PLLOutputClockConfig, Boolean) = {
-    val lowest_freq = (spec.freq * (1 - spec.tolerance)).max(6.25 MHz)
-    val highest_freq = (spec.freq * (1 + spec.tolerance)).min(800 MHz)
+    val lowest_freq = spec.LowestFrequency.max(6.25 MHz)
+    val highest_freq = spec.HighestFrequency.min(800 MHz)
 
     val spec_freq_d = spec.freq.toDouble
     val spec_tol_d = spec.tolerance.toDouble

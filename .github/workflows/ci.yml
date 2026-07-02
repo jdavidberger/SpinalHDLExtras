@@ -90,7 +90,7 @@ jobs:
 
       - name: Make tests
         run: |
-          rm -rf .podman/target/test-reports/
+          rm -rf .podman
           ls -al
           PULL_IMAGE=1 ./dockers/run-spinal-image.sh sbt --no-colors test
 

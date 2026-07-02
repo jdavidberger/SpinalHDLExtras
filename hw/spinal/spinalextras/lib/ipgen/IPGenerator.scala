@@ -2,6 +2,7 @@ package spinalextras.lib.ipgen
 
 import com.fasterxml.jackson.annotation.{JsonAutoDetect, PropertyAccessor}
 import com.fasterxml.jackson.core.JsonFactory
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.databind.{JsonNode, MapperFeature, ObjectMapper}
@@ -206,7 +207,7 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
 
       processConfig(options, config)
     } catch {
-      case ex: com.fasterxml.jackson.core.JsonProcessingException => {
+      case ex: UnrecognizedPropertyException => {
         reader = new FileReader(filePath)
         val config: CFG = mapper.treeToValue(
           root,

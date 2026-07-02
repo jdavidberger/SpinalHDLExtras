@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb.{Bmb, BmbArbiter, BmbDecoder, BmbDownSizerBridge, BmbParameter, BmbUpSizerBridge}
 import spinal.lib.bus.misc.AddressMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusArbiter, PipelinedMemoryBusConnectors, PipelinedMemoryBusDecoder, PipelinedMemoryBusRsp}
-import spinal.lib.bus.wishbone.Wishbone
+import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone}
 import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.{XipBus, XipBusParameters}
 
 import scala.language.postfixOps
@@ -16,7 +16,6 @@ import spinalextras.lib.formal._
 import spinalextras.lib.formal.fillins.Wishbone._
 import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal._
 import spinalextras.lib.misc.StreamFragmentWidthAdapterWithOccupancy
-
 import vexriscv.ip.DataCacheMemBus
 import vexriscv.plugin.IBusSimpleBus
 import vexriscv.ip.InstructionCacheMemBus
@@ -175,7 +174,7 @@ package object bus {
 
   val xipContracts = new mutable.WeakHashMap[XipBus, XipBusContract]()
 
-  class XipBusContract(bus : XipBus) extends FormalProperties(bus) {
+  class XipBusContract(bus : XipBus) extends FormalProperties(bus, "xipBusContract") {
     import bus._
 
     val outstandingReads = Reg(SInt(32 bits)) init(0)
@@ -183,7 +182,7 @@ package object bus {
     val toAdd = cmd.fire ? (cmd.length + 1) | U(0)
     outstandingReads := (outstandingReads +^ toAdd.intoSInt -^ rsp.fire.asUInt.intoSInt).resized
 
-    addFormalProperty(outstandingReads > 0 || !rsp.fire)
+    addFormalProperty(outstandingReads > 0 || !rsp.fire, "XIP outstanding reads should be > 0 when rsp fires")
     addFormalProperties(rsp.formalIsProducerValid())
     addFormalProperties(cmd.formalIsConsumerValid())
     addFormalProperty(outstandingReads >= 0, "XIP outstanding reads should be above 0")
@@ -382,7 +381,7 @@ package object bus {
 
   def toWishbone(dbus: DBusSimpleBus) = {
     import dbus._
-    val wishboneConfig = DBusSimpleBus.getWishboneConfig()
+    val wishboneConfig = DBusSimpleBus.getWishboneConfig().copy(addressGranularity = AddressGranularity.BYTE)
     val bus = Wishbone(wishboneConfig)
     val cmdStage = cmd
 
