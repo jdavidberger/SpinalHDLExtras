@@ -13,6 +13,11 @@ RUN groupadd -g $USER_GID user
 RUN useradd -rm -d /home/user -s /bin/bash -g root -G sudo -u $USER_UID user
 RUN echo 'user:user' | chpasswd
 
+# ip_packager flow (make / python3 / dtc) runs inside this image alongside ippackc
+RUN apt update && apt install -y --no-install-recommends \
+    make python3 device-tree-compiler \
+    && apt clean && rm -rf /var/lib/apt/lists/*
+
 ARG RADIANT_BASE=/opt/lattice/radiant/
 
 ENV LM_LICENSE_FILE="$RADIANT_BASE/license.dat"
@@ -20,10 +25,17 @@ ENV LM_LICENSE_FILE="$RADIANT_BASE/license.dat"
 RUN mkdir -p /etc/profile.d
 RUN echo "#!/bin/sh" > entrypoint.sh
 RUN echo "" >> entrypoint.sh
-RUN echo "export RADIANT_ROOT=${RADIANT_BASE}/\$RADIANT_VERSION" >> /entrypoint.sh && \
-    echo "export LD_LIBRARY_PATH=\$RADIANT_ROOT/modeltech/linuxloem/:\$RADIANT_ROOT/bin/lin64/:\$RADIANT_ROOT/ispfpga/bin/lin64" >> /entrypoint.sh && \
-    echo "export PATH=\$RADIANT_ROOT/modeltech/linuxloem/:\$RADIANT_ROOT/bin/lin64/:\$PATH:\$RADIANT_ROOT/ispfpga/bin/lin64" >> /entrypoint.sh && \
-    echo "exec \"\$@\"" >> /entrypoint.sh
+RUN echo 'RADIANT_BASE=/opt/lattice/radiant/' >> /entrypoint.sh && \
+    echo 'if [ -x "${RADIANT_BASE}/bin/lin64/ippackc" ] || [ -d "${RADIANT_BASE}/ispfpga" ]; then' >> /entrypoint.sh && \
+    echo '  export RADIANT_ROOT="${RADIANT_BASE}"' >> /entrypoint.sh && \
+    echo 'elif [ -d "${RADIANT_BASE}/${RADIANT_VERSION}" ]; then' >> /entrypoint.sh && \
+    echo '  export RADIANT_ROOT="${RADIANT_BASE}/${RADIANT_VERSION}"' >> /entrypoint.sh && \
+    echo 'else' >> /entrypoint.sh && \
+    echo '  export RADIANT_ROOT="${RADIANT_BASE}/${RADIANT_VERSION}"' >> /entrypoint.sh && \
+    echo 'fi' >> /entrypoint.sh && \
+    echo 'export LD_LIBRARY_PATH=$RADIANT_ROOT/modeltech/linuxloem/:$RADIANT_ROOT/bin/lin64/:$RADIANT_ROOT/ispfpga/bin/lin64' >> /entrypoint.sh && \
+    echo 'export PATH=$RADIANT_ROOT/modeltech/linuxloem/:$RADIANT_ROOT/bin/lin64/:$PATH:$RADIANT_ROOT/ispfpga/bin/lin64' >> /entrypoint.sh && \
+    echo 'exec "$@"' >> /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
@@ -49,4 +61,7 @@ ENV RADIANT_VERSION=2025.1
 
 FROM radiant2024.2 AS radiant2025.2
 ENV RADIANT_VERSION=2025.2
+
+FROM radiant2024.2 AS radiant2025.2.1
+ENV RADIANT_VERSION=2025.2.1
 
