@@ -22,12 +22,12 @@ object IPX {
       file.write(s"""  <File name="${elem.substring(report.globalData.config.targetDirectory.length + 1)}" type="top_level_verilog"/>\n""")
     }
 
-    val ldc_file = s"${report.toplevelName}.ldc"
-    Constraints.write_file(report, s"${report.globalData.config.targetDirectory}/${ldc_file}")
+    val sdc_file = s"${report.toplevelName}.sdc"
+    Constraints.write_file(report, s"${report.globalData.config.targetDirectory}/${sdc_file}")
 
     file.write(
       s"""
-        |  <File name="${ldc_file}" type="timing_constraints"/>
+        |  <File name="${sdc_file}" type="tcl_constraints" stage="${sdc_file}=lse:presyn,synplify:presyn"/>
         | </Package>
         |</RadiantModule>
         |""".stripMargin)

@@ -87,7 +87,6 @@ case class XipFlashPlugin(config: MemoryMappingParameters = XipFlashPlugin.defau
     }
     som.add_slave(xip, "xip", memoryMapping, "iBus", "dBus")
 
-    Constraints.create_clock(spiflash_clk, clockDomain.frequency.getValue)
     Constraints.set_max_skew(1 ns, spiflash_clk, spiflash_cs_n, spiflash_dq)
 
     def spread(d: Data) = {
