@@ -43,7 +43,8 @@ case class MIPIToPixel(cfg : MIPIConfig,
 
   mipi_to_bytes.io.pll_lock_i := io.pll_lock
   mipi_to_bytes.io.tx_rdy_i := io.tx_rdy
-  mipi_to_bytes.io.packet_parser.ref_dt_i := cfg.refDt.id
+  // ref_dt_i is left to its port default (cfg.refDt.id). When attach_bus() is called it
+  // is overridden by the runtime-writable ref_dt register (see dphy_rx.attach_bus).
 
   mipi_to_bytes.io.rxcsr_dropnull_i := False
   mipi_to_bytes.io.rxcsr_vcx_on_i := False

@@ -105,10 +105,12 @@ case class MIPIConfig(
                        @JsonPropertyDescription("The gearing of physical lanes to the output side of the MIPI block.")
                        rxGear: Int = 8,
                        outputLanes: Int = 1,
-                       @JsonPropertyDescription("The reference MIPI datatype which represents data in the stream")
+                       @JsonPropertyDescription("The reference MIPI datatype which represents data in the stream. Becomes the reset value of the runtime-writable ref_dt register.")
                        refDt : MIPIDataTypes,
                        @JsonPropertyDescription("The approximate operating frequency of the physical MIPI lane")
-                       dphyByteFreq : HertzNumber) {
+                       dphyByteFreq : HertzNumber,
+                       @JsonPropertyDescription("Optional override for the D-PHY tHS-SETTLE timing in byte clocks. Becomes the reset value of the runtime-writable rxcsr_datsettlecyc register. If unset, the value is computed from the line rate.")
+                       dataSettleCyc : Option[Int] = None) {
   def GEARED_LANES = numRXLanes * rxGear
   def PIX_WIDTH = MIPIDataTypes.bit_width(refDt)
   def DT_WIDTH = outputLanes * MIPIDataTypes.bit_width(refDt)
