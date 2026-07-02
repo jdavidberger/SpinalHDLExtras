@@ -61,7 +61,7 @@ class dphy_rx(cfg : MIPIConfig,
     (((85 ns) + (UI * 6)).toDouble  / TCLK_BYTE.toDouble + 0.5).ceil.toInt - (if(is_soft_phy) 3 else 0)
   }
 
-  val default_datsettlecyc = solve_datasettle(byte_freq, dphy_clk_freq)
+  val default_datsettlecyc = cfg.dataSettleCyc.getOrElse(solve_datasettle(byte_freq, dphy_clk_freq))
 
   val io = new Bundle {
     /**
@@ -456,6 +456,15 @@ class dphy_rx(cfg : MIPIConfig,
       dphy_data_ctrl.field(io.rxcsr_datsettlecyc_i.clone(), RW, "Controls the tHS-SETTLE protocol timing parameter. Check the t-HSZERO parameter of the D-PHY transmitter to ensure the tHS-SETTLE setting can properly detect the Start-of-Transmit pattern.") init(default_datsettlecyc)
 
     GlobalSignals.externalize(io.rxcsr_datsettlecyc_i) := crossClock(dphy_data_ctrl, dphy_data_settle, io.byte_clock_domain(), default_datsettlecyc)
+
+    if(enable_packet_parser) {
+      val default_ref_dt = cfg.refDt.id
+      val ref_dt_ctrl = busSlaveFactory.newReg("ref_dt")
+      val ref_dt = ref_dt_ctrl.field(UInt(io.packet_parser.ref_dt_i.getWidth bits), RW,
+        "MIPI reference data type. Long packets whose data type matches this value assert lp_av_en_o. Resets to the refDt from the config.") init(default_ref_dt)
+
+      GlobalSignals.externalize(io.packet_parser.ref_dt_i) := crossClock(ref_dt_ctrl, ref_dt, io.byte_clock_domain(), default_ref_dt).asBits
+    }
 
     val pktdelay_ctrl = busSlaveFactory.newReg("rxcsr_rxfifo_pktdly")
     val pktdelay =

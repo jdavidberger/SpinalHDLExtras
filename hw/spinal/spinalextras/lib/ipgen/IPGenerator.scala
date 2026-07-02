@@ -294,6 +294,37 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
 
     Spinex.generate_ipx(report)
 
+    {
+      import scala.sys.process._
+      val genDir = report.globalData.config.targetDirectory
+      val top = report.toplevelName
+      val verilog = s"$genDir/$top.v"
+      val sdc = s"$genDir/$top.sdc"
+      val python3 = if (Seq("sh", "-c", "command -v python3 >/dev/null").! == 0) "python3" else ""
+      val rewriteScript = Paths.get("..", "ip_packager", "scripts", "rewrite_sdc_for_yosys.py")
+      if (python3.nonEmpty && options.yosys_opt && Files.exists(rewriteScript)) {
+        Seq(
+          python3, rewriteScript.toString,
+          "--top", top,
+          "--verilog", verilog,
+          "--sdc", sdc,
+          "--in-place"
+        ).!
+      }
+      val validateScript = Paths.get("..", "ip_packager", "scripts", "validate_sdc_paths.py")
+      if (python3.nonEmpty && Files.exists(validateScript)) {
+        val exitCode = Seq(
+          python3, validateScript.toString,
+          "--top", top,
+          "--verilog", verilog,
+          "--sdc", sdc
+        ).!
+        if (exitCode != 0) {
+          sys.error(s"SDC constraints do not match generated Verilog for $top (see validate_sdc_paths.py)")
+        }
+      }
+    }
+
     if(simDut != null && options.generate_sim) {
       config.generateVerilog({
         val top = simDut().setDefinitionName(options.sanitized_instance_name).noIoPrefix()

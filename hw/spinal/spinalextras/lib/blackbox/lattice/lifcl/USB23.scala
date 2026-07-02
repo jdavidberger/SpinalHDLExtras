@@ -32,11 +32,10 @@ object USB23 extends Enumeration {
   val USB3, USB2, USB23 = Value
 }
 
-case class USB23(GSR: Boolean = false) extends BlackBox {
+case class USB23() extends BlackBox {
   val usb_mode : USB23.Modes = USB23.USB3
   val generic = new Generic {
     val USB_MODE = USB23.this.usb_mode
-    val GSR = if(USB23.this.GSR) "ENABLED" else "DISABLED"
   }
 
   val io = new Bundle {

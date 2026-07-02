@@ -22,6 +22,21 @@ class Constraints {
     false_path_all_clocks = true
   }
 
+  private def clockNameFor(data: Data): String = {
+    data.getRtlPath().replace('/', '_')
+  }
+
+  /** Tcl object query for a clock net/pin/port in the emitted Verilog hierarchy. */
+  private def clockTarget(data: Data, toplevel: Component): String = {
+    val path = data.getRtlPath()
+    if (data.component == toplevel) {
+      s"[get_ports {$path}]"
+    } else {
+      s"[get_pins {$path}]"
+    }
+  }
+
+  private def netWildcard(path: String): String = s"[get_nets {${path}/*}]"
 
   def write_file[T <: Component](report: SpinalReport[T], path : String): Unit = {
     val file = new PrintWriter(path)
@@ -30,17 +45,20 @@ class Constraints {
       case f : FixedFrequency => {
         val defaultClock = f.getValue
         file.println(s"# clk ${defaultClock.decompose}")
-        file.println(s"create_clock -name {clk} -period ${defaultClock.toTime.toDouble * 1e9} [get_nets clk]")
+        val clkTarget =
+          if (report.toplevel.getAllIo.exists(_.getName() == "clk"))
+            "[get_ports {clk}]"
+          else
+            "[get_nets clk]"
+        file.println(s"create_clock -name {clk} -period ${defaultClock.toTime.toDouble * 1e9} $clkTarget")
       }
       case _ => {}
     }
 
     for ((data, freq) <- clocks) {
-      //if(data.getComponents().nonEmpty) {
-        file.println(s"# ${data.name} ${freq.decompose}")
-        file.println(s"create_clock -name {${data.name}} -period ${freq.toTime.toDouble * 1e9} [get_ports ${data.getRtlPath()}]")
-        //file.println(s"set_false_path -from [get_clocks ${data.name}]")
-      //}
+      val cname = clockNameFor(data)
+      file.println(s"# ${cname} ${freq.decompose}")
+      file.println(s"create_clock -name {${cname}} -period ${freq.toTime.toDouble * 1e9} ${clockTarget(data, report.toplevel)}")
     }
 
     //    for ((clks, async) <- clock_groups) {
@@ -58,16 +76,11 @@ class Constraints {
     def set_false_path(d : Data): Unit = {
       KeepAttribute(d)
       d.addAttribute("syn_keep", 1).addAttribute("nomerge", "")
-
-      val name_is_global = false //d.name.startsWith("zzz_")
-      val net_selector = if(name_is_global) s"-hierarchical -regexp .*${d.name}.*" else s"${d.getRtlPath()}/*"
-      file.println(s"set_false_path -through [get_nets ${net_selector}]")
+      file.println(s"set_false_path -through ${netWildcard(d.getRtlPath())}")
     }
 
     def set_false_path_component(d : Component): Unit = {
-      val name_is_global = false //d.name.startsWith("zzz_")
-      val net_selector = if(name_is_global) s"-hierarchical -regexp .*${d.name}.*" else s"${d.getRtlPath()}/*"
-      file.println(s"set_false_path -through [get_nets ${net_selector}]")
+      file.println(s"set_false_path -through ${netWildcard(d.getRtlPath())}")
     }
 
     for(false_path <- false_paths) {

@@ -59,6 +59,8 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
     clockDomains = clockDomains.patch(outputClocksRefIdx, Seq(currentClockDomainWithPLLReset), 0)
   }
 
+  val actualMhzLabels = clockDomains.map(cd => (cd.frequency.getValue.toDouble / 1e6).round.toInt)
+
   for (out_idx <- outputClocks.indices) {
     val cd = clockDomains(out_idx)
 
