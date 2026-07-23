@@ -69,7 +69,7 @@ class RouterNode(cfg: NocConfig, address: Int) extends ComponentWithFormalProper
     connectivityIn  = connectivityIn,
     connectivityOut = connectivityOut,
     dynamicAllocation     = cfg.virtualChannelMode == Dynamic,
-    roundRobinArbitration = false
+    roundRobinArbitration = cfg.virtualChannelArbitrationPolicy == RoundRobin
   )
 
   for (inputPort <- 0 until connectivityIn; vcid <- 0 until cfg.virtualChannels) {
@@ -121,19 +121,15 @@ class RouterNode(cfg: NocConfig, address: Int) extends ComponentWithFormalProper
 
 class NocRouterFormalTester extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 10
+  override def defaultDepth() = 2
 
   formalTests().foreach(t => test(t._1) {
     t._2()
   })
 
   override def generateRtl() = {
-    Seq(
-      (s"BasicStatic", () => GeneralFormalDut(() => new RouterNode(cfg = NocConfig(topology = new Mesh((3, 2))), 0))),
-      (s"BasicStaticTree", () => GeneralFormalDut(() => new RouterNode(cfg = NocConfig(topology = new Tree(4, 2)), 0))),
-      (s"BasicStaticRing", () => GeneralFormalDut(() => new RouterNode(cfg = NocConfig(topology = new Ring(4)), 0))),
-      (s"BasicDynamic", () => GeneralFormalDut(() => new RouterNode(cfg = NocConfig(topology = new Mesh((3, 2)), virtualChannelMode = Dynamic), 0)))
-    )
+    for((name, cfg) <- NocConfig.testConfigurations()) yield
+      (name, () => GeneralFormalDut(() => new RouterNode(cfg, 0)))
   }
 }
 

@@ -88,14 +88,14 @@ package object StreamFormal {
       val needs_merge = group != this && group.parent != this && root != group.root
 
       if(needs_merge) {
-        println(s"Merging ${n.getDisplayName()} and ${group.n.getDisplayName()}")
+        //println(s"Merging ${n.getDisplayName()} and ${group.n.getDisplayName()}")
 
         group.exceptions.foreach(this.addFormalException)
         group.payloadInvarianceExceptions.foreach(this.addFormalPayloadInvarianceException)
 
         group.setParent(this)
       } else {
-        println(s"Not merging ${n.getDisplayName()} and ${group.n.getDisplayName()}; common root: ${root.relatedNameables()}")
+        //println(s"Not merging ${n.getDisplayName()} and ${group.n.getDisplayName()}; common root: ${root.relatedNameables()}")
       }
     }
   }
@@ -134,7 +134,6 @@ package object StreamFormal {
     if (_topLevel != Component.toplevel) {
       _topLevel = Component.toplevel
       contracts.clear()
-      println("Clearing all contracts")
     }
     contracts.getOrElseUpdate(stream, new StreamContract(stream))
   }

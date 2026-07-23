@@ -161,13 +161,9 @@ class NocFormalTester extends AnyFunSuite with FormalTestSuite {
   })
 
   override def generateRtl() = {
-    Seq(
-      (s"BasicStar", () => GeneralFormalDut(() => new NoC(cfg = NocConfig(Star(8))))),
-      (s"BasicTorus", () => GeneralFormalDut(() => new NoC(cfg = NocConfig(new Torus((3, 2)))))),
-      (s"BasicTree", () => GeneralFormalDut(() => new NoC(cfg = NocConfig(new Tree(10, 2))))),
-      (s"BasicRing", () => GeneralFormalDut(() => new NoC(cfg = NocConfig(new Ring(6))))),
-      (s"BasicMesh", () => GeneralFormalDut(() => new NoC(cfg = NocConfig(new Mesh((3, 2)))))),
-    )
+    for((name, cfg) <- NocConfig.testConfigurations()) yield {
+      (name, () => GeneralFormalDut(() => new NoC(cfg)))
+    }
   }
 }
 

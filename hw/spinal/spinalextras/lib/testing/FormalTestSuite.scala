@@ -63,7 +63,7 @@ class DefaultFormalDut(f : () => Component, depth : Int = -1) extends Component 
   defaultProperties.formalAssumeChildrenPastDepth(depth)
   dut.getAllIo.filter(_.isInput).filter(_.dlcIsEmpty).foreach(anyseq)
 
-  HasFormalProperties.printFormalAssertsReport()
+  //HasFormalProperties.printFormalAssertsReport()
 
   val cycles = CounterFreeRun(5)
   cover(cycles.value > 3)

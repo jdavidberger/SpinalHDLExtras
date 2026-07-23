@@ -30,7 +30,7 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
 
     val N = UInt(log2Up(nodePortIndicesForCanonicalPorts(curr).size) bits)
     def setResult(canonicalPort : Int): Unit = {
-      spinal.core.report(Seq("Setting ", canonicalPort, " from ", dir_x, " ", dir_y, " ", x, " ", y, " ", dx, " ", dy))
+      //spinal.core.report(Seq("Setting ", canonicalPort, " from ", dir_x, " ", dir_y, " ", x, " ", y, " ", dx, " ", dy))
       val output_port = resolveCanonicalOutputPort(curr, canonicalPort)
       assert(output_port >= 0)
       N := output_port

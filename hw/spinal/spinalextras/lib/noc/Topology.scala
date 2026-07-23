@@ -46,17 +46,12 @@ trait Topology {
       node
     }
 
-    var connections : Int = 0
     for (address <- 0 until this.nodes; canonicalPort <- noc.cfg.topology.nodePortIndicesForCanonicalPorts(address)) {
       if(canonicalPort > 0) {
         val (neighborAddress, neighborPort) = noc.cfg.topology.resolveNeighborAddress(address, canonicalPort)
-        println(s"Connecting ${addressName(address)}:${canonicalPort} to ${neighborAddress} ${addressName(neighborAddress)}:${neighborPort}")
         nodes(address).inputs(canonicalPort) <> nodes(neighborAddress).outputs(neighborPort)
-        connections += 1
       }
     }
-
-    println(f"NoC has ${connections} edges for ${this.nodes} nodes")
     nodes
   }
 }
@@ -64,12 +59,12 @@ trait Topology {
 object Topology {
   def testConfigurations() = {
     Seq(
-      "Mesh(3x2)" -> new Mesh((3, 2)),
-      "Mesh(4x4)" -> new Mesh((4, 4)),
-      "Torus(3x2)" -> new Torus((3, 2)),
-      "Tree(10,2)" -> new Tree(10, 2),
-      "Ring(6)" -> new Ring(6),
-      "Star(8)" -> Star(8),
+      "Mesh_3x2" -> new Mesh((3, 2)),
+      "Mesh_4x4" -> new Mesh((4, 4)),
+      "Torus_3x2" -> new Torus((3, 2)),
+      "Tree_10x2" -> new Tree(10, 2),
+      "Ring_6" -> new Ring(6),
+      "Star_8" -> Star(8),
     )
   }
 }
