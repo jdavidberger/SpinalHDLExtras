@@ -1,14 +1,38 @@
 package spinalextras.lib.logging
 
-import spinal.core.{ASYNC, Bits, ClockDomain, ClockingArea, Component, Data, assert}
+import spinal.core._
+import spinal.core.sim.SimPublic
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.{Flow, Stream, master}
+import spinal.lib.sim.StreamMonitor
 import spinalextras.lib.bus.general.BusSlaveProvider
 import spinalextras.lib.logging.FlowLoggerUtils.{FlowLoggerCCode, FlowLoggerSqlite, FlowLoggerYaml}
 import spinalextras.lib.tests.WishboneGlobalBus.GlobalBus_t
 
+import java.io.{BufferedOutputStream, File, FileOutputStream}
+import java.nio.{ByteBuffer, ByteOrder}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.language.postfixOps
+
+case class SimulationLoggerHandle(stream: Stream[Bits], filename: String) {
+  def startCapture(clockDomain: ClockDomain): Unit = {
+    import spinal.core.sim._
+
+    val out = new BufferedOutputStream(new FileOutputStream(filename))
+    stream.ready #= true
+
+    StreamMonitor(stream, clockDomain) { payload =>
+      val v = payload.toBigInt
+      val buf = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN)
+      buf.putInt((v & 0xFFFFFFFFL).toInt)
+      buf.putInt(((v >> 32) & 0xFFFFFFFFL).toInt)
+      buf.putInt(((v >> 64) & 0xFFFFFFFFL).toInt)
+      out.write(buf.array())
+      out.flush()
+    }
+  }
+}
 
 class GlobalLogger {
   val signals = new mutable.ArrayBuffer[(Data, Flow[Bits], ClockDomain, Set[String])]()
@@ -115,6 +139,24 @@ class GlobalLogger {
     })
   }
 
+  def create_simulation_logger(tags: Set[String] = Set(), filename: String = null, depth: Int = 128): SimulationLoggerHandle = {
+    val outStream = Stream(Bits(96 bits)).setName("simLoggerStream")
+    val inFlow = Flow(Bits(32 bits)).setName("simLoggerCtrl")
+    inFlow.setIdle()
+
+    SimPublic(outStream.valid)
+    SimPublic(outStream.ready)
+    SimPublic(outStream.payload)
+
+    create_logger_stream(depth, ctrlStreams = (outStream, inFlow), tags = tags)
+
+    val dir = if (output_path != null) output_path else spinal.core.GlobalData.get.config.targetDirectory
+    new File(dir).mkdirs()
+    val resolvedFilename = if (filename != null) filename else s"$dir/GlobalLogger.bin"
+
+    SimulationLoggerHandle(outStream, resolvedFilename)
+  }
+
   def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String, ctrlStreams: Option[(Stream[Bits], Flow[Bits])] = None, tags: Set[String] = Set(), localDepth : Int = 0): Unit = {
     sysBus.addPreBuildTask(() =>
       build(sysBus, address, depth, name, ctrlStreams, tags, localDepth = localDepth)
@@ -158,6 +200,10 @@ object GlobalLogger {
 
   def create_logger_stream(depth: Int, ctrlStreams: (Stream[Bits], Flow[Bits]), tags: Set[String] = Set()): Unit = {
     get().create_logger_stream(depth, ctrlStreams = ctrlStreams, tags = tags)
+  }
+
+  def create_simulation_logger(tags: Set[String] = Set(), filename: String = null, depth: Int = 128): SimulationLoggerHandle = {
+    get().create_simulation_logger(tags = tags, filename = filename, depth = depth)
   }
 
   def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String = Component.toplevel.name + "Logger",
