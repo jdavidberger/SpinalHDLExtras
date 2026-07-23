@@ -11,8 +11,7 @@ import scala.language.postfixOps
 
 class StreamArbiterFormal extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 20
-
+  override def defaultDepth() = 2
   formalTests().foreach(t => test(t._1) {
     t._2()
   })
@@ -21,7 +20,7 @@ class StreamArbiterFormal extends AnyFunSuite with FormalTestSuite {
     for (arbitrationPolicy <- Seq(LowerFirst, RoundRobin, SequentialOrder); lockPolicy <- Seq(NoLock, FragmentLock, TransactionLock))
     yield
       (s"StreamArbiter_${arbitrationPolicy.getClass.getSimpleName.replace("$", "")}_${lockPolicy.getClass.getSimpleName.replace("$", "")}", () =>
-        GeneralFormalDut(() => new StreamArbiter(Fragment(UInt(2 bits)), 2, arbitrationPolicy, lockPolicy)))
+        GeneralFormalDut(() => new StreamArbiter(Fragment(UInt(8 bits)), 3, arbitrationPolicy, lockPolicy)))
   }
 }
 

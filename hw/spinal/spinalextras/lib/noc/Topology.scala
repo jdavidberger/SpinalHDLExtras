@@ -59,6 +59,7 @@ trait Topology {
 object Topology {
   def testConfigurations() = {
     Seq(
+      "Mesh_1x1" -> new Mesh((1, 1)),
       "Mesh_3x2" -> new Mesh((3, 2)),
       "Mesh_4x4" -> new Mesh((4, 4)),
       "Torus_3x2" -> new Torus((3, 2)),

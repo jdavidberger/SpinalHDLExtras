@@ -55,11 +55,24 @@ trait HasFormalProperties { self =>
    */
   def formalSetMinimumAssertionKind(assertionKind : AssertStatementKind = AssertStatementKind.ASSERT,
                                      inputAssertionKind : AssertStatementKind = AssertStatementKind.ASSERT): this.type = {
+    var changed = false
     if (shouldApplyAssertionKind(CurrentAssertionKind, assertionKind)) {
       CurrentAssertionKind = assertionKind
+      changed = true
     }
     if (shouldApplyAssertionKind(CurrentInputsAssertionKind, inputAssertionKind)) {
       CurrentInputsAssertionKind = inputAssertionKind
+      changed = true
+    }
+    // Propagate to children right away rather than only when this component's own
+    // formalProperties() happens to be forced (which, for wrapper objects like
+    // ComponentWithFormalProperties.DefaultProperties, only happens from that wrapper's own
+    // deferred prePopTask -- registered, and thus run, AFTER the prePopTasks of any
+    // ComponentWithFormalProperties descendants it wraps, since those are constructed earlier.
+    // Without this, such descendants' own prePopTasks fire first, see CurrentAssertionKind still
+    // unset, and silently emit none of their formal properties as either assert or assume.
+    if (changed) {
+      formalChildren().foreach(_.formalSetMinimumAssertionKind(assertionKind = CurrentAssertionKind.getOrElse(AssertStatementKind.ASSERT)))
     }
     this
   }

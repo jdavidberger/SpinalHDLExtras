@@ -2,6 +2,7 @@ package spinalextras.lib.noc.virtualchannels
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
+import spinal.lib.CountOne
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalData, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
@@ -18,15 +19,15 @@ class GrantTableOutput(candidateCount : Int, vcCount : Int) extends Bundle with 
   override def formalIsStateValid(): Seq[FormalProperty] = new FormalProperties() {
     // At most one candidate granted per lane -- io.dests(v) can only ever
     // forward one payload at a time.
-    for (v <- 0 until vcCount; c1 <- 0 until candidateCount; c2 <- (c1 + 1) until candidateCount) {
-      addFormalProperty(!(grant(v)(c1) && grant(v)(c2)),
+    for (v <- 0 until vcCount) {
+      addFormalProperty(CountOne(grant(v)) <= 1,
         s"grant lane $v must not be granted to more than one candidate at once")
     }
 
     // At most one lane granted per candidate -- io.sources(c) can only ever
     // be consumed by one lane at a time.
-    for (c <- 0 until candidateCount; v1 <- 0 until vcCount; v2 <- (v1 + 1) until vcCount) {
-      addFormalProperty(!(grant(v1)(c) && grant(v2)(c)),
+    for (c <- 0 until candidateCount) {
+      addFormalProperty(CountOne(grant.map(_(c))) <= 1,
         s"candidate $c must not be granted more than one lane at once")
     }
 

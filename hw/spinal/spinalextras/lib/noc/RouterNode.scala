@@ -2,6 +2,7 @@ package spinalextras.lib.noc
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
+import spinal.lib.StreamArbiter.{LowerFirst, TransactionLock}
 import spinal.lib._
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}

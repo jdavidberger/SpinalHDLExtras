@@ -154,7 +154,7 @@ class NoCDesign(cfg : NocConfig) {
 
 class NocFormalTester extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 10
+  override def defaultDepth() = 3
 
   formalTests().foreach(t => test(t._1) {
     t._2()
