@@ -5,13 +5,14 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.regif.AccessType.RW
 import spinal.lib.bus.regif.BusIf
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.noc.topology.{Mesh, Ring, Star, Torus, Tree}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 import scala.collection.mutable
 import scala.language.postfixOps
 
-class NoC(val cfg: NocConfig) extends Component {
+class NoC(val cfg: NocConfig) extends ComponentWithFormalProperties {
   val io = new Bundle {
     val inputs = Array.fill(cfg.topology.nodes)(slave(Stream(Fragment(Flit(cfg)))))
     val outputs = Array.fill(cfg.topology.nodes)(master(Stream(Fragment(Flit(cfg)))))
@@ -59,6 +60,37 @@ class NoC(val cfg: NocConfig) extends Component {
   }
 
   val nodes = cfg.topology.createNodes(this)
+
+  // Deadlock-freedom: track every flit-carrying handshake whose blocking could ever be the
+  // reason nothing moves -- the NoC's own external ports, each router's inter-node ports, and
+  // each router's VC-allocation subsystem boundary (routedFlits in, allocatedFlits out).
+  //
+  // Deliberately excluded: each router's per-VC FIFO-pop stream (RouterNode's
+  // `inputPorts(*).io.outputs`). That stream stalls for exactly one cycle whenever a flit's
+  // routing decision is latching (RouterNode.scala's `vc` register, set unconditionally the
+  // cycle it sees `vcStreams.valid`), regardless of anything else happening in the NoC.
+  // Counting it here would flag that ordinary one-cycle event as a false "deadlock".
+  private lazy val formalFlitStreams: Seq[Stream[_]] =
+    io.inputs ++ io.outputs ++
+      nodes.flatMap(node =>
+        node.io.inputs ++ node.io.outputs ++
+          node.allocator.io.routedFlits.flatMap(_.toSeq) ++
+          node.allocator.io.allocatedFlits.flatMap(_.toSeq)
+      )
+
+  private lazy val formalAllOutputsReady = io.outputs.map(_.ready).reduce(_ && _)
+  private lazy val formalAnyStalled = formalFlitStreams.map(_.isStall).reduce(_ || _)
+  private lazy val formalAnyFired = formalFlitStreams.map(_.fire).reduce(_ || _)
+
+  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    addFormalProperty(
+      !(formalAllOutputsReady && formalAnyStalled && !formalAnyFired),
+      "NoC deadlock: every output ready to accept, some internal link stalled, but nothing anywhere in the NoC is making progress")
+  }
+
+  override def covers(): Seq[FormalProperty] = Seq(
+    FormalProperty(formalAnyStalled, "an internal link stalls at least once (reachability sanity check, so the assert above isn't vacuous)")
+  )
 }
 
 trait NocProcessor {
