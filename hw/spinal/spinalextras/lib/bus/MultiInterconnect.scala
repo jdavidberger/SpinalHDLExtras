@@ -1,5 +1,6 @@
 package spinalextras.lib.bus
 
+import spinal.core.fiber.hardFork
 import spinal.core.{Bool, Component, MultiData, log2Up}
 import spinal.lib.bus.misc._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig, PipelinedMemoryBusSlaveFactory}
@@ -187,6 +188,18 @@ class MultiInterconnectByTag(name : String = "multiinterconnect") extends MultiI
       find_masters(tags(s).toSet).foreach(m => {
         connect(m, s)
       })
+    }
+  }
+
+  def scheduleBuild() = {
+    retain()
+    Component.toplevel.addPrePopTask(() => {
+      release()
+    })
+
+    hardFork {
+      lock.await()
+      this.build()
     }
   }
 

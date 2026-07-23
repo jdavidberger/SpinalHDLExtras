@@ -134,6 +134,7 @@ package object StreamFormal {
     if (_topLevel != Component.toplevel) {
       _topLevel = Component.toplevel
       contracts.clear()
+      println("Clearing all contracts")
     }
     contracts.getOrElseUpdate(stream, new StreamContract(stream))
   }

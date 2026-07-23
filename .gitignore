@@ -19,3 +19,7 @@ radiant/*/impl_1/
 *.vcd
 hw/gen
 .podman
+*.xml
+*.sqlite
+*.tcr
+*__pycache__*

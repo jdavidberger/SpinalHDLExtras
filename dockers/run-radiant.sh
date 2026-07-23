@@ -11,7 +11,7 @@ RADIANT_HOST_INSTALL=/opt/lattice/radiant/
 # Always mounted here inside the container
 RADIANT_CONTAINER=/opt/lattice/radiant/
 
-for env_file in $HOME/.config/radiant.env $SCRIPT_DIR/../radiant.env; do
+for env_file in $SCRIPT_DIR/../radiant.env $HOME/.config/radiant.env; do
   if [ -f $env_file ]; then
     source $env_file
     FOUND_RADIANT_CONFIG=1

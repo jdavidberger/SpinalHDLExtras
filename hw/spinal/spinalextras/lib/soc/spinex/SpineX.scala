@@ -111,6 +111,7 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
     //Checkout plugins used to instanciate the CPU to connect them to the SoC
     val timerInterrupt = False
     private val externalInterrupts = Bits(32 bits)
+    externalInterrupts.setName("rawExternalInterrupts")
     externalInterrupts := 0
 
     var interruptInfos = new mutable.HashMap[Int, Data]()
@@ -173,6 +174,14 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       }
       case plugin : ExternalInterruptArrayPlugin => {
         plugin.externalInterruptArray := externalInterrupts
+
+        val csr = cpu.service(classOf[CsrPlugin])
+
+        GlobalLogger(Set("cpu", "irqs", "spinex-external-interrupts"),
+          SignalLogger.concat("externalInterrupts", externalInterrupts,
+            csr.externalInterrupt)
+        )
+
       }
       case plugin : DebugModule => {
         GlobalLogger(Set("cpu"),
@@ -305,10 +314,8 @@ case class Spinex(config : SpinexConfig = SpinexConfig.default) extends Componen
       }
     }
 
-    Component.toplevel.addPrePopTask(() => {
-      directInterconnect.build()
-      interconnect.build()
-    })
+    directInterconnect.scheduleBuild()
+    interconnect.scheduleBuild()
   }
 
   import spinalextras.lib.bus.bus._

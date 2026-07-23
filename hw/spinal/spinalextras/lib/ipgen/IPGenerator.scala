@@ -177,11 +177,11 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
     val sanitized_nanme = instance_name.replace(" ", "_")
     val options = IPGeneratorOptions(
       device = Device(vendor = "lattice", family = "lifcl"),
-      obfuscate = true,
+      obfuscate = false,
       instance_name = sanitized_nanme,
       output_dir = f"hw/gen/${sanitized_nanme}",
       generate_sim = false,
-      yosys_opt = true
+      yosys_opt = false
     )
 
     processConfig(options, config)

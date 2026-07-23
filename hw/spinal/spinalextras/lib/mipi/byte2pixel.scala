@@ -92,8 +92,8 @@ case class byte2pixel(cfg : MIPIConfig,
     System.err.println(s"Pixel data rate: ${pixel_cd.frequency.getValue * cfg.DT_WIDTH}")
   }
 
-  require(byte_clock_fast_enough)
-  require(pixel_clock_fast_enough)
+  require(byte_clock_fast_enough, "Byte clock is not fast enough to handle this PHY as configured. Either increase the byte clock speed or correct the dphy clock frequency.")
+  require(pixel_clock_fast_enough, "Pixel clock is not fast enough to handle this PHY as configured. Either increase the number out output lanes, increase the pixel clock frequency or correct the byte / dphy clock frequeny.")
 
   {
     val pixelCounter, lineCounter = Counter(32 bits)

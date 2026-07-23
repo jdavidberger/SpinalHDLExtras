@@ -1,6 +1,7 @@
 package spinalextras.lib.bus
 
 import spinal.core._
+import spinal.core.fiber.hardFork
 import spinal.lib._
 import spinal.lib.bus.misc._
 import spinal.lib.bus.regif._
@@ -21,12 +22,19 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] extends BusSlavePro
   var topComponent = {
     val topComponent = Component.current
 
+    retain()
     Component.toplevel.addPrePopTask(() => {
+      release()
+    })
+
+    hardFork {
+      lock.await()
       if(!built) {
         this.build()
       }
       built = true
-    })
+    }
+
     topComponent
   }
 
@@ -243,13 +251,27 @@ case class WishboneGlobalBus(config : WishboneConfig) extends GlobalBus[Wishbone
     WishboneStage(bus, m2s_stage, s2m_stage)
   }
 
+  GlobalLogger.get().retain()
   override def build(): Unit = {
     {
       val ctx = Component.push(topComponent)
-      GlobalLogger(
-        tags = Set("memory"),
-        WishboneBusLogger.flows(InvertMapping(SizeMapping(0xb9000000L, 1 KiB)), masters.map(_._1): _*),
-      )
+      masters.foreach(master => {
+        GlobalLogger(
+          tags = Set("memory", "memory-global-master-" + master._1.name),
+          WishboneBusLogger.flows(master._1),
+        )
+      })
+
+      slaves.foreach(slave => {
+        if(slave._3.nonEmpty) {
+          GlobalLogger(
+            tags = Set("memory-global-" + slave._1.name, "memory-global-0x" + slave._2.lowerBound.toString(16)),
+            WishboneBusLogger.flows(slave._1)
+          )
+        }
+      })
+
+      GlobalLogger.get().release()
       ctx
     }.restore()
 

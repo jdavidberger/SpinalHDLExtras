@@ -42,7 +42,10 @@ case class GeneralBusConnectionFormal(val m : () => MultiBusInterface, val s : (
   assumeInitial(ClockDomain.current.isResetActive)
 
   dut.anyseq_inputs()
-  HasFormalProperties.printFormalAssertsReport()
+
+  Component.toplevel.addPrePopTask( () => {
+    HasFormalProperties.printFormalAssertsReport()
+  })
 }
 
 

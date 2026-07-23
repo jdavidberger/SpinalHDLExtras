@@ -1,5 +1,6 @@
 package spinalextras.lib.logging
 
+import spinal.core.fiber.{Lock, hardFork}
 import spinal.core._
 import spinal.core.sim.SimPublic
 import spinal.lib.bus.misc.SizeMapping
@@ -50,7 +51,10 @@ object GlobalLoggerSim {
     import scala.sys.process._
     import java.nio.file.{Files, Paths}
 
-    val scriptDir = Paths.get("sw", "event_logger").toAbsolutePath
+    var scriptDir = Paths.get("sw", "event_logger").toAbsolutePath
+    if (!Files.exists(scriptDir)) {
+      scriptDir = Paths.get("SpinalHDLExtras", "sw", "event_logger").toAbsolutePath
+    }
     val script = scriptDir.resolve("event_logger_db.py")
 
     if (!Files.exists(script)) {
@@ -151,6 +155,11 @@ class GlobalLogger {
     if (output_path == null) {
       output_path = spinal.core.GlobalData.get.config.targetDirectory
     }
+
+    println("Available global logger signals:")
+    this.signals.foreach(signal => {
+      println(f"   - ${signal._1} ${signal._4}")
+    })
     val signals = this.signals.filter(s => {
       s._4.intersect(tags).nonEmpty || tags.isEmpty
     }).map(s => (s._1, s._2, s._3))
@@ -183,6 +192,11 @@ class GlobalLogger {
     })
   }
 
+  val lock = new Lock()
+
+  def retain() = lock.retain()
+  def release() = lock.release()
+
   def create_simulation_logger(tags: Set[String] = Set(), depth: Int = 128): SimulationLoggerHandle = {
     val outStream = Stream(Bits(96 bits)).setName("simLoggerStream")
     val inFlow = Flow(Bits(32 bits)).setName("simLoggerCtrl")
@@ -201,12 +215,18 @@ class GlobalLogger {
   }
 
   def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String, ctrlStreams: Option[(Stream[Bits], Flow[Bits])] = None, tags: Set[String] = Set(), localDepth : Int = 0): Unit = {
-    sysBus.addPreBuildTask(() =>
-      build(sysBus, address, depth, name, ctrlStreams, tags, localDepth = localDepth)
-    )
+    sysBus.retain()
+
+    retain()
     Component.toplevel.addPrePopTask(() => {
-      this.build(sysBus, address, depth, name, ctrlStreams, tags, localDepth = localDepth)
+      release()
     })
+
+    hardFork {
+      lock.await()
+      this.build(sysBus, address, depth, name, ctrlStreams, tags, localDepth = localDepth)
+      sysBus.release()
+    }
   }
 
 

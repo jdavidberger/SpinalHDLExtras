@@ -1,6 +1,7 @@
 package spinalextras.lib.bus.general
 
 import spinal.core._
+import spinal.core.fiber.Lock
 import spinal.lib._
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, SizeMapping}
 import spinal.lib.bus.regif.BusIf
@@ -13,6 +14,9 @@ trait BusSlaveProvider {
   def add_slave_factory(name: String, mapping: SizeMapping, m2s_stage : Boolean, s2m_stage : Boolean, tags: String*): BusSlaveFactory
   def add_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = ???
 
+  val lock = Lock()
+  def retain() = lock.retain()
+  def release() = lock.release()
   val preBuildTasks = new mutable.ArrayBuffer[() => Unit]()
   def addPreBuildTask(task : () => Unit) {
     preBuildTasks.append(task)

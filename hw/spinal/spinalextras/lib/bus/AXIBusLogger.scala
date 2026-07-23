@@ -43,20 +43,30 @@ object AXIBusLogger {
   }
 
   def flows(addressMapping: AddressMapping, axis: Axi4Bus*): Seq[(Data, Flow[Bits])] = {
+    flows(addr =>  {
+      if(addressMapping == AllMapping) {
+        True
+      } else {
+        addressMapping.hit(addr)
+      }
+
+    }, axis:_*)
+  }
+
+  def flows(addressMapping: UInt => Bool, axis: Axi4Bus*): Seq[(Data, Flow[Bits])] = {
     val flows_meta = axis.map(axi => {
       val (_, aw, ar, r, w, b) = decompose(axi)
 
+      val awHit = RegNext(addressMapping(aw.payload.addr))
+      val arHit = RegNext(addressMapping(ar.payload.addr))
+
       val (allowWrite, allowRead) =
-        if(addressMapping == AllMapping) {
-          (True, True)
-        } else {
-          (RegNextWhen(addressMapping.hit(aw.payload.addr), aw.fire, False),
-            RegNextWhen(addressMapping.hit(ar.payload.addr), ar.fire, False))
-        }
+          (RegNextWhen(awHit, aw.fire, False),
+            RegNextWhen(arHit, ar.fire, False))
 
       (Seq(
-        aw.toFlowFire.stage().takeWhen(addressMapping.hit(aw.payload.addr)).setName(aw.getName()),
-        ar.toFlowFire.stage().takeWhen(addressMapping.hit(ar.payload.addr)).setName(ar.getName()),
+        aw.toFlowFire.stage().takeWhen(awHit).setName(aw.getName()),
+        ar.toFlowFire.stage().takeWhen(arHit).setName(ar.getName()),
         r.toFlowFire.stage().takeWhen(allowRead).setName(r.getName()),
         w.toFlowFire.stage().takeWhen(allowWrite).setName(w.getName()),
         b.toFlowFire.stage().takeWhen(allowWrite).setName(b.getName()),

@@ -16,6 +16,15 @@ case class Optional[T <: Data](dataType : HardType[T]) extends Bundle with Forma
     Mux(has_value, value, other)
   }
 
+  def clear() = {
+    has_value := False
+  }
+
+  def set_value(v : T): Unit = {
+    value := v
+    has_value := True
+  }
+
   override def formalIsStateValid(): Seq[FormalProperty] = new FormalProperties(this) {
     val value_properties = FormalData.formalIsStateValid(value)
       for (v <- value_properties) {
