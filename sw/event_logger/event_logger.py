@@ -218,7 +218,11 @@ def open_data_stream(file_arg = None):
             file = sys.stdin.buffer if file_arg == "-" else open(file_arg, "rb")
             def data_stream_from_file():
                 while True:
-                    yield file.read(12)
+                    raw = file.read(12)
+                    if len(raw) < 12:
+                        yield None
+                        return
+                    yield raw
             data_stream = data_stream_from_file()
     else:
         url = 'ftdi://ftdi:0x6010/1'
