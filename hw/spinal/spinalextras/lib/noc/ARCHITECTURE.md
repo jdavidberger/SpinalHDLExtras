@@ -112,25 +112,26 @@ first (WEST/EAST), then `y` (NORTH/SOUTH); corner and edge nodes simply omit
 the ports they don't need.
 
 ```mermaid
-flowchart TB
-  classDef node fill:#eef6ee,stroke:#4a8a55,color:#1a3320
-  subgraph "y = 0"
-    N0["node_0 (x0,y0)"]:::node
-    N2["node_2 (x1,y0)"]:::node
-    N4["node_4 (x2,y0)"]:::node
-  end
-  subgraph "y = 1"
-    N1["node_1 (x0,y1)"]:::node
-    N3["node_3 (x1,y1)"]:::node
-    N5["node_5 (x2,y1)"]:::node
-  end
-  N0 <--> N2
-  N2 <--> N4
-  N1 <--> N3
-  N3 <--> N5
-  N0 <--> N1
-  N2 <--> N3
-  N4 <--> N5
+block-beta
+columns 3
+N0["node_0<br/>x=0, y=0"] N2["node_2<br/>x=1, y=0"] N4["node_4<br/>x=2, y=0"]
+N1["node_1<br/>x=0, y=1"] N3["node_3<br/>x=1, y=1"] N5["node_5<br/>x=2, y=1"]
+
+N0 <--> N2
+N2 <--> N4
+N1 <--> N3
+N3 <--> N5
+N0 <--> N1
+N2 <--> N3
+N4 <--> N5
+
+classDef node fill:#eef6ee,stroke:#4a8a55,color:#1a3320
+class N0 node
+class N1 node
+class N2 node
+class N3 node
+class N4 node
+class N5 node
 ```
 
 ### Torus — mesh with wraparound, ring routing per axis
@@ -141,28 +142,28 @@ node keeps all 5 ports (no edges). `resolveDestPort` calls the shared
 whichever direction is shorter around that axis's wraparound.
 
 ```mermaid
-flowchart TB
-  classDef node fill:#eef6ee,stroke:#4a8a55,color:#1a3320
-  linkStyle default stroke:#4a8a55
-  subgraph "y = 0"
-    N0["node_0"]:::node
-    N2["node_2"]:::node
-    N4["node_4"]:::node
-  end
-  subgraph "y = 1"
-    N1["node_1"]:::node
-    N3["node_3"]:::node
-    N5["node_5"]:::node
-  end
-  N0 <--> N2
-  N2 <--> N4
-  N1 <--> N3
-  N3 <--> N5
-  N0 <--> N1
-  N2 <--> N3
-  N4 <--> N5
-  N0 -.wrap.-> N4
-  N1 -.wrap.-> N5
+block-beta
+columns 3
+N0["node_0<br/>x=0, y=0"] N2["node_2<br/>x=1, y=0"] N4["node_4<br/>x=2, y=0"]
+N1["node_1<br/>x=0, y=1"] N3["node_3<br/>x=1, y=1"] N5["node_5<br/>x=2, y=1"]
+
+N0 <--> N2
+N2 <--> N4
+N1 <--> N3
+N3 <--> N5
+N0 <--> N1
+N2 <--> N3
+N4 <--> N5
+N0 <-.-> N4
+N1 <-.-> N5
+
+classDef node fill:#eef6ee,stroke:#4a8a55,color:#1a3320
+class N0 node
+class N1 node
+class N2 node
+class N3 node
+class N4 node
+class N5 node
 ```
 
 *(illustrative — the wrap edges shown are the extra links a torus adds over
@@ -178,7 +179,7 @@ pick the shorter direction; this primitive is reused per-axis by `Torus`.
 ```mermaid
 flowchart LR
   classDef node fill:#f5eef7,stroke:#8a4a97,color:#2f1834
-  N0["node_0"]:::node --> N1["node_1"]:::node --> N2["node_2"]:::node --> N3["node_3"]:::node --> N4["node_4"]:::node --> N5["node_5"]:::node --> N0
+  N0["node_0"]:::node <--> N1["node_1"]:::node <--> N2["node_2"]:::node <--> N3["node_3"]:::node <--> N4["node_4"]:::node <--> N5["node_5"]:::node <--> N0
 ```
 
 ### Tree / Star — preorder DFS addressing, range-membership routing
@@ -194,15 +195,15 @@ covers every remaining node, so it collapses to one level.
 flowchart TB
   classDef node fill:#eef2f8,stroke:#4a6a97,color:#182338
   N0["node_0 (root)"]:::node
-  N0 --> N1["node_1<br/>subtree [1,5]"]:::node
-  N0 --> N6["node_6<br/>subtree [6,9]"]:::node
-  N1 --> N2["node_2<br/>subtree [2,3]"]:::node
-  N1 --> N4["node_4<br/>subtree [4,5]"]:::node
-  N2 --> N3["node_3 (leaf)"]:::node
-  N4 --> N5["node_5 (leaf)"]:::node
-  N6 --> N7["node_7 (leaf)"]:::node
-  N6 --> N8["node_8 (leaf)"]:::node
-  N6 --> N9["node_9 (leaf)"]:::node
+  N0 <--> N1["node_1<br/>subtree [1,5]"]:::node
+  N0 <--> N6["node_6<br/>subtree [6,9]"]:::node
+  N1 <--> N2["node_2<br/>subtree [2,3]"]:::node
+  N1 <--> N4["node_4<br/>subtree [4,5]"]:::node
+  N2 <--> N3["node_3 (leaf)"]:::node
+  N4 <--> N5["node_5 (leaf)"]:::node
+  N6 <--> N7["node_7 (leaf)"]:::node
+  N6 <--> N8["node_8 (leaf)"]:::node
+  N6 <--> N9["node_9 (leaf)"]:::node
 ```
 
 *(illustrative partitioning for `Tree(10, 2)` — actual subtree sizes are
@@ -213,13 +214,13 @@ children, earlier children absorbing any remainder)*
 flowchart LR
   classDef node fill:#f8f0e6,stroke:#a87a3b,color:#3a2810
   Hub["node_0 (hub)"]:::node
-  Hub --- L1["node_1"]:::node
-  Hub --- L2["node_2"]:::node
-  Hub --- L3["node_3"]:::node
-  Hub --- L4["node_4"]:::node
-  Hub --- L5["node_5"]:::node
-  Hub --- L6["node_6"]:::node
-  Hub --- L7["node_7"]:::node
+  Hub <--> L1["node_1"]:::node
+  Hub <--> L2["node_2"]:::node
+  Hub <--> L3["node_3"]:::node
+  Hub <--> L4["node_4"]:::node
+  Hub <--> L5["node_5"]:::node
+  Hub <--> L6["node_6"]:::node
+  Hub <--> L7["node_7"]:::node
 ```
 
 `Star(8) = Tree(8, 8)` — every leaf is a direct child of the hub.
@@ -345,26 +346,27 @@ the wire even though several VCs share one physical link.
 
 ```mermaid
 sequenceDiagram
-  participant Src as Source (external, node A)
+  participant Src as Source
   participant A as RouterNode A
   participant B as RouterNode B
-  participant C as RouterNode C (dest)
+  participant C as RouterNode C
 
-  Src->>A: header flit (dest=C, vc=v), last=0
-  A->>A: decode header · resolveDestPort → toward B
-  A->>A: allocator grants (in←A, out→B, vc')
+  Note over Src,C: packet destined for node C, vc = v
+  Src->>A: header flit, dest=C vc=v, last=false
+  A->>A: decode header, resolveDestPort towards B
+  A->>A: allocator grants input to output-B, vc2
   A->>B: header flit forwarded
-  B->>B: decode header · resolveDestPort → toward C
-  B->>B: allocator grants (in←A-side, out→C, vc'')
+  B->>B: decode header, resolveDestPort towards C
+  B->>B: allocator grants input to output-C, vc3
   B->>C: header flit forwarded
-  Note over A,C: latched vc register at each hop —<br/>later flits reuse the same granted path,<br/>no re-arbitration (wormhole)
+  Note over A,C: vc register latched at each hop, later flits reuse the same granted path with no re-arbitration
   Src->>A: payload flit 1
   A->>B: payload flit 1
   B->>C: payload flit 1
-  Src->>A: payload flit N, last=1
-  A->>B: payload flit N, last=1
-  B->>C: payload flit N, last=1
-  Note over A,B,C: last=1 fires GrantTable.release at every hop —<br/>path torn down, lanes free for the next packet
+  Src->>A: payload flit N, last=true
+  A->>B: payload flit N, last=true
+  B->>C: payload flit N, last=true
+  Note over A,C: last flit fires GrantTable release at every hop, path torn down and lanes freed
 ```
 
 Because each VC lane is buffered and arbitrated independently, one packet
