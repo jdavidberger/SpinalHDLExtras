@@ -15,11 +15,15 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
-case class SimulationLoggerHandle(stream: Stream[Bits], filename: String) {
-  def startCapture(clockDomain: ClockDomain): Unit = {
+case class SimulationLoggerHandle(stream: Stream[Bits], yamlPath: String, defaultDir: String) {
+  def startCapture(clockDomain: ClockDomain, filename: String = null): Unit = {
     import spinal.core.sim._
 
-    val out = new BufferedOutputStream(new FileOutputStream(filename))
+    val resolvedFilename = if (filename != null) filename else s"$defaultDir/GlobalLogger.bin"
+    val isSqlite = resolvedFilename.endsWith(".sqlite")
+    val binPath = if (isSqlite) resolvedFilename.stripSuffix(".sqlite") + ".bin" else resolvedFilename
+
+    val out = new BufferedOutputStream(new FileOutputStream(binPath))
     stream.ready #= true
 
     StreamMonitor(stream, clockDomain) { payload =>
@@ -30,6 +34,46 @@ case class SimulationLoggerHandle(stream: Stream[Bits], filename: String) {
       buf.putInt(((v >> 64) & 0xFFFFFFFFL).toInt)
       out.write(buf.array())
       out.flush()
+    }
+
+    if (isSqlite) {
+      onSimEnd {
+        out.close()
+        GlobalLoggerSim.convertToSqlite(yamlPath, binPath, resolvedFilename)
+      }
+    }
+  }
+}
+
+object GlobalLoggerSim {
+  def convertToSqlite(yamlPath: String, binPath: String, dbPath: String): Unit = {
+    import scala.sys.process._
+    import java.nio.file.{Files, Paths}
+
+    val scriptDir = Paths.get("sw", "event_logger").toAbsolutePath
+    val script = scriptDir.resolve("event_logger_db.py")
+
+    if (!Files.exists(script)) {
+      println(s"Warning: event_logger_db.py not found at $script, leaving $binPath unconverted")
+      return
+    }
+    val python3 = if (Seq("sh", "-c", "command -v python3 > /dev/null").! == 0) "python3" else null
+    if (python3 == null) {
+      println(s"Warning: python3 not found on PATH, leaving $binPath unconverted")
+      return
+    }
+
+    new File(dbPath).delete()
+    val cmd = Seq(python3, script.toString,
+      new File(yamlPath).getAbsolutePath,
+      "--db", new File(dbPath).getAbsolutePath,
+      "--input", new File(binPath).getAbsolutePath)
+
+    val exitCode = Process(cmd, scriptDir.toFile).!
+    if (exitCode != 0) {
+      println(s"Warning: event_logger_db.py exited with code $exitCode; keeping $binPath for inspection")
+    } else {
+      new File(binPath).delete()
     }
   }
 }
@@ -139,7 +183,7 @@ class GlobalLogger {
     })
   }
 
-  def create_simulation_logger(tags: Set[String] = Set(), filename: String = null, depth: Int = 128): SimulationLoggerHandle = {
+  def create_simulation_logger(tags: Set[String] = Set(), depth: Int = 128): SimulationLoggerHandle = {
     val outStream = Stream(Bits(96 bits)).setName("simLoggerStream")
     val inFlow = Flow(Bits(32 bits)).setName("simLoggerCtrl")
     inFlow.setIdle()
@@ -152,9 +196,8 @@ class GlobalLogger {
 
     val dir = if (output_path != null) output_path else spinal.core.GlobalData.get.config.targetDirectory
     new File(dir).mkdirs()
-    val resolvedFilename = if (filename != null) filename else s"$dir/GlobalLogger.bin"
 
-    SimulationLoggerHandle(outStream, resolvedFilename)
+    SimulationLoggerHandle(outStream, yamlPath = s"$dir/GlobalLogger.logger_defs.yml", defaultDir = dir)
   }
 
   def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String, ctrlStreams: Option[(Stream[Bits], Flow[Bits])] = None, tags: Set[String] = Set(), localDepth : Int = 0): Unit = {
@@ -202,8 +245,8 @@ object GlobalLogger {
     get().create_logger_stream(depth, ctrlStreams = ctrlStreams, tags = tags)
   }
 
-  def create_simulation_logger(tags: Set[String] = Set(), filename: String = null, depth: Int = 128): SimulationLoggerHandle = {
-    get().create_simulation_logger(tags = tags, filename = filename, depth = depth)
+  def create_simulation_logger(tags: Set[String] = Set(), depth: Int = 128): SimulationLoggerHandle = {
+    get().create_simulation_logger(tags = tags, depth = depth)
   }
 
   def create_logger_port(sysBus: BusSlaveProvider, address: BigInt, depth: Int, name: String = Component.toplevel.name + "Logger",
