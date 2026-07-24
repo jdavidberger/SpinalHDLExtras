@@ -5,6 +5,8 @@ import spinalextras.lib.noc.topology.Ring.{ClockWise, CounterClockWise, Local}
 import spinalextras.lib.noc.virtualchannels.{Dynamic, GrantTable, Static}
 import spinalextras.lib.noc.{NoC, NocConfig, RouterNode, Topology}
 
+import scala.language.postfixOps
+
 object Ring {
   val Local = 0
   val ClockWise = 1
@@ -26,7 +28,12 @@ object Ring {
     R
   }
 }
-class Ring(size: Int = 0) extends Topology {
+
+sealed trait RingRouteing
+object Closest extends RingRouteing
+object ClockwiseAlways extends RingRouteing
+
+class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
   def defaultConnectivityIn : Int = 3
 
   override def nodes: Int = size
@@ -34,7 +41,10 @@ class Ring(size: Int = 0) extends Topology {
   override def sizeFor(nodes: Int): Topology = new Ring(nodes)
 
   override def resolveDestPort(dest: UInt, curr: Int): UInt = {
-    Ring(dest, curr, size)
+    if (routeing == ClockwiseAlways) {
+      Mux(dest === curr, U(0, 2 bits), U(ClockWise, 2 bits))
+    } else
+      Ring(dest, curr, size)
   }
 
   override def nodePortIndicesForCanonicalPorts(address: Int): Seq[Int] = (0 until maxCanonicalPorts)
