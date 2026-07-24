@@ -62,9 +62,9 @@ class Ring(size: Int = 0) extends Topology {
     val isDateline = (address == size - 1 && canonicalPort == ClockWise) ||
                      (address == 0 && canonicalPort == CounterClockWise)
 
+    val escapeVc = vcCount - 1
     cfg.virtualChannelMode match {
       case Dynamic if vcCount >= 2 =>
-        val escapeVc = vcCount - 1
 
         Seq.tabulate(candidateCount) { c =>
           val inputPort = c / vcCount
@@ -99,8 +99,9 @@ class Ring(size: Int = 0) extends Topology {
         Seq.tabulate(candidateCount) { c =>
           val inputPort = c / vcCount
           val sourceVc = c % vcCount
-          val effectiveClass = if (inputPort == Local) 0 else sourceVc
-          val targetClass = if (isDateline) Math.min(effectiveClass + 1, vcCount - 1) else effectiveClass
+          val effectiveClass = if (inputPort == Local && sourceVc == escapeVc) 0 else sourceVc
+
+          val targetClass = if (isDateline) escapeVc else effectiveClass
           Seq.tabulate(vcCount)(_ == targetClass)
         }
       case _ => super.allowedTransitionTable(cfg, port, candidateCount, vcCount)

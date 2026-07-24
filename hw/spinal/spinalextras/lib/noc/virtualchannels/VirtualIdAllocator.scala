@@ -99,6 +99,8 @@ class VirtualIdAllocator(cfg: NocConfig,
     val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
     val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
+    println(address, o, allowed)
+
     val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration, allowed, highPriority)
     tables += table
     when(table.io.activity) {
@@ -107,6 +109,13 @@ class VirtualIdAllocator(cfg: NocConfig,
 
     when(table.io.activity) {
       io.activity := True
+    }
+
+    when(table.io.grantFlow.fire) {
+      val v = table.io.grantFlow._1
+      val c = table.io.grantFlow._2
+
+      report(Seq("Mapped ", cfg.topology.addressName(address), "(", c / vcCount, ") -> ", " out_node ", o, " out_vcid ", v, " in_vcid ",  c % vcCount))
     }
 
     table.setName(s"grant_o${o}")

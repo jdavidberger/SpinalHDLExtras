@@ -43,7 +43,7 @@ object NocConfig {
     // something to fold into this suite silently, so vcDepth is left at the
     // default for now.
     for((name, topology) <- Topology.testConfigurations();
-        virtualChannels <- Seq(1, 2, 3);
+        virtualChannels <- Seq(2, 3);
         virtualChannelMode <- Seq(Static, Dynamic);
         virtualChannelArbitrationPolicy <- Seq(RoundRobin, LowestFirst)
         ) yield

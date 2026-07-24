@@ -3,8 +3,9 @@ package spinalextras.lib.noc.virtualchannels
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
-import spinal.lib.CountOne
+import spinal.lib.{CountOne, Flow, master}
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalData, FormalProperties, FormalProperty}
+import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 class GrantTableOutput(candidateCount : Int, vcCount : Int) extends Bundle with FormalData {
@@ -89,6 +90,11 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
     val release = in Vec(Bool(), vcCount)                       // release(v): lane v's current occupant is done
     val grant   = out (new GrantTableOutput(candidateCount, vcCount)) // grant(v)(c): lane v is currently serving candidate c
 
+    val grantFlow = master(Flow(TupleBundle(
+      UInt(log2Up(vcCount + 1) bits),
+      UInt(log2Up(candidateCount + 1) bits)
+    )))
+
     val activity = out (Bool())
   }
 
@@ -153,11 +159,19 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   laneSelector.io.chosen.ready := bothValid
   candidateSelector.io.chosen.ready := bothValid
 
+  io.grantFlow.setIdle()
+
   when(bothValid) {
     for (v <- 0 until vcCount; c <- 0 until candidateCount) {
       when(laneSelector.io.chosen.payload === U(v, vcBits bits) &&
            candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
         grant(v)(c) := True
+        if(!allowed(c)(v)) {
+          assert(False)
+        }
+        io.grantFlow.payload._1 := v
+        io.grantFlow.payload._2 := c
+        io.grantFlow.valid := True
       }
     }
   }

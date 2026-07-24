@@ -4,6 +4,9 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
+import spinal.sim.SimManagerContext
+import spinalextras.lib.Config
+import spinalextras.lib.logging.GlobalLogger
 import spinalextras.lib.noc._
 import spinalextras.lib.noc.topology.{Mesh, Ring, Star, Torus, Tree}
 import spinalextras.lib.noc.virtualchannels.Dynamic
@@ -57,6 +60,8 @@ class NocConcurrentHarness(cfg: NocConfig) extends Component {
     noc.configureInputNode(i, io.rawInputs(i), io.destInputs(i), io.vcInputs(i))
     io.outputs(i) <> noc.io.outputs(i)
   }
+
+  //val simLog = GlobalLogger.create_simulation_logger(tags = Set("noc-grant-table"))
 }
 
 object NocConcurrentTester {
@@ -123,8 +128,11 @@ object NocConcurrentTester {
     packets.foreach(p => require(p.vc < Math.max(cfg.virtualChannels, 1),
       s"packet $p uses vc ${p.vc}, but cfg only has ${cfg.virtualChannels} virtual channel(s)"))
 
-    SimConfig.withWave.compile(new NocConcurrentHarness(cfg)).doSim(seed = simSeed) { dut =>
+    Config.sim.compile(new NocConcurrentHarness(cfg)).doSim(seed = simSeed) { dut =>
       dut.clockDomain.forkStimulus(period = 10)
+
+      val path = SimManagerContext.current.manager.asInstanceOf[CoreSimManager].compiled.compiledPath
+      //dut.simLog.startCapture(dut.clockDomain, path + "/logger.sqlite")
 
       val n = dut.n
       for (node <- 0 until n) dut.io.rawInputs(node).valid #= false
