@@ -97,7 +97,16 @@ class OutputPort(cfg : NocConfig) extends Component {
     val output = master(Stream(Fragment(Flit(cfg))))
   }
 
-  StreamArbiterFactory().lowerFirst.transactionLock.on(io.inputs) <> io.output
+  // lowerFirst (or transactionLock) previously let a continuously-ready pool
+  // (unescaped) VC starve a bursty escape VC of physical link bandwidth:
+  // lowerFirst gives pool static priority outright, and even with roundRobin,
+  // transactionLock only re-arbitrates once per whole (multi-beat) packet, so
+  // a VC with a much higher duty cycle than its competitor still dominates
+  // over many transactions. noLock re-arbitrates every beat instead -- safe
+  // here since each flit carries its own vc tag and is redemuxed downstream
+  // (see InputPort) -- which is what actually lets a low-duty-cycle transit
+  // flow get its fair share of turns.
+  StreamArbiterFactory().roundRobin.noLock.on(io.inputs) <> io.output
 }
 
 object OutputPort {

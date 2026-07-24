@@ -298,6 +298,26 @@ class NocConcurrencySpec extends AnyFunSuite {
 
 }
 
+// Regression coverage for a deadlock that reproduced even with all traffic
+// routed one-way (no direction-vs-direction interaction, no local-vs-transit
+// admission race) -- root cause turned out to be OutputPort's physical-link
+// arbiter starving the escape VC of wire bandwidth in favor of a
+// continuously-ready pool VC (see RouterNode.OutputPort).
+class RingOneWayRegressionSpec extends AnyFunSuite {
+  test("Ring3 clockwise-only vc2 dynamic roundrobin") {
+    val cfg = NocConfig(
+      topology = new spinalextras.lib.noc.topology.Ring(3, spinalextras.lib.noc.topology.ClockwiseAlways),
+      virtualChannels = 2,
+      virtualChannelMode = Dynamic,
+      virtualChannelArbitrationPolicy = RoundRobin
+    )
+    val packetsPerSrc = 4 * cfg.virtualChannels * cfg.vcDepth
+    val timeoutCycles = 40000 * cfg.virtualChannels * cfg.vcDepth
+    NocConcurrentTester.test(cfg, NocConcurrentTester.floodPackets(cfg, packetsPerSrc = packetsPerSrc),
+      timeoutCycles = timeoutCycles)
+  }
+}
+
 class NocVCIDSpec extends AnyFunSuite {
   def topologies: Seq[(String, NocConfig)] = NocConfig.testConfigurations()
 
