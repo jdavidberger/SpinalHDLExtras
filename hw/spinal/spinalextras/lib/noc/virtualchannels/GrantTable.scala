@@ -60,13 +60,26 @@ object GrantTable {
 // only certain candidates may ever reach it (an escape/dateline VC). Use
 // GrantTable.allowAll for the previous unrestricted behavior.
 //
+// `highPriority(c)`: candidateSelector only ever considers low-priority
+// candidates when no high-priority candidate is currently eligible. This is
+// a hard priority, not weighted fairness -- e.g. a NoC allocator uses it to
+// starve local injection in favor of transit traffic already in the
+// network, since only the latter is needed for the network to keep
+// draining. Defaults to all-true (no effect) for callers that don't need it.
+//
 // This is deliberately generic (no NoC-specific concepts): candidates and
 // lanes are just indices. A NoC-level VC allocator is built by wiring
 // (input port, source vc) candidates into one of these per output port.
 class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boolean,
-                  allowed: Seq[Seq[Boolean]]) extends ComponentWithFormalProperties {
+                  allowed: Seq[Seq[Boolean]],
+                  highPriorityIn: Seq[Boolean] = Nil) extends ComponentWithFormalProperties {
   require(allowed.length == candidateCount && allowed.forall(_.length == vcCount),
     s"allowed must be a $candidateCount x $vcCount matrix")
+  // Constructor default values can't reference other constructor params
+  // (Scala restriction), hence the Nil-sentinel indirection here.
+  val highPriority: Seq[Boolean] = if (highPriorityIn.isEmpty) Seq.fill(candidateCount)(true) else highPriorityIn
+  require(highPriority.length == candidateCount,
+    s"highPriority must have $candidateCount entries")
 
   val candidateBits = log2Up(candidateCount)
   val vcBits = log2Up(vcCount)
@@ -109,9 +122,19 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   // onto a candidate that can never be served right now, stalling this
   // entire output port even though some other, presently-servable candidate
   // is waiting.
+  val eligible = Vec(Bool(), candidateCount)
   for (c <- 0 until candidateCount) {
     val hasFreeAllowedLane = (0 until vcCount).filter(allowed(c)).map(v => !laneBusy(v)).foldLeft(False)(_ || _)
-    candidateSelector.io.requests(c) := io.request(c) && !candidateBusy(c) && hasFreeAllowedLane
+    eligible(c) := io.request(c) && !candidateBusy(c) && hasFreeAllowedLane
+  }
+
+  // Hard priority: a low-priority candidate only ever competes for
+  // candidateSelector's pick while no high-priority candidate is eligible.
+  // Fairness (round-robin/lowest-first) still applies within whichever tier
+  // is currently active.
+  val highTierEligible = (0 until candidateCount).filter(highPriority).map(eligible(_)).foldLeft(False)(_ || _)
+  for (c <- 0 until candidateCount) {
+    candidateSelector.io.requests(c) := eligible(c) && (Bool(highPriority(c)) || !highTierEligible)
   }
   io.activity := candidateSelector.io.activity
 
@@ -178,6 +201,14 @@ class GrantTableFormalTester extends AnyFunSuite with FormalTestSuite {
     (for (rr <- Seq(true, false); vcs <- Seq(1, 2, 3); ports <- Seq(1, 2, 3)) yield
       (s"Diagonal_rr${rr}_ports${ports}_vc${vcs}", () =>
         GeneralFormalDut(() => new GrantTable(ports * vcs, vcs, rr, GrantTable.diagonal(ports * vcs, vcs)))
+      )) ++
+    // Non-trivial highPriority mask (candidate 0 low-priority, rest high) --
+    // proof coverage for the hard-priority tiering used to prefer NoC
+    // transit traffic over local injection.
+    (for (rr <- Seq(true, false); candidates <- Seq(2, 5); vcs <- Seq(1, 2, 3)) yield
+      (s"Prioritized_rr${rr}_c${candidates}_vc${vcs}", () =>
+        GeneralFormalDut(() => new GrantTable(candidates, vcs, rr, GrantTable.allowAll(candidates, vcs),
+          Seq.tabulate(candidates)(_ != 0)))
       ))
   }
 }

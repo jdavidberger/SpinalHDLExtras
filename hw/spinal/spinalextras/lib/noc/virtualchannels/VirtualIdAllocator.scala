@@ -88,11 +88,18 @@ class VirtualIdAllocator(cfg: NocConfig,
 
   def candidateOf(i: Int, s: Int): Int = i * vcCount + s
 
+  // Physical input port 0 is always local injection (Topology.createNodes
+  // wires it directly, bypassing canonical-port resolution used for every
+  // inter-router link) -- so candidates sourced from it are local, and every
+  // other input port is transit (relayed from a neighboring router).
+  val LocalInputPort = 0
+  val highPriority = Seq.tabulate(candidateCount)(c => c / vcCount != LocalInputPort)
+
   for (o <- 0 until connectivityOut) {
     val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
     val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
-    val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration, allowed)
+    val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration, allowed, highPriority)
     tables += table
     when(table.io.activity) {
       io.activity := True
