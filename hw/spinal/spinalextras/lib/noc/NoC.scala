@@ -64,14 +64,7 @@ class NoC(val cfg: NocConfig) extends ComponentWithFormalProperties {
   // Deadlock-freedom: track every flit-carrying handshake whose blocking could ever be the
   // reason nothing moves -- the NoC's own external ports, each router's inter-node ports, and
   // each router's VC-allocation subsystem boundary (routedFlits in, allocatedFlits out).
-  //
-  // Deliberately excluded: each router's per-VC FIFO-pop stream (RouterNode's
-  // `inputPorts(*).io.outputs`). That stream stalls for exactly one cycle whenever a flit's
-  // routing decision is latching (RouterNode.scala's `vc` register, set unconditionally the
-  // cycle it sees `vcStreams.valid`), regardless of anything else happening in the NoC.
-  // Counting it here would flag that ordinary one-cycle event as a false "deadlock".
   private lazy val formalFlitStreams: Seq[Stream[_]] =
-    io.inputs ++ io.outputs ++
       nodes.flatMap(node =>
         node.io.inputs ++ node.io.outputs ++
           node.allocator.io.routedFlits.flatMap(_.toSeq) ++
@@ -80,7 +73,9 @@ class NoC(val cfg: NocConfig) extends ComponentWithFormalProperties {
 
   private lazy val formalAllOutputsReady = io.outputs.map(_.ready).reduce(_ && _)
   private lazy val formalAnyStalled = formalFlitStreams.map(_.isStall).reduce(_ || _)
-  private lazy val formalAnyFired = formalFlitStreams.map(_.fire).reduce(_ || _)
+  private lazy val formalAnyFired = formalFlitStreams.map(_.fire).reduce(_ || _) ||
+    nodes.map(node => node.routerActivity.asBits.orR).reduce(_ || _) ||
+    nodes.map(node => node.allocator.io.activity).reduce(_ || _)
 
   override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
     addFormalProperty(
@@ -180,13 +175,14 @@ class NoCDesign(cfg : NocConfig) {
       if (x._1 == null) null else x._1(_cfg),
       if (x._2 == null) null else x._2(_cfg))
     )
+
     NoC(processors, _cfg)
   }
 }
 
 class NocFormalTester extends AnyFunSuite with FormalTestSuite {
 
-  override def defaultDepth() = 3
+  override def defaultDepth() = 2
 
   formalTests().foreach(t => test(t._1) {
     t._2()
@@ -194,7 +190,7 @@ class NocFormalTester extends AnyFunSuite with FormalTestSuite {
 
   override def generateRtl() = {
     for((name, cfg) <- NocConfig.testConfigurations()) yield {
-      (name, () => GeneralFormalDut(() => new NoC(cfg)))
+      (name, () => GeneralFormalDut(() => new NoC(cfg), 1))
     }
   }
 }

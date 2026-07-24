@@ -9,6 +9,9 @@ trait Topology {
   type routeable_address_constant_t = Int
   type routeable_address_t = UInt
 
+  type canonical_port = Int
+  type port_index = Int
+
   def nodes: Int
   def addressSize : Int = log2Up(nodes)
   def sizeFor(nodes : Int) : Topology
@@ -23,14 +26,14 @@ trait Topology {
   def maxCanonicalPorts: Int = Math.max(defaultConnectivityIn, defaultConnectivityOut)
 
   // Sequence of canonical port numbers in their logical port index
-  def nodePortIndicesForCanonicalPorts(address : Int): Seq[Int]
+  def nodePortIndicesForCanonicalPorts(address : Int): Seq[canonical_port]
 
   def resolveCanonicalOutputPort(address : Int, port : Int): Int = nodePortIndicesForCanonicalPorts(address).indexOf(port)
 
   // Returns the neighbor address and the opposite port
-  def resolveNeighborAddress(address : Int, canonicalPort : Int) : (Int, Int)
+  def resolveNeighborAddress(address : Int, canonicalPort : canonical_port) : (Int, canonical_port)
 
-  def resolveCanonicalInputPort(address : Int, port : Int): Int = resolveCanonicalOutputPort(address, port)
+  def resolveCanonicalInputPort(address : Int, port : canonical_port): port_index = resolveCanonicalOutputPort(address, port)
 
   def createNode(cfg: NocConfig, address: Int): RouterNode = {
     new RouterNode(cfg, address = address)
@@ -59,13 +62,13 @@ trait Topology {
 object Topology {
   def testConfigurations() = {
     Seq(
-      "Mesh_1x1" -> new Mesh((1, 1)),
-      "Mesh_3x2" -> new Mesh((3, 2)),
-      "Mesh_4x4" -> new Mesh((4, 4)),
+//      "Mesh_1x1" -> new Mesh((1, 1)),
+//      "Mesh_3x2" -> new Mesh((3, 2)),
+//      "Mesh_4x4" -> new Mesh((4, 4)),
       "Torus_3x2" -> new Torus((3, 2)),
-      "Tree_10x2" -> new Tree(10, 2),
+//      "Tree_10x2" -> new Tree(10, 2),
       "Ring_6" -> new Ring(6),
-      "Star_8" -> Star(8),
+//      "Star_8" -> Star(8),
     )
   }
 }

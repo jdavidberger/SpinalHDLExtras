@@ -181,10 +181,14 @@ trait HasFormalProperties { self =>
     if(depth < 0) return this
 
     if(depth == 0) {
+      if(CurrentAssertionKind.orNull == AssertStatementKind.ASSUME) {
+        return this
+      }
       CurrentAssertionKind = AssertStatementKind.ASSUME
+      CurrentInputsAssertionKind = AssertStatementKind.ASSUME
       formalAssumeChildrensInputs()
     }
-
+    print(this)
     formalChildren().foreach(_.formalAssumeChildrenPastDepth((depth - 1).max(0)))
 
     this

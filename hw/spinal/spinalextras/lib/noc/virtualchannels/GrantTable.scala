@@ -34,15 +34,39 @@ class GrantTableOutput(candidateCount : Int, vcCount : Int) extends Bundle with 
   }
 }
 
+object GrantTable {
+  // No restriction: any candidate may be granted any lane -- fully
+  // adaptive/Dynamic behavior.
+  def allowAll(candidateCount: Int, vcCount: Int): Seq[Seq[Boolean]] =
+    Seq.fill(candidateCount)(Seq.fill(vcCount)(true))
+
+  // candidateCount must be a multiple of vcCount, laid out as
+  // candidateOf(i, s) = i * vcCount + s (see VirtualIdAllocator): candidate
+  // c may only ever be granted lane (c % vcCount), i.e. destVc is pinned to
+  // the candidate's own source-vc slot and never reassigned -- Static
+  // behavior.
+  def diagonal(candidateCount: Int, vcCount: Int): Seq[Seq[Boolean]] =
+    Seq.tabulate(candidateCount, vcCount) { (c, v) => (c % vcCount) == v }
+}
+
 // Matches up to `candidateCount` requesters against `vcCount` interchangeable
 // lanes, committing at most one new (lane, candidate) pairing per cycle. A
 // pairing is held (grant(v)(c) stays true) until the caller signals
 // io.release(v) -- e.g. because whatever was occupying that lane finished.
 //
+// `allowed(c)(v)` restricts which lanes candidate c may ever be granted --
+// e.g. to pin a candidate to a single lane (Static), or to reserve a lane so
+// only certain candidates may ever reach it (an escape/dateline VC). Use
+// GrantTable.allowAll for the previous unrestricted behavior.
+//
 // This is deliberately generic (no NoC-specific concepts): candidates and
 // lanes are just indices. A NoC-level VC allocator is built by wiring
 // (input port, source vc) candidates into one of these per output port.
-class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boolean) extends ComponentWithFormalProperties {
+class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boolean,
+                  allowed: Seq[Seq[Boolean]]) extends ComponentWithFormalProperties {
+  require(allowed.length == candidateCount && allowed.forall(_.length == vcCount),
+    s"allowed must be a $candidateCount x $vcCount matrix")
+
   val candidateBits = log2Up(candidateCount)
   val vcBits = log2Up(vcCount)
 
@@ -50,6 +74,8 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
     val request = in Vec(Bool(), candidateCount)                // request(c): candidate c wants a lane
     val release = in Vec(Bool(), vcCount)                       // release(v): lane v's current occupant is done
     val grant   = out (new GrantTableOutput(candidateCount, vcCount)) // grant(v)(c): lane v is currently serving candidate c
+
+    val activity = out (Bool())
   }
 
   val grant = Vec(Vec(RegInit(False), candidateCount), vcCount)
@@ -66,13 +92,31 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
     }
   }
 
-  // Any free lane will do -- they're interchangeable -- so no fairness
-  // policy is needed for lane selection.
-  val laneSelector = new VcSelector(vcCount, roundRobinArbitration = false)
-  for (v <- 0 until vcCount) laneSelector.io.requests(v) := !laneBusy(v)
+  // allowedMask(c)(v): compile-time lookup table, indexable by a runtime
+  // candidate index, of which lanes candidate c may use.
+  val allowedMask = Vec(allowed.map(row => Vec(row.map(Bool(_)))))
 
+  val laneSelector = new VcSelector(vcCount, roundRobinArbitration = false)
   val candidateSelector = new VcSelector(candidateCount, roundRobinArbitration)
-  for (c <- 0 until candidateCount) candidateSelector.io.requests(c) := io.request(c) && !candidateBusy(c)
+
+  // A candidate is only eligible to be picked (held) if it currently has at
+  // least one free, allowed lane -- otherwise candidateSelector could latch
+  // onto a candidate that can never be served right now, stalling this
+  // entire output port even though some other, presently-servable candidate
+  // is waiting.
+  for (c <- 0 until candidateCount) {
+    val hasFreeAllowedLane = (0 until vcCount).filter(allowed(c)).map(v => !laneBusy(v)).foldLeft(False)(_ || _)
+    candidateSelector.io.requests(c) := io.request(c) && !candidateBusy(c) && hasFreeAllowedLane
+  }
+  io.activity := candidateSelector.io.activity
+
+  // Any free lane the held candidate is allowed to use will do -- among
+  // those, they're interchangeable -- so no fairness policy is needed for
+  // lane selection.
+  val chosenAllowed = allowedMask(candidateSelector.io.chosen.payload)
+  for (v <- 0 until vcCount) {
+    laneSelector.io.requests(v) := !laneBusy(v) && candidateSelector.io.chosen.valid && chosenAllowed(v)
+  }
 
   // Commit the pairing the moment both sides are holding a pick. There is
   // no external backpressure on this join -- once both are valid they fire
@@ -122,9 +166,13 @@ class GrantTableFormalTester extends AnyFunSuite with FormalTestSuite {
   })
 
   override def generateRtl() = {
-    for (rr <- Seq(true, false); candidates <- Seq(1, 2, 5); vcs <- Seq(1, 2, 3)) yield
-      (s"Basic_rr${rr}_c${candidates}_vc${vcs}", () =>
-        GeneralFormalDut(() => new GrantTable(candidates, vcs, rr))
-      )
+    (for (rr <- Seq(true, false); candidates <- Seq(1, 2, 5); vcs <- Seq(1, 2, 3)) yield
+      (s"AllowAll_rr${rr}_c${candidates}_vc${vcs}", () =>
+        GeneralFormalDut(() => new GrantTable(candidates, vcs, rr, GrantTable.allowAll(candidates, vcs)))
+      )) ++
+    (for (rr <- Seq(true, false); vcs <- Seq(1, 2, 3); ports <- Seq(1, 2, 3)) yield
+      (s"Diagonal_rr${rr}_ports${ports}_vc${vcs}", () =>
+        GeneralFormalDut(() => new GrantTable(ports * vcs, vcs, rr, GrantTable.diagonal(ports * vcs, vcs)))
+      ))
   }
 }

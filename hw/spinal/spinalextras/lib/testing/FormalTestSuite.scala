@@ -68,6 +68,8 @@ class DefaultFormalDut(f : () => Component, depth : Int = -1) extends Component 
 
 object GeneralFormalDut {
   def apply(f : () => ComponentWithFormalProperties) = new GeneralFormalDut(f)
+  def apply(f : () => ComponentWithFormalProperties, depth : Int) = new GeneralFormalDut(f, depth)
+  def apply(f : () => Component, depth : Int) = new DefaultFormalDut(f, depth)
   def apply(f : () => Component) = new DefaultFormalDut(f)
 }
 

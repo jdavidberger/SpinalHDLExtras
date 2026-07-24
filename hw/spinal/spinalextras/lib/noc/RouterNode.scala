@@ -20,7 +20,11 @@ case class RoutedFlit(cfg : NocConfig, connectivityOut : Int) extends Bundle {
   val routedNode = UInt(log2Up(connectivityOut) bits)
 }
 
-class RouterNode(cfg: NocConfig, address: Int) extends ComponentWithFormalProperties {
+
+
+
+
+class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithFormalProperties {
   var connectivityIn : Int = cfg.topology.nodePortIndicesForCanonicalPorts(address).size
   var connectivityOut : Int = connectivityIn
 
@@ -53,14 +57,6 @@ class RouterNode(cfg: NocConfig, address: Int) extends ComponentWithFormalProper
     )
   }
 
-  val nocOutput = Flow(TupleBundle(Header(cfg), UInt(log2Up(cfg.virtualChannels) bits)))
-  nocOutput.setName(s"noc_output_${address}").setIdle()
-
-  GlobalLogger(
-    Set("noc-router", "router-mode", s"router-mode-${address}"),
-    FlowLogger.flows(nocOutput)
-  )
-
   // Allocate one downstream (destNode, destVc) slot per packet and route the
   // granted flits to the matching output port. This replaces the old
   // Static/Dynamic VcMap, which only arbitrated per-VC without any output-slot
@@ -73,49 +69,14 @@ class RouterNode(cfg: NocConfig, address: Int) extends ComponentWithFormalProper
     roundRobinArbitration = cfg.virtualChannelArbitrationPolicy == RoundRobin
   )
 
+  val routerActivity = Vec(Vec(Bool(), connectivityIn), cfg.virtualChannels)
   for (inputPort <- 0 until connectivityIn; vcid <- 0 until cfg.virtualChannels) {
-    val vc = RegInit(Optional.Empty(UInt(log2Up(connectivityOut) bits)))
-
-    val vcStreams = inputPorts(inputPort).io.outputs(vcid)
-      when(vc.has_value) {
-        when(vcStreams.lastFire) {
-          //report(Seq("Finish Address: ", address, " ", cfg.topology.addressName(address), " vcid ", idx))
-          vc.clear()
-        }
-      } elsewhen (vcStreams.valid) {
-        val hdr = Header(cfg)
-        hdr.assignFromBits(vcStreams.payload.fragment)
-        val outputNode = cfg.topology.resolveDestPort(hdr.dest, address)
-        vc.set_value(outputNode)
-
-        //report(Seq("Start Address: ", address, " ", cfg.topology.addressName(address), " dst ", hdr.dest, " app ", hdr.application, " vcid ", idx, " output ", outputNode))
-        nocOutput.valid := True
-        nocOutput._1 := hdr
-        nocOutput._2 := vcid
-      }
-
-      when(vc.has_value) {
-        if(vc.value.maxValue >= connectivityOut) {
-          assert(vc.value < connectivityOut)
-        }
-      }
-
-      vcStreams.continueWhen(vc.has_value).map(flit => {
-        val routedFlit = Fragment(new RoutedFlit(cfg, connectivityOut))
-        routedFlit.last := flit.last
-        routedFlit.flit.datum := flit.fragment
-        routedFlit.flit.vc := vcid
-        routedFlit.routedNode := vc.value
-        routedFlit
-      }) <> allocator.io.routedFlits(inputPort)(vcid)
+    FlitRouter(this, inputPort = inputPort, vcid = vcid, input = inputPorts(inputPort).io.outputs(vcid)) <>
+      allocator.io.routedFlits(inputPort)(vcid)
   }
 
-  for (o <- 0 until connectivityOut; v <- 0 until cfg.virtualChannels) {
-    allocator.io.allocatedFlits(o)(v) <> outputPorts(o).io.inputs(v)
-  }
-
-  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
-
+  for (o <- 0 until connectivityOut; vcid <- 0 until cfg.virtualChannels) {
+    allocator.io.allocatedFlits(o)(vcid) <> outputPorts(o).io.inputs(vcid)
   }
 }
 

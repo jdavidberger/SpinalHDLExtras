@@ -18,6 +18,8 @@ class VcSelector(n: Int, roundRobinArbitration: Boolean) extends Component {
   val io = new Bundle {
     val requests = in Vec(Bool(), n)
     val chosen   = master(Stream(UInt(vcBits bits)))
+
+    val activity = out Bool()
   }
 
   val rrPointer = if (roundRobinArbitration) RegInit(U(0, vcBits bits)) else null
@@ -52,6 +54,7 @@ class VcSelector(n: Int, roundRobinArbitration: Boolean) extends Component {
   io.chosen.valid := held.has_value
   io.chosen.payload := held.value
 
+  io.activity := io.chosen.fire
   when(held.has_value && io.chosen.fire) {
     held.clear()
     if (roundRobinArbitration) {
@@ -59,6 +62,7 @@ class VcSelector(n: Int, roundRobinArbitration: Boolean) extends Component {
     }
   } elsewhen (!held.has_value) {
     held := pick
+    io.activity := True
   }
 }
 
