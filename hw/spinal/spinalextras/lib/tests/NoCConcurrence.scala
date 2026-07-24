@@ -266,7 +266,22 @@ class NocConcurrencySpec extends AnyFunSuite {
   for ((name, cfg) <- topologies) {
     test(s"multiple streams run through the NoC concurrently: $name") {
       println(name)
-      NocConcurrentTester.test(cfg, NocConcurrentTester.floodPackets(cfg, packetsPerSrc = 4))
+      // A cyclic channel dependency, if one exists, is a permanent deadlock
+      // once every buffer around the cycle is simultaneously occupied and
+      // waiting -- it isn't a transient slowdown that a longer timeout would
+      // ride out. So the way to actually find one (rather than pass by luck
+      // on too-light traffic) is to guarantee the flood alone can exceed the
+      // network's total per-link buffering (~ vcCount * vcDepth flits per
+      // link) many times over, not to pick a flat packet count that happens
+      // to work for today's default vc/depth combination.
+      val packetsPerSrc = 4 * cfg.virtualChannels * cfg.vcDepth
+      // Legitimately-healthy delivery time scales with total flit volume, so
+      // the timeout budget needs to grow along with packetsPerSrc too --
+      // otherwise a heavier flood on a perfectly deadlock-free config would
+      // spuriously time out from sheer volume rather than a real stall.
+      val timeoutCycles = 40000 * cfg.virtualChannels * cfg.vcDepth
+      NocConcurrentTester.test(cfg, NocConcurrentTester.floodPackets(cfg, packetsPerSrc = packetsPerSrc),
+        timeoutCycles = timeoutCycles)
     }
   }
 

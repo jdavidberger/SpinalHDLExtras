@@ -33,6 +33,15 @@ object NocConfig {
     a.getClass.getSimpleName.replace("$", "")
   }
   def testConfigurations() = {
+    // NB: vcDepth = 1 was tried here too (tightest possible buffering, so
+    // most likely to expose a cyclic channel dependency as a hard deadlock)
+    // but it doesn't even elaborate on Ring/Torus: spinal.lib.StreamFifo's
+    // depth-1 case bypasses to a purely combinational ready path, and
+    // chained all the way around a physical cycle with no register
+    // anywhere breaking it, that's a genuine RTL combinational loop --
+    // independent of vcCount/mode/policy. That's a separate, real bug, not
+    // something to fold into this suite silently, so vcDepth is left at the
+    // default for now.
     for((name, topology) <- Topology.testConfigurations();
         virtualChannels <- Seq(1, 2, 3);
         virtualChannelMode <- Seq(Static, Dynamic);
