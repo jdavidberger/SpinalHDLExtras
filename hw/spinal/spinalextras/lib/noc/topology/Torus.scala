@@ -55,45 +55,50 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
   }
 
   // Two physical cycles here (an X-ring and a Y-ring), so -- like Ring --
-  // purely adaptive Dynamic assignment can deadlock. Reserve the top two vc
-  // indices as sticky escape lanes, one per dimension: escapeX is entered
-  // only at the X-ring's dateline edge, escapeY only at the Y-ring's.
-  // Dimension-order routing (X fully completes before Y starts, see
-  // resolveDestPort) means a packet only ever needs one of the two, never
-  // both, and never needs to shed one for the other. Ordinary hops keep the
-  // remaining vcs as a fully adaptive pool, excluding both escape lanes.
-  // Static (and vcCount < 2) fall through to the default (diagonal/allowAll)
-  // behavior.
+  // purely adaptive Dynamic assignment can deadlock. A single shared escape
+  // class (the top vc index) covers *both* dimensions: dimension-order
+  // routing (X fully completes before Y starts, see resolveDestPort) means a
+  // packet needs at most one class bump total, ever -- whichever dateline
+  // (X's or Y's) it happens to cross first -- and once escaped it never
+  // needs to distinguish which dimension it escaped in, since staying in the
+  // same (already-top) class at a later dateline is trivially monotonic.
+  // Giving X and Y *separate* escape classes (escapeX = vcCount-1, escapeY =
+  // vcCount-2) doesn't just waste a class: a packet needing both crossings
+  // gets forced escapeX -> escapeY at the Y dateline, a real class
+  // *decrease* that breaks the monotonic invariant, and it costs a second
+  // dedicated lane for no benefit -- at vcCount == 2 that leaves zero pool
+  // lanes at all (both taken by escapeX/escapeY), guaranteeing an instant
+  // stall for every ordinary hop. One shared escape class needs only
+  // vcCount >= 2, same as Ring.
   override def allowedTransitionTable(cfg: NocConfig, port: (address_t, canonical_port),
                                        candidateCount: Int, vcCount: Int): Seq[Seq[Boolean]] = {
-    cfg.virtualChannelMode match {
-      case Dynamic if vcCount >= 2 =>
-        val (address, canonicalPort) = port
-        val (x, y) = addressToXY(address)
-        val escapeX = vcCount - 1
-        val escapeY = vcCount - 2
+    val (address, canonicalPort) = port
+    val (x, y) = addressToXY(address)
+    val escapeVc = vcCount - 1
 
-        val isXDateline = (x == gridSize._1 - 1 && canonicalPort == Mesh.EAST) ||
-                          (x == 0 && canonicalPort == Mesh.WEST)
-        val isYDateline = (y == gridSize._2 - 1 && canonicalPort == Mesh.SOUTH) ||
-                          (y == 0 && canonicalPort == Mesh.NORTH)
+    val isDateline = (x == gridSize._1 - 1 && canonicalPort == Mesh.EAST) ||
+      (x == 0 && canonicalPort == Mesh.WEST) ||
+      (y == gridSize._2 - 1 && canonicalPort == Mesh.SOUTH) ||
+      (y == 0 && canonicalPort == Mesh.NORTH)
 
-        Seq.tabulate(candidateCount) { c =>
-          val inputPort = c / vcCount
-          val sourceVc = c % vcCount
-          // As with Ring: a candidate's incoming vc tag only means "already
-          // escaped" if an upstream router's own allowedTransitionTable
-          // actually put it there. On the Local port it's whatever the
-          // injecting source arbitrarily picked, not evidence of a real
-          // dateline crossing, so it must not be honored as sticky here.
-          val alreadyEscaped = (sourceVc == escapeX || sourceVc == escapeY) && inputPort != Mesh.LOCAL
+    val dynamic = cfg.virtualChannelMode == Dynamic
 
-          if (isXDateline) Seq.tabulate(vcCount)(_ == escapeX)               // forced escapeX
-          else if (isYDateline) Seq.tabulate(vcCount)(_ == escapeY)          // forced escapeY
-          else if (alreadyEscaped) Seq.tabulate(vcCount)(_ == sourceVc)      // sticky
-          else Seq.tabulate(vcCount)(v => v != escapeX && v != escapeY)      // adaptive pool
-        }
-      case _ => super.allowedTransitionTable(cfg, port, candidateCount, vcCount)
+    Seq.tabulate(candidateCount) { c =>
+      val inputPort = c / vcCount
+      val sourceVc = c % vcCount
+      // As with Ring: a candidate's incoming vc tag only means "already
+      // escaped" if an upstream router's own allowedTransitionTable
+      // actually put it there. On the Local port it's whatever the
+      // injecting source arbitrarily picked, not evidence of a real
+      // dateline crossing, so it must not be honored as sticky here.
+      val isEscapeInputVc = sourceVc == escapeVc
+      val alreadyEscaped = isEscapeInputVc && inputPort != Mesh.LOCAL
+      val effectiveClass = if (inputPort == Mesh.LOCAL && isEscapeInputVc) 0 else sourceVc
+
+      if (isDateline || alreadyEscaped) Seq.tabulate(vcCount)(_ == escapeVc)   // forced/sticky escape
+      else if (dynamic) Seq.tabulate(vcCount)(_ != escapeVc)                  // adaptive pool
+      else Seq.tabulate(vcCount)(_ == effectiveClass)
     }
+
   }
 }
