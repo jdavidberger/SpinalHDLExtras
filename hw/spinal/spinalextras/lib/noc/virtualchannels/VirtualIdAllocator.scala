@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.lib._
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.noc.topology.Mesh
-import spinalextras.lib.noc.{Flit, NocConfig, RoutedFlit}
+import spinalextras.lib.noc.{Flit, NocConfig, RoundRobin, RoutedFlit, Topology}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 import scala.collection.mutable.ArrayBuffer
@@ -13,8 +13,9 @@ import scala.collection.mutable.ArrayBuffer
 class VirtualIdAllocator(cfg: NocConfig,
                          connectivityIn: Int,
                          connectivityOut: Int,
-                         dynamicAllocation: Boolean,
-                         roundRobinArbitration: Boolean) extends ComponentWithFormalProperties {
+                         address : Topology.address_t,
+                        ) extends ComponentWithFormalProperties {
+  val roundRobinArbitration = cfg.virtualChannelArbitrationPolicy == RoundRobin
 
   val io = new Bundle {
     // One inbound stream per (input port, source vc lane). Each flit
@@ -83,9 +84,8 @@ class VirtualIdAllocator(cfg: NocConfig,
   def candidateOf(i: Int, s: Int): Int = i * vcCount + s
 
   for (o <- 0 until connectivityOut) {
-    val allowed =
-      if (!dynamicAllocation || vcCount == 1) GrantTable.diagonal(candidateCount, vcCount)
-      else GrantTable.allowAll(candidateCount, vcCount)
+    val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
+    val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
     val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration, allowed)
     when(table.io.activity) {
@@ -141,7 +141,7 @@ class VirtualIdAllocatorFormalTester extends AnyFunSuite with FormalTestSuite {
     for (rr <- Seq(true, false); dynamic <- Seq(true, false)) yield
       (s"Basic_rr${rr}_dyn${dynamic}", () =>
         GeneralFormalDut(() => new VirtualIdAllocator(
-          cfg = NocConfig(topology = new Mesh((4, 3))), 2, 2, dynamic, rr
+          cfg = NocConfig(topology = new Mesh((4, 3))), 2, 2, 0
         ))
       )
   }

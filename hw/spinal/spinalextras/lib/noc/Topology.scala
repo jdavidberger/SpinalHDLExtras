@@ -3,6 +3,7 @@ package spinalextras.lib.noc
 import spinal.core._
 import spinal.lib._
 import spinalextras.lib.noc.topology._
+import spinalextras.lib.noc.virtualchannels.{Dynamic, GrantTable, Static}
 
 trait Topology {
   type address_t = Int
@@ -39,6 +40,14 @@ trait Topology {
     new RouterNode(cfg, address = address)
   }
 
+  def allowedTransitionTable(cfg: NocConfig, port : (address_t, canonical_port),
+                             candidateCount : Int, vcCount : Int
+                            ): Seq[Seq[Boolean]] = {
+    cfg.virtualChannelMode match {
+      case Static => GrantTable.diagonal(candidateCount, vcCount)
+      case Dynamic => GrantTable.allowAll(candidateCount, vcCount)
+    }
+  }
 
   def createNodes(noc : NoC) : Seq[RouterNode] = {
     val nodes = for (x <- 0 until this.nodes) yield {
@@ -71,6 +80,13 @@ object Topology {
 //      "Star_8" -> Star(8),
     )
   }
+
+  type address_t = Int
+  type routeable_address_constant_t = Int
+  type routeable_address_t = UInt
+
+  type canonical_port = Int
+  type port_index = Int
 }
 
 

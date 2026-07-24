@@ -61,8 +61,7 @@ class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithForm
     cfg          = cfg,
     connectivityIn  = connectivityIn,
     connectivityOut = connectivityOut,
-    dynamicAllocation     = cfg.virtualChannelMode == Dynamic,
-    roundRobinArbitration = cfg.virtualChannelArbitrationPolicy == RoundRobin
+    address
   )
 
   val routerActivity = Vec(Vec(Bool(), connectivityIn), cfg.virtualChannels)
