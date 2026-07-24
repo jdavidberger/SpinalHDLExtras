@@ -2,7 +2,7 @@ package spinalextras.lib.noc.topology
 
 import spinal.core._
 import spinalextras.lib.noc.topology.Ring.{ClockWise, CounterClockWise, Local}
-import spinalextras.lib.noc.virtualchannels.{Dynamic, GrantTable}
+import spinalextras.lib.noc.virtualchannels.{Dynamic, GrantTable, Static}
 import spinalextras.lib.noc.{NoC, NocConfig, RouterNode, Topology}
 
 object Ring {
@@ -47,24 +47,24 @@ class Ring(size: Int = 0) extends Topology {
     })
   }
 
-  // The ring has one physical cycle, so a purely adaptive ("any free lane")
-  // Dynamic assignment can deadlock: concurrent packets can saturate every
-  // lane around the loop with nothing able to advance. Fix: reserve the top
-  // vc index as a sticky escape lane, entered only at the one designated
-  // dateline edge (address == size-1 going ClockWise, or address == 0 going
-  // CounterClockWise -- the same physical wraparound edge from each side).
-  // Ordinary (non-dateline) hops keep the rest of the vcs as a fully
-  // adaptive pool; a packet that has already escaped stays pinned to the
-  // escape lane on every subsequent hop. Static is left to the default
-  // (diagonal) behavior.
+  // The ring has one physical cycle, so keeping a packet's vc fixed for its
+  // entire trip -- whether that's Static's pinned destVc or Dynamic's
+  // unrestricted "any free lane" -- has no rule tying vc use to that cycle,
+  // and concurrent packets can saturate every lane around the loop with
+  // nothing able to advance. Both modes need a class transition at the one
+  // designated dateline edge (address == size-1 going ClockWise, or
+  // address == 0 going CounterClockWise -- the same physical wraparound
+  // edge from each side); they differ only in whether non-dateline hops are
+  // adaptive (Dynamic) or pinned (Static).
   override def allowedTransitionTable(cfg: NocConfig, port: (address_t, canonical_port),
                                        candidateCount: Int, vcCount: Int): Seq[Seq[Boolean]] = {
+    val (address, canonicalPort) = port
+    val isDateline = (address == size - 1 && canonicalPort == ClockWise) ||
+                     (address == 0 && canonicalPort == CounterClockWise)
+
     cfg.virtualChannelMode match {
       case Dynamic if vcCount >= 2 =>
-        val (address, canonicalPort) = port
         val escapeVc = vcCount - 1
-        val isDateline = (address == size - 1 && canonicalPort == ClockWise) ||
-                         (address == 0 && canonicalPort == CounterClockWise)
 
         Seq.tabulate(candidateCount) { c =>
           val inputPort = c / vcCount
@@ -83,6 +83,25 @@ class Ring(size: Int = 0) extends Topology {
             Seq.tabulate(vcCount)(_ == escapeVc)      // forced/sticky escape
           else
             Seq.tabulate(vcCount)(_ != escapeVc)      // adaptive pool, escape excluded
+        }
+      // Static's destVc is otherwise pinned to sourceVc forever -- including
+      // across the dateline -- which is exactly the same cyclic-dependency
+      // deadlock as Dynamic without an escape lane, just duplicated per vc
+      // class instead of network-wide. This is Dally's original
+      // static/dimension-order dateline scheme (Dynamic's escape lane above
+      // is Duato's adaptive generalization of the same idea): pin destVc =
+      // sourceVc on ordinary hops, but force a one-time class bump at the
+      // dateline instead of leaving it pinned. As with Dynamic, a Local
+      // candidate's incoming vc tag is whatever the sender arbitrarily
+      // picked, not a real class -- treat it as class 0 so it can't skip
+      // the one-time bump or masquerade as already having crossed.
+      case Static if vcCount >= 2 =>
+        Seq.tabulate(candidateCount) { c =>
+          val inputPort = c / vcCount
+          val sourceVc = c % vcCount
+          val effectiveClass = if (inputPort == Local) 0 else sourceVc
+          val targetClass = if (isDateline) Math.min(effectiveClass + 1, vcCount - 1) else effectiveClass
+          Seq.tabulate(vcCount)(_ == targetClass)
         }
       case _ => super.allowedTransitionTable(cfg, port, candidateCount, vcCount)
     }
