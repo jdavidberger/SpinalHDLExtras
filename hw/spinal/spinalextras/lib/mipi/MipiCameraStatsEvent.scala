@@ -6,7 +6,7 @@ import spinal.lib._
 import scala.language.postfixOps
 
 /**
- * MIPI CSI-2 header sideband for camera stats (after PulseCC / FlowCC into pixel/stats domain).
+ * MIPI CSI-2 header sideband for camera stats (after CDC into pixel/stats domain).
  *
  * Pulses are one cycle in the destination domain:
  *   - sof / eof: short packet dt 0/1
