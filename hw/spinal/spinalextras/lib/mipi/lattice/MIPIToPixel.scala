@@ -1,13 +1,10 @@
 package spinalextras.lib.mipi.lattice
 
-import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.misc.BusSlaveFactory
 import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.blackbox.lattice.lifcl.dphy_rx
 import spinalextras.lib.mipi._
-import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 
 import scala.language.postfixOps
 
@@ -26,6 +23,12 @@ case class MIPIToPixel(cfg : MIPIConfig,
     val tx_rdy = in(Bool()) default(True)
 
     val pixelFlow = master(Flow(Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.outputLanes))))
+
+    /**
+     * Header events CDC'd into pixel_cd (single FlowCC with m2sPipe).
+     * Counters live in CameraStats.
+     */
+    val stats = master Flow(MipiCameraStatsEvent())
   }
   val byte_freq = cfg.dphyByteFreq
 
@@ -51,8 +54,27 @@ case class MIPIToPixel(cfg : MIPIConfig,
 
   val bytes_to_pixels = byte2pixel(cfg, pixel_cd = pixel_cd, byte_cd = mipi_to_bytes.byte_cd())
 
-  bytes_to_pixels.assignMIPIHeader(mipi_to_bytes.MIPIPacketHeader)
+  val mipiHdr = mipi_to_bytes.MIPIPacketHeader
+  bytes_to_pixels.assignMIPIHeader(mipiHdr)
   bytes_to_pixels.assignMIPIBytes(mipi_to_bytes.MIPIBytes)
+
+  // One FlowCC for sof/eof/line+wc (replaces separate PulseCCs). Keep m2sPipe so
+  // io.stats is cleanly in pixel_cd (needed if the board adds a second CDC hop).
+  val byteCd = mipi_to_bytes.byte_cd()
+  val statsByte = new ClockingArea(byteCd) {
+    val flow = Flow(MipiCameraStatsEvent())
+    val sof = mipiHdr.fire && mipiHdr.is_short_packet && mipiHdr.datatype === 0
+    val eof = mipiHdr.fire && mipiHdr.is_short_packet && mipiHdr.datatype === 1
+    val line = mipiHdr.fire && mipiHdr.is_long_av_packet
+    flow.valid := sof || eof || line
+    flow.sof := sof
+    flow.eof := eof
+    flow.line := line
+    flow.word_count := Mux(line, mipiHdr.word_count, U(0, 16 bits))
+    flow
+  }.flow
+
+  io.stats << FlowCCByToggle(statsByte, byteCd, pixel_cd)
 
   io.pixelFlow <> PixelFlow2Fragment(bytes_to_pixels.io.pixelFlow).map(f => {
     val outFlow = Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.outputLanes))
