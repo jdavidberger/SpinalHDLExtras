@@ -73,6 +73,11 @@ class VirtualIdAllocator(cfg: NocConfig,
   val candidateHolds = new ArrayBuffer[(GrantTable, Int, Stream[Fragment[RoutedFlit]])]()
   io.activity := False
 
+  // One GrantTable per output port, in output-port order -- kept accessible
+  // (rather than a loop-local val) so a stalled testbench can reach in and
+  // dump each output's grant/request state for debugging (see NocDebug).
+  val tables = new ArrayBuffer[GrantTable]()
+
   // Every output uses the same shape -- candidateCount = connectivityIn *
   // vcCount candidates matched against vcCount lanes -- and differs only in
   // which (candidate, lane) pairings GrantTable's `allowed` matrix permits:
@@ -88,6 +93,7 @@ class VirtualIdAllocator(cfg: NocConfig,
     val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
     val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration, allowed)
+    tables += table
     when(table.io.activity) {
       io.activity := True
     }

@@ -2,6 +2,7 @@ package spinalextras.lib.noc.virtualchannels
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
+import spinal.core.sim._
 import spinal.lib.CountOne
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalData, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
@@ -80,6 +81,10 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
 
   val grant = Vec(Vec(RegInit(False), candidateCount), vcCount)
   io.grant.grant := grant
+  // Kept peekable from a stalled testbench (see NocDebug) even if otherwise
+  // unused/prunable in a given build.
+  grant.simPublic()
+  io.request.simPublic()
 
   def laneBusy(v: Int): Bool = grant(v).reduce(_ || _)
   def candidateBusy(c: Int): Bool = grant.map(_(c)).reduce(_ || _)

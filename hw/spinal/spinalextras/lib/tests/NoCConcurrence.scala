@@ -227,6 +227,9 @@ object NocConcurrentTester {
         if (seen.size < expected.size) {
           dut.clockDomain.waitSampling()
           waited += 1
+          if (waited >= timeoutCycles) {
+            NocDebug.dumpStalledState(dut.noc)
+          }
           assert(waited < timeoutCycles,
             s"Timed out after $timeoutCycles cycles: ${seen.size}/${expected.size} packets arrived. " +
               s"Still missing: ${(expected -- seen).toSeq.sortBy(_._3)}")
