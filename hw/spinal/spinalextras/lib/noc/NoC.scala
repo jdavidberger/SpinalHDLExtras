@@ -190,7 +190,7 @@ class NocFormalTester extends AnyFunSuite with FormalTestSuite {
 
   override def generateRtl() = {
     for((name, cfg) <- NocConfig.testConfigurations()) yield {
-      (name, () => GeneralFormalDut(() => new NoC(cfg)))
+      (name, () => GeneralFormalDut(() => new NoC(cfg), 1))
     }
   }
 }

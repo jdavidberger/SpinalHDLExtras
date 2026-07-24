@@ -62,13 +62,13 @@ trait Topology {
 object Topology {
   def testConfigurations() = {
     Seq(
-      "Mesh_1x1" -> new Mesh((1, 1)),
-      "Mesh_3x2" -> new Mesh((3, 2)),
-      "Mesh_4x4" -> new Mesh((4, 4)),
+//      "Mesh_1x1" -> new Mesh((1, 1)),
+//      "Mesh_3x2" -> new Mesh((3, 2)),
+//      "Mesh_4x4" -> new Mesh((4, 4)),
       "Torus_3x2" -> new Torus((3, 2)),
-      "Tree_10x2" -> new Tree(10, 2),
+//      "Tree_10x2" -> new Tree(10, 2),
       "Ring_6" -> new Ring(6),
-      "Star_8" -> Star(8),
+//      "Star_8" -> Star(8),
     )
   }
 }

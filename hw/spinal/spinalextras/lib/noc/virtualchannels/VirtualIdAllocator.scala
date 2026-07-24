@@ -72,69 +72,55 @@ class VirtualIdAllocator(cfg: NocConfig,
   val candidateHolds = new ArrayBuffer[(GrantTable, Int, Stream[Fragment[RoutedFlit]])]()
   io.activity := False
 
+  // Every output uses the same shape -- candidateCount = connectivityIn *
+  // vcCount candidates matched against vcCount lanes -- and differs only in
+  // which (candidate, lane) pairings GrantTable's `allowed` matrix permits:
+  //   - Static (or vcCount == 1): GrantTable.diagonal -- destVc pinned to
+  //     the candidate's own source-vc slot, no reassignment freedom.
+  //   - Dynamic: GrantTable.allowAll -- any candidate may reach any lane.
+  val candidateCount = connectivityIn * vcCount
+
+  def candidateOf(i: Int, s: Int): Int = i * vcCount + s
+
   for (o <- 0 until connectivityOut) {
-    if (!dynamicAllocation || vcCount == 1) {
-      // Static allocation: destVc is pinned to the packet's source vc, so
-      // each vc lane just needs a many-to-one merge across the input ports
-      // that may target it -- no reassignment freedom, so no lane-matching
-      // is needed, only arbitration among input ports (vcCount == 1 slot).
-      for (v <- 0 until vcCount) {
-        val table = new GrantTable(connectivityIn, 1, roundRobinArbitration)
-        when(table.io.activity) {
-          io.activity := True
-        }
+    val allowed =
+      if (!dynamicAllocation || vcCount == 1) GrantTable.diagonal(candidateCount, vcCount)
+      else GrantTable.allowAll(candidateCount, vcCount)
 
-        table.setName(s"grant_o${o}_v${v}")
-        for (i <- 0 until connectivityIn) table.io.request(i) := demuxed(i)(v)(o).valid
-        table.io.release(0) := io.allocatedFlits(o)(v).lastFire
+    val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration, allowed)
+    when(table.io.activity) {
+      io.activity := True
+    }
 
-        val router = new VcRouter(RoutedFlit(cfg, connectivityOut), connectivityIn, 1)
-        router.setName(s"router_o${o}_v${v}")
-        router.io.grant := table.io.grant
+    when(table.io.activity) {
+      io.activity := True
+    }
 
-        for (i <- 0 until connectivityIn) {
-          router.io.sources(i) <> demuxed(i)(v)(o)
-          candidateHolds += ((table, i, demuxed(i)(v)(o)))
-        }
-        router.io.dests(0).map(retag(_, v)) <> io.allocatedFlits(o)(v)
-      }
-    } else {
-      // Dynamic allocation: any (input port, source vc) packet headed to
-      // this output may be granted any free destination vc lane on it.
-      val candidateCount = connectivityIn * vcCount
-      def candidateOf(i: Int, s: Int): Int = i * vcCount + s
+    table.setName(s"grant_o${o}")
+    for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
+      table.io.request(candidateOf(i, s)) := demuxed(i)(s)(o).valid
+    }
+    for (v <- 0 until vcCount) {
+      table.io.release(v) := io.allocatedFlits(o)(v).lastFire
+    }
 
-      val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration)
-      when(table.io.activity) {
-        io.activity := True
-      }
+    val router = new VcRouter(RoutedFlit(cfg, connectivityOut), candidateCount, vcCount)
+    router.setName(s"router_o${o}")
+    router.io.grant := table.io.grant
 
-      table.setName(s"grant_o${o}")
-      for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
-        table.io.request(candidateOf(i, s)) := demuxed(i)(s)(o).valid
-      }
-      for (v <- 0 until vcCount) {
-        table.io.release(v) := io.allocatedFlits(o)(v).lastFire
-      }
-
-      val router = new VcRouter(RoutedFlit(cfg, connectivityOut), candidateCount, vcCount)
-      router.setName(s"router_o${o}")
-      router.io.grant := table.io.grant
-
-      for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
-        router.io.sources(candidateOf(i, s)) <> demuxed(i)(s)(o)
-        candidateHolds += ((table, candidateOf(i, s), demuxed(i)(s)(o)))
-      }
-      for (v <- 0 until vcCount) {
-        router.io.dests(v).map(retag(_, v)) <> io.allocatedFlits(o)(v)
-      }
+    for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
+      router.io.sources(candidateOf(i, s)) <> demuxed(i)(s)(o)
+      candidateHolds += ((table, candidateOf(i, s), demuxed(i)(s)(o)))
+    }
+    for (v <- 0 until vcCount) {
+      router.io.dests(v).map(retag(_, v)) <> io.allocatedFlits(o)(v)
     }
   }
 
   override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
     for ((table, localIndex, src) <- candidateHolds) {
       when(table.candidateSelector.io.chosen.valid &&
-           table.candidateSelector.io.chosen.payload === U(localIndex, table.candidateBits bits)) {
+        table.candidateSelector.io.chosen.payload === U(localIndex, table.candidateBits bits)) {
         addFormalProperty(src.valid,
           s"a candidate held by a GrantTable's candidateSelector must still be valid on its backing stream")
       }
@@ -152,11 +138,11 @@ class VirtualIdAllocatorFormalTester extends AnyFunSuite with FormalTestSuite {
   })
 
   override def generateRtl() = {
-    for(rr <- Seq(true, false); dynamic <- Seq(true, false)) yield
+    for (rr <- Seq(true, false); dynamic <- Seq(true, false)) yield
       (s"Basic_rr${rr}_dyn${dynamic}", () =>
         GeneralFormalDut(() => new VirtualIdAllocator(
           cfg = NocConfig(topology = new Mesh((4, 3))), 2, 2, dynamic, rr
         ))
-    )
+      )
   }
 }
