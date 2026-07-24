@@ -33,6 +33,8 @@ class VirtualIdAllocator(cfg: NocConfig,
       Vec(master(Stream(Fragment(Flit(cfg)))), cfg.virtualChannels),
       connectivityOut
     )
+
+    val activity = out(Bool())
   }
 
   val vcCount = cfg.virtualChannels
@@ -68,6 +70,7 @@ class VirtualIdAllocator(cfg: NocConfig,
   // outputs can simultaneously "hold" what looks like the same candidate
   // with nothing tying either one back to reality.
   val candidateHolds = new ArrayBuffer[(GrantTable, Int, Stream[Fragment[RoutedFlit]])]()
+  io.activity := False
 
   for (o <- 0 until connectivityOut) {
     if (!dynamicAllocation || vcCount == 1) {
@@ -77,6 +80,10 @@ class VirtualIdAllocator(cfg: NocConfig,
       // is needed, only arbitration among input ports (vcCount == 1 slot).
       for (v <- 0 until vcCount) {
         val table = new GrantTable(connectivityIn, 1, roundRobinArbitration)
+        when(table.io.activity) {
+          io.activity := True
+        }
+
         table.setName(s"grant_o${o}_v${v}")
         for (i <- 0 until connectivityIn) table.io.request(i) := demuxed(i)(v)(o).valid
         table.io.release(0) := io.allocatedFlits(o)(v).lastFire
@@ -98,6 +105,10 @@ class VirtualIdAllocator(cfg: NocConfig,
       def candidateOf(i: Int, s: Int): Int = i * vcCount + s
 
       val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration)
+      when(table.io.activity) {
+        io.activity := True
+      }
+
       table.setName(s"grant_o${o}")
       for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
         table.io.request(candidateOf(i, s)) := demuxed(i)(s)(o).valid

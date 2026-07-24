@@ -50,6 +50,8 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
     val request = in Vec(Bool(), candidateCount)                // request(c): candidate c wants a lane
     val release = in Vec(Bool(), vcCount)                       // release(v): lane v's current occupant is done
     val grant   = out (new GrantTableOutput(candidateCount, vcCount)) // grant(v)(c): lane v is currently serving candidate c
+
+    val activity = out (Bool())
   }
 
   val grant = Vec(Vec(RegInit(False), candidateCount), vcCount)
@@ -73,6 +75,7 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
 
   val candidateSelector = new VcSelector(candidateCount, roundRobinArbitration)
   for (c <- 0 until candidateCount) candidateSelector.io.requests(c) := io.request(c) && !candidateBusy(c)
+  io.activity := candidateSelector.io.activity
 
   // Commit the pairing the moment both sides are holding a pick. There is
   // no external backpressure on this join -- once both are valid they fire

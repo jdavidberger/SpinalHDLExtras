@@ -9,6 +9,9 @@ trait Topology {
   type routeable_address_constant_t = Int
   type routeable_address_t = UInt
 
+  type canonical_port = Int
+  type port_index = Int
+
   def nodes: Int
   def addressSize : Int = log2Up(nodes)
   def sizeFor(nodes : Int) : Topology
@@ -23,14 +26,14 @@ trait Topology {
   def maxCanonicalPorts: Int = Math.max(defaultConnectivityIn, defaultConnectivityOut)
 
   // Sequence of canonical port numbers in their logical port index
-  def nodePortIndicesForCanonicalPorts(address : Int): Seq[Int]
+  def nodePortIndicesForCanonicalPorts(address : Int): Seq[canonical_port]
 
   def resolveCanonicalOutputPort(address : Int, port : Int): Int = nodePortIndicesForCanonicalPorts(address).indexOf(port)
 
   // Returns the neighbor address and the opposite port
-  def resolveNeighborAddress(address : Int, canonicalPort : Int) : (Int, Int)
+  def resolveNeighborAddress(address : Int, canonicalPort : canonical_port) : (Int, canonical_port)
 
-  def resolveCanonicalInputPort(address : Int, port : Int): Int = resolveCanonicalOutputPort(address, port)
+  def resolveCanonicalInputPort(address : Int, port : canonical_port): port_index = resolveCanonicalOutputPort(address, port)
 
   def createNode(cfg: NocConfig, address: Int): RouterNode = {
     new RouterNode(cfg, address = address)

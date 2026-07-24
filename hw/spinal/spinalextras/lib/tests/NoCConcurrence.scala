@@ -265,15 +265,25 @@ class NocConcurrencySpec extends AnyFunSuite {
 
   for ((name, cfg) <- topologies) {
     test(s"multiple streams run through the NoC concurrently: $name") {
+      println(name)
       NocConcurrentTester.test(cfg, NocConcurrentTester.floodPackets(cfg, packetsPerSrc = 4))
     }
+  }
 
-    test(s"differing VCIDs resolve as distinct, unmangled packets: $name") {
-      // Every other node fires at node 0 at once, each on its own VC --
-      // forces real contention on node 0's inbound link(s) regardless of
-      // topology, which is exactly where flits from different VCs would
-      // get tangled together if VC isolation were broken.
-      NocConcurrentTester.test(cfg, NocConcurrentTester.manyToOne(cfg, dst = 0))
+}
+
+class NocVCIDSpec extends AnyFunSuite {
+  def topologies: Seq[(String, NocConfig)] = NocConfig.testConfigurations()
+
+  for ((name, cfg) <- topologies) {
+    if(cfg.topology.nodes > 1) {
+      test(s"differing VCIDs resolve as distinct, unmangled packets: $name") {
+        // Every other node fires at node 0 at once, each on its own VC --
+        // forces real contention on node 0's inbound link(s) regardless of
+        // topology, which is exactly where flits from different VCs would
+        // get tangled together if VC isolation were broken.
+        NocConcurrentTester.test(cfg, NocConcurrentTester.manyToOne(cfg, dst = 0))
+      }
     }
   }
 
