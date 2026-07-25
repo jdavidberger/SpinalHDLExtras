@@ -23,6 +23,7 @@ class GrantTableOutput(candidateCount : Int, vcCount : Int, allowed : Seq[Seq[Bo
     case Some(i) => grant(i)
     case None => False
   }
+  def allowed(v : Int, c : Int) : Boolean = allowed(v)(c)
 
   def laneBusy(v: Int): Bool =
     allowedPairs.zipWithIndex.collect { case ((vv, _), i) if vv == v => grant(i) }.foldLeft(False: Bool)(_ || _)
@@ -31,22 +32,24 @@ class GrantTableOutput(candidateCount : Int, vcCount : Int, allowed : Seq[Seq[Bo
   def laneBusy(v: UInt): Bool = Vec.tabulate(vcCount)(vv => laneBusy(vv))(v)
   def candidateBusy(c: UInt): Bool = Vec.tabulate(candidateCount)(cc => candidateBusy(cc))(c)
 
-  // Producer-side (GrantTable) mutation API: `makeRegisters()` wires the real
-  // register state backing `grant` -- call it exactly once, unconditionally
-  // (never from inside a `when`, or that would wrongly scope the `grant :=`
-  // mirror to that condition) -- then use the returned handle's claim/
-  // clearLane to mutate just the allowed pairings, without the caller ever
-  // seeing the flat/index-mapped layout underneath.
-  class Registers {
-    private val state = Vec(RegInit(False), allowedPairs.length)
-    grant := state
-
-    def claim(v: Int, c: Int): Unit = pairIndex.get((v, c)).foreach(i => state(i) := True)
-
-    def clearLane(v: Int): Unit =
-      allowedPairs.zipWithIndex.foreach { case ((vv, _), i) => if (vv == v) state(i) := False }
+  def init(): this.type = {
+    grant.foreach(_.init(False))
+    this
   }
-  def makeRegisters(): Registers = new Registers()
+
+  def asReg(): GrantTableOutput = {
+    val r = Reg(new GrantTableOutput(candidateCount, vcCount, allowed)).init()
+    this <> r
+    r
+  }
+
+  def allowedMask = Vec(allowed.map(row => Vec(row.map(Bool(_)))))
+
+  def clearLane(v: Int): Unit =
+    allowedPairs.zipWithIndex.foreach { case ((vv, _), i) => if (vv == v) grant(i) := False }
+
+  def claim(v: Int, c: Int): Unit = pairIndex.get((v, c)).foreach(i => grant(i) := True)
+
   /**
    * @return Whether or not the current state of the bundle is valid. Typically either asserted or assumed by a
    *         component which has this bundle as an input or an output.
@@ -127,9 +130,7 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
     val activity = out (Bool())
   }
 
-  // Called unconditionally, before any `when`, so the internal `grant :=`
-  // mirror this wires up isn't accidentally scoped to a condition.
-  val grantRegs = io.grant.makeRegisters()
+  val grant = io.grant.asReg()
   io.request.simPublic()
 
   def laneBusy(v: Int): Bool = io.grant.laneBusy(v)
@@ -139,14 +140,14 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   // lane is equivalent to clearing just the granted candidate.
   for (v <- 0 until vcCount) {
     when(io.release(v)) {
-      grantRegs.clearLane(v)
+      grant.clearLane(v)
     }
   }
 
   // allowedMask(v)(c): compile-time lookup table -- indexed at compile time
   // by lane v, giving a Vec indexable by a runtime candidate index of
   // whether candidate c may use lane v.
-  val allowedMask = Vec(allowed.map(row => Vec(row.map(Bool(_)))))
+  val allowedMask = grant.allowedMask
 
   val laneSelector = new VcSelector(vcCount, roundRobinArbitration = false)
   val candidateSelector = new VcSelector(candidateCount, roundRobinArbitration)
@@ -158,7 +159,10 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   // is waiting.
   val eligible = Vec(Bool(), candidateCount)
   for (c <- 0 until candidateCount) {
-    val hasFreeAllowedLane = (0 until vcCount).filter(v => allowed(v)(c)).map(v => !laneBusy(v)).foldLeft(False)(_ || _)
+    val hasFreeAllowedLane = (0 until vcCount)
+      .filter(v => grant.allowed(v, c))
+      .map(v => !laneBusy(v))
+      .foldLeft(False)(_ || _)
     eligible(c) := io.request(c) && !candidateBusy(c) && hasFreeAllowedLane
   }
 
@@ -186,11 +190,9 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
 
   when(bothValid) {
     for (v <- 0 until vcCount; c <- 0 until candidateCount) {
-      if(allowed(v)(c)) {
-        when(laneSelector.io.chosen.payload === U(v, vcBits bits) &&
-          candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
-          grantRegs.claim(v, c)
-        }
+      when(laneSelector.io.chosen.payload === U(v, vcBits bits) &&
+        candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
+        grant.claim(v, c)
       }
     }
   }
