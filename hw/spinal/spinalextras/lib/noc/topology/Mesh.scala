@@ -72,7 +72,7 @@ class Mesh(gridSize: (Int, Int) = (0, 0)) extends Topology {
     createAddress(x, y)
   }
 
-  override def resolveDestPort(dest: routeable_address_t, curr: address_t): UInt = {
+  override def resolveDestPortRaw(dest: routeable_address_t, curr: address_t): UInt = {
     val destAddress = unpackRouteableAddress(dest)
     val (x, y) = addressToXY(curr)
 

@@ -42,7 +42,7 @@ class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
 
   override def sizeFor(nodes: Int): Topology = new Ring(nodes)
 
-  override def resolveDestPort(dest: UInt, curr: Int): UInt = {
+  override def resolveDestPortRaw(dest: UInt, curr: Int): UInt = {
     if (routeing == ClockwiseAlways) {
       Mux(dest === curr, U(0, 2 bits), U(ClockWise, 2 bits))
     } else

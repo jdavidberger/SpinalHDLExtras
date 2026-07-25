@@ -144,7 +144,7 @@ class Tree(totalNodes: Int = 0, maxChildren: Int = 2) extends Topology {
    * elaboration time (curr, and every lo/hi, are known at build time) --
    * no division, no dependence on dest's runtime value beyond compares.
    */
-  override def resolveDestPort(dest: UInt, curr: Int): UInt = {
+  override def resolveDestPortRaw(dest: UInt, curr: Int): UInt = {
     val shape = shapes(curr)
     val w = addressSize
 
