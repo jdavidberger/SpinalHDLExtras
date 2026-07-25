@@ -96,8 +96,17 @@ case class MIPIToPixel(cfg : MIPIConfig,
   val sink_rate = cfg.DT_WIDTH * pixel_cd.frequency.getValue.toDouble
   require(input_rate <= sink_rate, s"Configuration doesn't work; pixel clock can't keep up with the output ${input_rate} >= ${sink_rate}")
 
-  def attach_bus(busSlaveFactory: BusIf): Unit = {
-    mipi_to_bytes.attach_bus(busSlaveFactory)
+  def attach_csi_bus(busSlaveFactory: BusIf, withErrorCounters: Boolean = true): Unit = {
+    mipi_to_bytes.attach_bus(busSlaveFactory, withErrorCounters)
+  }
+
+  def attach_b2p_bus(busSlaveFactory: BusIf): Unit = {
     bytes_to_pixels.attach_bus(busSlaveFactory)
+  }
+
+  /** Attach Soft-DPHY CSI CSRs then byte2pixel debug counters on the same BusIf. */
+  def attach_bus(busSlaveFactory: BusIf, withErrorCounters: Boolean = true): Unit = {
+    attach_csi_bus(busSlaveFactory, withErrorCounters)
+    attach_b2p_bus(busSlaveFactory)
   }
 }
