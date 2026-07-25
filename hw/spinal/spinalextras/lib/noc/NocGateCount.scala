@@ -2,6 +2,8 @@ package spinalextras.lib.noc
 
 import spinal.core._
 import spinalextras.lib.Config
+import spinalextras.lib.noc.topology.{Mesh, Ring, Torus}
+import spinalextras.lib.noc.virtualchannels.{Dynamic, Static}
 
 import java.io.ByteArrayInputStream
 import scala.sys.process._
@@ -71,7 +73,8 @@ object NocGateCount {
     }
 
     val cellsByType = parseCellsByType(statOutput)
-    val summaryStats = parseSummaryStats(statOutput)
+    val displayColumns = Set("wire bits", "memories", "memory bits", "cells")
+    val summaryStats = parseSummaryStats(statOutput).filter(x => displayColumns.contains(x._1))
     val totalCells = "Number of cells:\\s+(\\d+)".r
       .findFirstMatchIn(statOutput)
       .map(_.group(1).toInt)
@@ -107,7 +110,7 @@ object NocGateCount {
   /** The NocConfig parameters that identify a configuration -- used both to
     * label yosys work directories and as the leftmost columns of [[markdownTable]]. */
   private def configParams(cfg: NocConfig): Seq[(String, String)] = Seq(
-    "Topology"   -> cfg.topology.getClass.getSimpleName,
+    "Topology"   -> cfg.topology.toString,
     "Nodes"      -> cfg.topology.nodes.toString,
     "Data Width" -> cfg.dataWidth.toString,
     "VCs"        -> cfg.virtualChannels.toString,
@@ -128,7 +131,7 @@ object NocGateCount {
    */
   def markdownTable(configs: Seq[NocConfig], yosysCmd: String = "yosys"): String = {
     val rows = configs.zipWithIndex.map { case (cfg, idx) =>
-      val label = configLabel(cfg, idx)
+      val label = configLabel(cfg, idx).replace(" ", "").replace("(", "").replace(")", "").replace(",","_")
       println(s"[NocGateCount] synthesizing $label ...")
       val result = gateCount(label, cfg, yosysCmd)
       (configParams(cfg), result.summaryStats)
@@ -144,8 +147,16 @@ object NocGateCount {
     sb.append("| ").append(headers.mkString(" | ")).append(" |\n")
     sb.append("|").append(Seq.fill(headers.size)("---").mkString("|")).append("|\n")
 
+    def format(k : String, v : Int): String = {
+      if(k.contains("bits")) {
+        f"${v / 1000.0}%.2f kb"
+      } else {
+        v.toString
+      }
+    }
+
     for ((params, stats) <- rows) {
-      val statValues = statHeaders.map(h => stats.toMap.getOrElse(h, 0).toString)
+      val statValues = statHeaders.map(h => format(h, stats.toMap.getOrElse(h, 0)))
       val values = params.map(_._2) ++ statValues
       sb.append("| ").append(values.mkString(" | ")).append(" |\n")
     }
@@ -162,7 +173,20 @@ object NocGateCount {
  */
 object NocGateCountMarkdownApp {
   def main(args: Array[String]): Unit = {
-    val configs = NocConfig.testConfigurations().map(_._2)
+    val configs = Seq(
+      NocConfig(new Ring(4), dataWidth = 64, virtualChannels = 2, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(2, 2), dataWidth = 64, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(4, 4), dataWidth = 64, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = RoundRobin),
+      NocConfig(new Ring(16), dataWidth = 16, virtualChannels = 2, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 2, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Torus(4, 4), dataWidth = 16, virtualChannels = 2, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 2, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 4, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
+      NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 4, virtualChannelMode = Dynamic, virtualChannelArbitrationPolicy = LowestFirst),
+    )
     val table = NocGateCount.markdownTable(configs)
 
     println(table)

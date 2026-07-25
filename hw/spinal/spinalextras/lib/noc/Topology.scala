@@ -13,6 +13,10 @@ trait Topology {
   type canonical_port = Int
   type port_index = Int
 
+  def minimumVirtualChannels : Int = 1
+
+  override def toString: String = f"${getClass.getSimpleName.replace("$", "")}"
+
   def nodes: Int
   def addressSize : Int = log2Up(nodes)
   def sizeFor(nodes : Int) : Topology
@@ -71,13 +75,12 @@ trait Topology {
 object Topology {
   def testConfigurations() = {
     Seq(
-//      "Mesh_1x1" -> new Mesh((1, 1)),
-//      "Mesh_3x2" -> new Mesh((3, 2)),
-//      "Mesh_4x4" -> new Mesh((4, 4)),
+      "Mesh_1x1" -> new Mesh((1, 1)),
+      "Mesh_3x2" -> new Mesh((3, 2)),
+      "Mesh_4x4" -> new Mesh((4, 4)),
       "Ring_3" -> new Ring(3),
       "Torus_3x2" -> new Torus((3, 2)),
-//      "Tree_10x2" -> new Tree(10, 2),
-//      "Star_8" -> Star(8),
+      "Tree_4x2" -> new Tree(4, 2),
     )
   }
 

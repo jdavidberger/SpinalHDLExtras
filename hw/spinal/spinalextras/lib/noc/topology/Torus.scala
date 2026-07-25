@@ -7,6 +7,8 @@ import spinalextras.lib.noc.{NocConfig, Topology}
 class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
   override def resolveCanonicalOutputPort(address : Int, port : Int): Int = nodePortIndicesForCanonicalPorts(address).indexOf(port)
 
+  override def minimumVirtualChannels : Int = 2
+
   override def sizeFor(nodes: Int): Topology = {
     if (gridSize._1 * gridSize._2 <= nodes)
       this

@@ -22,9 +22,9 @@ import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 // explicitly in formalComponentInputProperties and assumed when this is
 // formally tested directly, rather than re-derived by pairing with a real
 // GrantTable instance.
-class VcRouter[T <: Data](payloadType: HardType[T], candidateCount: Int, vcCount: Int) extends ComponentWithFormalProperties {
+class VcRouter[T <: Data](payloadType: HardType[T], candidateCount: Int, vcCount: Int, allowed: Seq[Seq[Boolean]] = null) extends ComponentWithFormalProperties {
   val io = new Bundle {
-    val grant   = in (new GrantTableOutput(candidateCount, vcCount))
+    val grant   = in (new GrantTableOutput(candidateCount, vcCount, allowed))
     val sources = Vec(slave(Stream(Fragment(payloadType))), candidateCount)
     val dests   = Vec(master(Stream(Fragment(payloadType))), vcCount)
   }
@@ -33,7 +33,7 @@ class VcRouter[T <: Data](payloadType: HardType[T], candidateCount: Int, vcCount
   io.dests.foreach(_.setIdle())
 
   for (v <- 0 until vcCount; c <- 0 until candidateCount) {
-    when(io.grant(v)(c)) {
+    when(io.grant(v, c)) {
       io.sources(c) <> io.dests(v)
     }
   }

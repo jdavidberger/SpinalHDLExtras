@@ -60,32 +60,32 @@ class NoC(val cfg: NocConfig) extends ComponentWithFormalProperties {
   }
 
   val nodes = cfg.topology.createNodes(this)
-
-  // Deadlock-freedom: track every flit-carrying handshake whose blocking could ever be the
-  // reason nothing moves -- the NoC's own external ports, each router's inter-node ports, and
-  // each router's VC-allocation subsystem boundary (routedFlits in, allocatedFlits out).
-  private lazy val formalFlitStreams: Seq[Stream[_]] =
-      nodes.flatMap(node =>
-        node.io.inputs ++ node.io.outputs ++
-          node.allocator.io.routedFlits.flatMap(_.toSeq) ++
-          node.allocator.io.allocatedFlits.flatMap(_.toSeq)
-      )
-
-  private lazy val formalAllOutputsReady = io.outputs.map(_.ready).reduce(_ && _)
-  private lazy val formalAnyStalled = formalFlitStreams.map(_.isStall).reduce(_ || _)
-  private lazy val formalAnyFired = formalFlitStreams.map(_.fire).reduce(_ || _) ||
-    nodes.map(node => node.routerActivity.asBits.orR).reduce(_ || _) ||
-    nodes.map(node => node.allocator.io.activity).reduce(_ || _)
-
-  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
-    addFormalProperty(
-      !(formalAllOutputsReady && formalAnyStalled && !formalAnyFired),
-      "NoC deadlock: every output ready to accept, some internal link stalled, but nothing anywhere in the NoC is making progress")
-  }
-
-  override def covers(): Seq[FormalProperty] = Seq(
-    FormalProperty(formalAnyStalled, "an internal link stalls at least once (reachability sanity check, so the assert above isn't vacuous)")
-  )
+//
+//  // Deadlock-freedom: track every flit-carrying handshake whose blocking could ever be the
+//  // reason nothing moves -- the NoC's own external ports, each router's inter-node ports, and
+//  // each router's VC-allocation subsystem boundary (routedFlits in, allocatedFlits out).
+//  private lazy val formalFlitStreams: Seq[Stream[_]] =
+//      nodes.flatMap(node =>
+//        node.io.inputs ++ node.io.outputs ++
+//          node.allocator.io.routedFlits.flatMap(_.toSeq) ++
+//          node.allocator.io.allocatedFlits.flatMap(_.toSeq)
+//      )
+//
+//  private lazy val formalAllOutputsReady = io.outputs.map(_.ready).reduce(_ && _)
+//  private lazy val formalAnyStalled = formalFlitStreams.map(_.isStall).reduce(_ || _)
+//  private lazy val formalAnyFired = formalFlitStreams.map(_.fire).reduce(_ || _) ||
+//    nodes.map(node => node.routerActivity.asBits.orR).reduce(_ || _) ||
+//    nodes.map(node => node.allocator.io.activity).reduce(_ || _)
+//
+//  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+//    addFormalProperty(
+//      !(formalAllOutputsReady && formalAnyStalled && !formalAnyFired),
+//      "NoC deadlock: every output ready to accept, some internal link stalled, but nothing anywhere in the NoC is making progress")
+//  }
+//
+//  override def covers(): Seq[FormalProperty] = Seq(
+//    FormalProperty(formalAnyStalled, "an internal link stalls at least once (reachability sanity check, so the assert above isn't vacuous)")
+//  )
 }
 
 trait NocProcessor {

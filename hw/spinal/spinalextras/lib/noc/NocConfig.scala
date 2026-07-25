@@ -42,15 +42,18 @@ object NocConfig {
     // independent of vcCount/mode/policy. That's a separate, real bug, not
     // something to fold into this suite silently, so vcDepth is left at the
     // default for now.
-    for((name, topology) <- Topology.testConfigurations();
+    (for((name, topology) <- Topology.testConfigurations();
         virtualChannels <- Seq(2, 3);
         virtualChannelMode <- Seq(Static, Dynamic);
         virtualChannelArbitrationPolicy <- Seq(RoundRobin, LowestFirst)
         ) yield
       f"${name}_vc${virtualChannels}_vcm${objectName(virtualChannelMode)}_vcp${objectName(virtualChannelArbitrationPolicy)}" ->
-        NocConfig(topology = topology, virtualChannels = virtualChannels,
+        NocConfig(topology = topology,
+          dataWidth = 8,
+          virtualChannels = virtualChannels,
           virtualChannelMode = virtualChannelMode,
           virtualChannelArbitrationPolicy = virtualChannelArbitrationPolicy
         )
+      ).filter(cfg => cfg._2.virtualChannels >= cfg._2.topology.minimumVirtualChannels)
   }
 }

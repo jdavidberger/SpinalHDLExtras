@@ -36,6 +36,8 @@ object ClockwiseAlways extends RingRouteing
 class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
   def defaultConnectivityIn : Int = 3
 
+  override def minimumVirtualChannels : Int = 2
+
   override def nodes: Int = size
 
   override def sizeFor(nodes: Int): Topology = new Ring(nodes)

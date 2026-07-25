@@ -8,10 +8,11 @@ import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalData, Forma
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
-class GrantTableOutput(candidateCount : Int, vcCount : Int) extends Bundle with FormalData {
+class GrantTableOutput(candidateCount : Int, vcCount : Int, allowed : Seq[Seq[Boolean]]) extends Bundle with FormalData {
   val grant = Vec(Vec(Bool(), candidateCount), vcCount)
 
   def apply(n : Int) = grant(n)
+  def apply(n : Int, m : Int) = if (allowed(m)(n)) grant(n)(m) else False
   /**
    * @return Whether or not the current state of the bundle is valid. Typically either asserted or assumed by a
    *         component which has this bundle as an input or an output.
@@ -72,15 +73,11 @@ object GrantTable {
 // lanes are just indices. A NoC-level VC allocator is built by wiring
 // (input port, source vc) candidates into one of these per output port.
 class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boolean,
-                  allowed: Seq[Seq[Boolean]],
-                  highPriorityIn: Seq[Boolean] = Nil) extends ComponentWithFormalProperties {
+                  allowed: Seq[Seq[Boolean]]) extends ComponentWithFormalProperties {
   require(allowed.length == candidateCount && allowed.forall(_.length == vcCount),
     s"allowed must be a $candidateCount x $vcCount matrix")
   // Constructor default values can't reference other constructor params
   // (Scala restriction), hence the Nil-sentinel indirection here.
-  val highPriority: Seq[Boolean] = if (highPriorityIn.isEmpty) Seq.fill(candidateCount)(true) else highPriorityIn
-  require(highPriority.length == candidateCount,
-    s"highPriority must have $candidateCount entries")
 
   val candidateBits = log2Up(candidateCount)
   val vcBits = log2Up(vcCount)
@@ -88,12 +85,7 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   val io = new Bundle {
     val request = in Vec(Bool(), candidateCount)                // request(c): candidate c wants a lane
     val release = in Vec(Bool(), vcCount)                       // release(v): lane v's current occupant is done
-    val grant   = out (new GrantTableOutput(candidateCount, vcCount)) // grant(v)(c): lane v is currently serving candidate c
-
-    val grantFlow = master(Flow(TupleBundle(
-      UInt(log2Up(vcCount + 1) bits),
-      UInt(log2Up(candidateCount + 1) bits)
-    )))
+    val grant   = out (new GrantTableOutput(candidateCount, vcCount, allowed)) // grant(v)(c): lane v is currently serving candidate c
 
     val activity = out (Bool())
   }
@@ -134,13 +126,8 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
     eligible(c) := io.request(c) && !candidateBusy(c) && hasFreeAllowedLane
   }
 
-  // Hard priority: a low-priority candidate only ever competes for
-  // candidateSelector's pick while no high-priority candidate is eligible.
-  // Fairness (round-robin/lowest-first) still applies within whichever tier
-  // is currently active.
-  val highTierEligible = (0 until candidateCount).filter(highPriority).map(eligible(_)).foldLeft(False)(_ || _)
   for (c <- 0 until candidateCount) {
-    candidateSelector.io.requests(c) := eligible(c) && (Bool(highPriority(c)) || !highTierEligible)
+    candidateSelector.io.requests(c) := eligible(c)
   }
   io.activity := candidateSelector.io.activity
 
@@ -159,19 +146,13 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   laneSelector.io.chosen.ready := bothValid
   candidateSelector.io.chosen.ready := bothValid
 
-  io.grantFlow.setIdle()
-
   when(bothValid) {
     for (v <- 0 until vcCount; c <- 0 until candidateCount) {
-      when(laneSelector.io.chosen.payload === U(v, vcBits bits) &&
-           candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
-        grant(v)(c) := True
-        if(!allowed(c)(v)) {
-          assert(False)
+      if(allowed(c)(v)) {
+        when(laneSelector.io.chosen.payload === U(v, vcBits bits) &&
+          candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
+          grant(v)(c) := True
         }
-        io.grantFlow.payload._1 := v
-        io.grantFlow.payload._2 := c
-        io.grantFlow.valid := True
       }
     }
   }
@@ -215,14 +196,6 @@ class GrantTableFormalTester extends AnyFunSuite with FormalTestSuite {
     (for (rr <- Seq(true, false); vcs <- Seq(1, 2, 3); ports <- Seq(1, 2, 3)) yield
       (s"Diagonal_rr${rr}_ports${ports}_vc${vcs}", () =>
         GeneralFormalDut(() => new GrantTable(ports * vcs, vcs, rr, GrantTable.diagonal(ports * vcs, vcs)))
-      )) ++
-    // Non-trivial highPriority mask (candidate 0 low-priority, rest high) --
-    // proof coverage for the hard-priority tiering used to prefer NoC
-    // transit traffic over local injection.
-    (for (rr <- Seq(true, false); candidates <- Seq(2, 5); vcs <- Seq(1, 2, 3)) yield
-      (s"Prioritized_rr${rr}_c${candidates}_vc${vcs}", () =>
-        GeneralFormalDut(() => new GrantTable(candidates, vcs, rr, GrantTable.allowAll(candidates, vcs),
-          Seq.tabulate(candidates)(_ != 0)))
       ))
   }
 }

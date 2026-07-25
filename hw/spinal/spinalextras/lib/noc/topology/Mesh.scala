@@ -10,6 +10,8 @@ import scala.collection.mutable
 class Mesh(gridSize: (Int, Int) = (0, 0)) extends Topology {
   def defaultConnectivityIn : Int = 5
 
+  override def toString: String = f"${getClass.getSimpleName.replace("$", "")} ${gridSize}"
+
   override def createNodes(noc: NoC): Seq[RouterNode] = {
     val nodes = super.createNodes (noc)
 
