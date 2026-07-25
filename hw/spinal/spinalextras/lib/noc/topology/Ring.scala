@@ -2,7 +2,7 @@ package spinalextras.lib.noc.topology
 
 import spinal.core._
 import spinalextras.lib.noc.topology.Ring.{ClockWise, CounterClockWise, Local}
-import spinalextras.lib.noc.virtualchannels.{Dynamic, GrantTable, Static}
+import spinalextras.lib.noc.virtualchannels.{Dynamic, Static}
 import spinalextras.lib.noc.{NoC, NocConfig, RouterNode, Topology}
 
 import scala.language.postfixOps

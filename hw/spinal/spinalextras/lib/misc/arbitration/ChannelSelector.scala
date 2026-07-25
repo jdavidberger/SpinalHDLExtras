@@ -1,4 +1,4 @@
-package spinalextras.lib.noc.virtualchannels
+package spinalextras.lib.misc.arbitration
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
@@ -12,7 +12,7 @@ import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 // change while stalled), a winner is latched once picked and held stable --
 // ignoring any changes in `requests` -- until the consumer fires it. Only
 // then is a new winner searched for, from the requests present at that time.
-class VcSelector(n: Int, roundRobinArbitration: Boolean) extends Component {
+class ChannelSelector(n: Int, roundRobinArbitration: Boolean) extends Component {
   val vcBits = log2Up(n)
 
   val io = new Bundle {
@@ -66,7 +66,7 @@ class VcSelector(n: Int, roundRobinArbitration: Boolean) extends Component {
   }
 }
 
-class VcSelectorFormalTester extends AnyFunSuite with FormalTestSuite {
+class ChannelSelectorFormalTester extends AnyFunSuite with FormalTestSuite {
 
   override def defaultDepth() = 10
 
@@ -77,7 +77,7 @@ class VcSelectorFormalTester extends AnyFunSuite with FormalTestSuite {
   override def generateRtl() = {
     for (rr <- Seq(true, false); n <- Seq(2, 3, 4)) yield
       (s"Basic_rr${rr}_n${n}", () =>
-        GeneralFormalDut(() => new VcSelector(n, rr))
+        GeneralFormalDut(() => new ChannelSelector(n, rr))
       )
   }
 }

@@ -15,7 +15,7 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, vcid: Int, connec
     val activity = out(Bool())
   }
 
-  val vc = RegInit(Optional.Empty(UInt(log2Up(connectivityOut) bits)))
+  val outputNode = RegInit(Optional.Empty(UInt(log2Up(connectivityOut) bits)))
   val input = io.input
 
   val nocOutput = Flow(TupleBundle(Header(cfg), UInt(log2Up(cfg.virtualChannels) bits)))
@@ -28,16 +28,19 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, vcid: Int, connec
     FlowLogger.flows(nocOutput)
   )
 
-  when(vc.has_value) {
+  when(outputNode.has_value) {
     when(input.lastFire) {
       //report(Seq("Finish Address: ", address, " ", cfg.topology.addressName(address), " vcid ", idx))
-      vc.clear()
+      outputNode.clear()
     }
   } elsewhen (input.valid) {
     val hdr = Header(cfg)
     hdr.assignFromBits(input.payload.fragment)
-    val outputNode = cfg.topology.resolveDestPort(hdr.dest, address)
-    vc.set_value(Mux(outputNode === inputPort, 0, outputNode))
+    val resolvedOutputNode = cfg.topology.resolveDestPort(hdr.dest, address)
+
+    // It would not make sense for resolvedOutputNode to be the current input node, so just divert these to LOCAL. This
+    // is largely an optimization so that wires are optimized out which would be loopbacks.
+    outputNode.set_value(Mux(resolvedOutputNode === inputPort, 0, resolvedOutputNode))
     io.activity := True
     //report(Seq("Start Address: ", address, " ", cfg.topology.addressName(address), " dst ", hdr.dest, " app ", hdr.application, " vcid ", idx, " output ", outputNode))
     nocOutput.valid := True
@@ -45,18 +48,18 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, vcid: Int, connec
     nocOutput._2 := vcid
   }
 
-  when(vc.has_value) {
-    if (vc.value.maxValue >= connectivityOut) {
-      assert(vc.value < connectivityOut)
+  when(outputNode.has_value) {
+    if (outputNode.value.maxValue >= connectivityOut) {
+      assert(outputNode.value < connectivityOut)
     }
   }
 
-  input.continueWhen(vc.has_value).map(flit => {
+  input.continueWhen(outputNode.has_value).map(flit => {
     val routedFlit = Fragment(new RoutedFlit(cfg, connectivityOut))
     routedFlit.last := flit.last
     routedFlit.flit.datum := flit.fragment
     routedFlit.flit.vc := vcid
-    routedFlit.routedNode := vc.value
+    routedFlit.routedNode := outputNode.value
     routedFlit
   }) <> io.output
 }

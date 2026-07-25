@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
+import spinalextras.lib.misc.arbitration.{GrantTable, GrantTableArbiter}
 import spinalextras.lib.noc.topology.Mesh
 import spinalextras.lib.noc.{Flit, NocConfig, RoundRobin, RoutedFlit, Topology}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
@@ -70,13 +71,13 @@ class VirtualIdAllocator(cfg: NocConfig,
   // numbering across every output's independent GrantTable, two different
   // outputs can simultaneously "hold" what looks like the same candidate
   // with nothing tying either one back to reality.
-  val candidateHolds = new ArrayBuffer[(GrantTable, Int, Stream[Fragment[RoutedFlit]])]()
+  val candidateHolds = new ArrayBuffer[(GrantTableArbiter, Int, Stream[Fragment[RoutedFlit]])]()
   io.activity := False
 
   // One GrantTable per output port, in output-port order -- kept accessible
   // (rather than a loop-local val) so a stalled testbench can reach in and
   // dump each output's grant/request state for debugging (see NocDebug).
-  val tables = new ArrayBuffer[GrantTable]()
+  val tables = new ArrayBuffer[GrantTableArbiter]()
 
   // Every output uses the same shape -- candidateCount = connectivityIn *
   // vcCount candidates matched against vcCount lanes -- and differs only in
@@ -98,7 +99,7 @@ class VirtualIdAllocator(cfg: NocConfig,
     val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
     val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
-    val table = new GrantTable(roundRobinArbitration, allowed)
+    val table = new GrantTableArbiter(roundRobinArbitration, allowed)
     tables += table
     when(table.io.activity) {
       io.activity := True
@@ -116,9 +117,8 @@ class VirtualIdAllocator(cfg: NocConfig,
       table.io.release(v) := io.allocatedFlits(o)(v).lastFire
     }
 
-    val router = new VcRouter(RoutedFlit(cfg, connectivityOut), candidateCount, vcCount, allowed)
+    val router = table.io.grant.createRouter(RoutedFlit(cfg, connectivityOut))
     router.setName(s"router_o${o}")
-    router.io.grant := table.io.grant
 
     for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
       router.io.sources(candidateOf(i, s)) <> demuxed(i)(s)(o)

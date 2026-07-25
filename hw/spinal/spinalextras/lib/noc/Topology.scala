@@ -2,8 +2,9 @@ package spinalextras.lib.noc
 
 import spinal.core._
 import spinal.lib._
+import spinalextras.lib.misc.arbitration.GrantTable
 import spinalextras.lib.noc.topology._
-import spinalextras.lib.noc.virtualchannels.{Dynamic, GrantTable, Static}
+import spinalextras.lib.noc.virtualchannels.{Dynamic, Static}
 
 trait Topology {
   type address_t = Int
