@@ -24,7 +24,7 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
 
   override def nodePortIndicesForCanonicalPorts(address: Int): Seq[Int] = (0 until maxCanonicalPorts)
 
-  override def resolveDestPort(dest: routeable_address_t, curr: address_t): UInt = {
+  override def resolveDestPortRaw(dest: routeable_address_t, curr: address_t): UInt = {
     val (dx, dy) = unpackRouteableAddress(dest)
     val (x, y) = addressToXY(curr)
 

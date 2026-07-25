@@ -17,7 +17,10 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, vcid: Int, connec
     val activity = out(Bool())
   }
 
-  val outputNode = RegInit(Optional.Empty(UInt(log2Up(connectivityOut) bits)))
+  // Already expressed in the connectivityOut - 1-sized, inputPort-excluded
+  // numbering -- resolveDestPort guarantees this never points back through
+  // inputPort, so no self-redirect or compaction is needed here.
+  val outputNode = RegInit(Optional.Empty(UInt(log2Up(connectivityOut - 1) bits)))
   val input = io.input
 
   val nocOutput = Flow(TupleBundle(Header(cfg), UInt(log2Up(cfg.virtualChannels) bits)))
@@ -38,11 +41,8 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, vcid: Int, connec
   } elsewhen (input.valid) {
     val hdr = Header(cfg)
     hdr.assignFromBits(input.payload.fragment)
-    val resolvedOutputNode = cfg.topology.resolveDestPort(hdr.dest, address)
 
-    // It would not make sense for resolvedOutputNode to be the current input node, so just divert these to LOCAL. This
-    // is largely an optimization so that wires are optimized out which would be loopbacks.
-    outputNode.set_value(Mux(resolvedOutputNode === inputPort, 0, resolvedOutputNode))
+    outputNode.set_value(cfg.topology.resolveDestPort(hdr.dest, address, inputPort))
     io.activity := True
     //report(Seq("Start Address: ", address, " ", cfg.topology.addressName(address), " dst ", hdr.dest, " app ", hdr.application, " vcid ", idx, " output ", outputNode))
     nocOutput.valid := True
@@ -51,18 +51,12 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, vcid: Int, connec
   }
 
   when(outputNode.has_value) {
-    if (outputNode.value.maxValue >= connectivityOut) {
-      assert(outputNode.value < connectivityOut)
+    if (outputNode.value.maxValue >= connectivityOut - 1) {
+      assert(outputNode.value < connectivityOut - 1)
     }
   }
 
-  // Compact the resolved destination port into [0, connectivityOut - 2] by
-  // dropping inputPort's slot from the numbering, then demux the flit stream
-  // directly into the per-destination output vector.
-  val compactedOutputNode = Mux(outputNode.value > inputPort, outputNode.value - 1, outputNode.value)
-    .resize(log2Up(connectivityOut - 1) bits)
-
-  StreamDemux(input.continueWhen(outputNode.has_value), compactedOutputNode, connectivityOut - 1) <> io.output
+  StreamDemux(input.continueWhen(outputNode.has_value), outputNode.value, connectivityOut - 1) <> io.output
 }
 
 object FlitRouter {
