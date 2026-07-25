@@ -51,29 +51,40 @@ class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithForm
   // Allocate one downstream (destNode, destVc) slot per packet and route the
   // granted flits to the matching output port. This replaces the old
   // Static/Dynamic VcMap, which only arbitrated per-VC without any output-slot
-  // locking.
-  val allocator = new VirtualIdAllocator(
-    cfg          = cfg,
-    connectivityIn  = connectivityIn,
-    connectivityOut = connectivityOut,
-    address
+  // locking. One allocator per output port -- each output's vc lanes are an
+  // independent arbitration domain, so there's no shared state to gain by
+  // bundling every output of a router into a single component.
+  val allocators = for (o <- 0 until connectivityOut) yield new VirtualIdAllocator(
+    cfg            = cfg,
+    connectivityIn = connectivityIn,
+    address        = address,
+    outputPort     = o
   )
+
+  // Maps a destination output port o (o != inputPort) to its slot in the
+  // connectivityOut - 1-sized, inputPort-excluded vector FlitRouter produces
+  // (see FlitRouter.io.output / Topology.resolveDestPort).
+  def destSlot(inputPort: Int, o: Int): Int = if (o < inputPort) o else o - 1
 
   val routerActivity = Vec(Vec(Bool(), connectivityIn), cfg.virtualChannels)
   for (inputPort <- 0 until connectivityIn; vcid <- 0 until cfg.virtualChannels) {
     if(vcid < inputPorts(inputPort).virtualChannels) {
-      FlitRouter(this, inputPort = inputPort, vcid = vcid, input = inputPorts(inputPort).io.outputs(vcid)) <>
-        allocator.io.routedFlits(inputPort)(vcid)
+      val routed = FlitRouter(this, inputPort = inputPort, vcid = vcid, input = inputPorts(inputPort).io.outputs(vcid))
+      for (o <- 0 until connectivityOut if o != inputPort) {
+        routed(destSlot(inputPort, o)) <> allocators(o).io.routedFlits(inputPort)(vcid)
+      }
     } else {
-      allocator.io.routedFlits(inputPort)(vcid).map(_.setIdle())
+      for (o <- 0 until connectivityOut if o != inputPort) {
+        allocators(o).io.routedFlits(inputPort)(vcid).setIdle()
+      }
     }
   }
 
   for (o <- 0 until connectivityOut; vcid <- 0 until cfg.virtualChannels) {
     if(vcid < outputPorts(o).virtualChannels) {
-      allocator.io.allocatedFlits(o)(vcid) <> outputPorts(o).io.inputs(vcid)
+      allocators(o).io.allocatedFlits(vcid) <> outputPorts(o).io.inputs(vcid)
     } else {
-      allocator.io.allocatedFlits(o)(vcid).setBlocked()
+      allocators(o).io.allocatedFlits(vcid).setBlocked()
     }
   }
 }
