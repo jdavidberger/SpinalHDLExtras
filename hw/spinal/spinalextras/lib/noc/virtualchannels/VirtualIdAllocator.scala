@@ -6,7 +6,7 @@ import spinal.lib._
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.misc.arbitration.{GrantTable, GrantTableArbiter, GrantTableCrossbar}
 import spinalextras.lib.noc.topology.Mesh
-import spinalextras.lib.noc.{Flit, NocConfig, RoundRobin, RoutedFlit, Topology}
+import spinalextras.lib.noc.{Flit, NocConfig, RoundRobin, Topology}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 import scala.collection.mutable.ArrayBuffer
@@ -19,11 +19,12 @@ class VirtualIdAllocator(val cfg: NocConfig,
   val roundRobinArbitration = cfg.virtualChannelArbitrationPolicy == RoundRobin
 
   val io = new Bundle {
-    // One inbound stream per (input port, source vc lane). Each flit
-    // carries routedNode: the output port its packet is headed to, resolved
-    // once at packet start from the header.
+    // One inbound stream per (input port, source vc lane, destination output
+    // port). The destination dimension is sized connectivityOut - 1 and
+    // excludes the input port itself -- FlitRouter already demuxed by
+    // resolved destination, so no routedNode tag needs to ride along.
     val routedFlits = Vec(
-      Vec(slave(Stream(Fragment(RoutedFlit(cfg, connectivityOut)))), cfg.virtualChannels),
+      Vec(Vec(slave(Stream(Fragment(Bits(cfg.dataWidth bits)))), connectivityOut - 1), cfg.virtualChannels),
       connectivityIn
     )
 
@@ -41,23 +42,19 @@ class VirtualIdAllocator(val cfg: NocConfig,
 
   val vcCount = cfg.virtualChannels
 
-  def retag(rf: Fragment[RoutedFlit], v: Int): Fragment[Flit] = {
+  def retag(rf: Fragment[Bits], v: Int): Fragment[Flit] = {
     val f = Fragment(Flit(cfg))
     f.last := rf.last
-    f.fragment.datum := rf.fragment.flit.datum
+    f.fragment.datum := rf.fragment
     f.fragment.vc := U(v, cfg.virtualChannelBits bits)
     f
   }
 
-  // Demux each physical (input port, source vc) candidate by its packet's
-  // destination output port. demuxed(i)(s)(o) is then a genuine,
-  // independently-owned Stream -- valid only when this candidate is both
-  // present and actually headed to o -- so it can be wired straight into
-  // that output's VcRouter, with StreamDemux itself (not us) responsible
-  // for the valid gating and ready routing being correct.
-  val demuxed = Array.tabulate(connectivityIn, vcCount) { (i, s) =>
-    StreamDemux(io.routedFlits(i)(s), io.routedFlits(i)(s).payload.fragment.routedNode, connectivityOut)
-  }
+  // Maps a destination output port o (o != i) to its slot in the
+  // connectivityOut - 1-sized io.routedFlits(i)(s) vector, which FlitRouter
+  // populated by dropping input port i's own slot from the numbering.
+  def destSlot(i: Int, o: Int): Int = if (o < i) o else o - 1
+
   io.activity := False
 
   val candidateCount = connectivityIn * vcCount
@@ -73,7 +70,7 @@ class VirtualIdAllocator(val cfg: NocConfig,
     val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
     val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
-    val crossbar = new GrantTableCrossbar(RoutedFlit(cfg, connectivityOut), allowed, roundRobinArbitration)
+    val crossbar = new GrantTableCrossbar(Bits(cfg.dataWidth bits), allowed, roundRobinArbitration)
     when(crossbar.io.activity) {
       io.activity := True
     }
@@ -81,7 +78,14 @@ class VirtualIdAllocator(val cfg: NocConfig,
     crossbar.setName(s"crossbar_o${o}")
 
     for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
-      crossbar.io.sources(candidateOf(i, s)) <> demuxed(i)(s)(o)
+      val source = crossbar.io.sources(candidateOf(i, s))
+      if (i == o) {
+        // A port never routes back through itself, so no routedFlits slot
+        // exists for this candidate at this output; leave it permanently idle.
+        source.setIdle()
+      } else {
+        source <> io.routedFlits(i)(s)(destSlot(i, o))
+      }
     }
     for (v <- 0 until vcCount) {
       crossbar.io.dests(v).map(retag(_, v)) <> io.allocatedFlits(o)(v)

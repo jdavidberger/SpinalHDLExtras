@@ -10,7 +10,9 @@ import scala.language.postfixOps
 class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, vcid: Int, connectivityOut: Int) extends Component {
   val io = new Bundle {
     val input = slave(Stream(Fragment(Bits(cfg.dataWidth bits))))
-    val output = master(Stream(Fragment(RoutedFlit(cfg, connectivityOut))))
+    // One stream per possible destination port, excluding inputPort itself --
+    // a port never routes back through itself, so that slot doesn't exist.
+    val output = Vec(master(Stream(Fragment(Bits(cfg.dataWidth bits)))), connectivityOut - 1)
 
     val activity = out(Bool())
   }
@@ -54,18 +56,17 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, vcid: Int, connec
     }
   }
 
-  input.continueWhen(outputNode.has_value).map(flit => {
-    val routedFlit = Fragment(new RoutedFlit(cfg, connectivityOut))
-    routedFlit.last := flit.last
-    routedFlit.flit.datum := flit.fragment
-    routedFlit.flit.vc := vcid
-    routedFlit.routedNode := outputNode.value
-    routedFlit
-  }) <> io.output
+  // Compact the resolved destination port into [0, connectivityOut - 2] by
+  // dropping inputPort's slot from the numbering, then demux the flit stream
+  // directly into the per-destination output vector.
+  val compactedOutputNode = Mux(outputNode.value > inputPort, outputNode.value - 1, outputNode.value)
+    .resize(log2Up(connectivityOut - 1) bits)
+
+  StreamDemux(input.continueWhen(outputNode.has_value), compactedOutputNode, connectivityOut - 1) <> io.output
 }
 
 object FlitRouter {
-  def apply(node: RouterNode, inputPort: Int, vcid: Int, input: Stream[Fragment[Bits]]): Stream[Fragment[RoutedFlit]] = {
+  def apply(node: RouterNode, inputPort: Int, vcid: Int, input: Stream[Fragment[Bits]]): Vec[Stream[Fragment[Bits]]] = {
     val router = new FlitRouter(node.cfg, node.address, inputPort = inputPort, vcid = vcid, connectivityOut = node.connectivityOut)
     router.setName(s"flit_router_p${inputPort}_v${vcid}")
     node.routerActivity(vcid)(inputPort) := router.io.activity

@@ -15,11 +15,6 @@ import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
-case class RoutedFlit(cfg : NocConfig, connectivityOut : Int) extends Bundle {
-  val flit = Flit(cfg)
-  val routedNode = UInt(log2Up(connectivityOut) bits)
-}
-
 class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithFormalProperties {
   var connectivityIn : Int = cfg.topology.nodePortIndicesForCanonicalPorts(address).size
   var connectivityOut : Int = connectivityIn
