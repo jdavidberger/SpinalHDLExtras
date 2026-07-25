@@ -8,13 +8,20 @@ import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalData, Forma
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
-class GrantTableOutput(candidateCount : Int, vcCount : Int, allowed : Seq[Seq[Boolean]]) extends Bundle with FormalData {
+class GrantTableOutput(allowed : Seq[Seq[Boolean]]) extends Bundle with FormalData {
   // allowed(v)(c) -- v-major, same layout as GrantTable's own `grant` state
   // -- restricts which (lane, candidate) pairings can ever be granted. Only
   // those pairings get a real wire here; every other (v, c) combination is a
-  // compile-time False, since GrantTable can never set it.
+  // compile-time False, since GrantTable can never set it. Its shape alone
+  // (rows = channels, columns = candidates) fully determines both counts, so
+  // callers only ever need to hand over `allowed`.
+  val channelCount = allowed.length
+  val candidateCount = allowed.headOption.map(_.length).getOrElse(0)
+  require(allowed.forall(_.length == candidateCount),
+    s"allowed rows must all have the same length (candidateCount=$candidateCount)")
+
   val allowedPairs: Seq[(Int, Int)] =
-    for (v <- 0 until vcCount; c <- 0 until candidateCount if allowed(v)(c)) yield (v, c)
+    for (v <- 0 until channelCount; c <- 0 until candidateCount if allowed(v)(c)) yield (v, c)
   private val pairIndex: Map[(Int, Int), Int] = allowedPairs.zipWithIndex.toMap
 
   val grant = Vec(Bool(), allowedPairs.length)
@@ -29,7 +36,7 @@ class GrantTableOutput(candidateCount : Int, vcCount : Int, allowed : Seq[Seq[Bo
     allowedPairs.zipWithIndex.collect { case ((vv, _), i) if vv == v => grant(i) }.foldLeft(False: Bool)(_ || _)
   def candidateBusy(c: Int): Bool =
     allowedPairs.zipWithIndex.collect { case ((_, cc), i) if cc == c => grant(i) }.foldLeft(False: Bool)(_ || _)
-  def laneBusy(v: UInt): Bool = Vec.tabulate(vcCount)(vv => laneBusy(vv))(v)
+  def laneBusy(v: UInt): Bool = Vec.tabulate(channelCount)(vv => laneBusy(vv))(v)
   def candidateBusy(c: UInt): Bool = Vec.tabulate(candidateCount)(cc => candidateBusy(cc))(c)
 
   def init(): this.type = {
@@ -38,7 +45,7 @@ class GrantTableOutput(candidateCount : Int, vcCount : Int, allowed : Seq[Seq[Bo
   }
 
   def asReg(): GrantTableOutput = {
-    val r = Reg(new GrantTableOutput(candidateCount, vcCount, allowed)).init()
+    val r = Reg(new GrantTableOutput(allowed)).init()
     this <> r
     r
   }
@@ -59,7 +66,7 @@ class GrantTableOutput(candidateCount : Int, vcCount : Int, allowed : Seq[Seq[Bo
   override def formalIsStateValid(): Seq[FormalProperty] = new FormalProperties() {
     // At most one candidate granted per lane -- io.dests(v) can only ever
     // forward one payload at a time.
-    for (v <- 0 until vcCount) {
+    for (v <- 0 until channelCount) {
       val bits = allowedPairs.zipWithIndex.collect { case ((vv, _), i) if vv == v => grant(i) }
       addFormalProperty(CountOne(bits) <= 1,
         s"grant lane $v must not be granted to more than one candidate at once")
@@ -80,27 +87,30 @@ object GrantTable {
   // No restriction: any candidate may be granted any lane -- fully
   // adaptive/Dynamic behavior. v-major (allowed(v)(c)), matching GrantTable's
   // own `grant` state layout.
-  def allowAll(candidateCount: Int, vcCount: Int): Seq[Seq[Boolean]] =
-    Seq.fill(vcCount)(Seq.fill(candidateCount)(true))
+  def allowAll(candidateCount: Int, channelCount: Int): Seq[Seq[Boolean]] =
+    Seq.fill(channelCount)(Seq.fill(candidateCount)(true))
 
-  // candidateCount must be a multiple of vcCount, laid out as
-  // candidateOf(i, s) = i * vcCount + s (see VirtualIdAllocator): candidate
-  // c may only ever be granted lane (c % vcCount), i.e. destVc is pinned to
-  // the candidate's own source-vc slot and never reassigned -- Static
-  // behavior.
-  def diagonal(candidateCount: Int, vcCount: Int): Seq[Seq[Boolean]] =
-    Seq.tabulate(vcCount, candidateCount) { (v, c) => (c % vcCount) == v }
+  // candidateCount must be a multiple of channelCount, laid out as
+  // candidateOf(i, s) = i * channelCount + s (see VirtualIdAllocator):
+  // candidate c may only ever be granted lane (c % channelCount), i.e.
+  // destVc is pinned to the candidate's own source-vc slot and never
+  // reassigned -- Static behavior.
+  def diagonal(candidateCount: Int, channelCount: Int): Seq[Seq[Boolean]] =
+    Seq.tabulate(channelCount, candidateCount) { (v, c) => (c % channelCount) == v }
 }
 
-// Matches up to `candidateCount` requesters against `vcCount` interchangeable
-// lanes, committing at most one new (lane, candidate) pairing per cycle. A
-// pairing is held (grant(v)(c) stays true) until the caller signals
-// io.release(v) -- e.g. because whatever was occupying that lane finished.
+// Matches up to `candidateCount` requesters against `channelCount`
+// interchangeable lanes, committing at most one new (lane, candidate)
+// pairing per cycle. A pairing is held (grant(v)(c) stays true) until the
+// caller signals io.release(v) -- e.g. because whatever was occupying that
+// lane finished.
 //
 // `allowed(v)(c)` restricts which lanes candidate c may ever be granted --
 // e.g. to pin a candidate to a single lane (Static), or to reserve a lane so
 // only certain candidates may ever reach it (an escape/dateline VC). Use
-// GrantTable.allowAll for the previous unrestricted behavior.
+// GrantTable.allowAll for the previous unrestricted behavior. Its shape
+// alone (rows = channels, columns = candidates) determines candidateCount
+// and channelCount, so this is the only thing callers need to provide.
 //
 // `highPriority(c)`: candidateSelector only ever considers low-priority
 // candidates when no high-priority candidate is currently eligible. This is
@@ -112,20 +122,20 @@ object GrantTable {
 // This is deliberately generic (no NoC-specific concepts): candidates and
 // lanes are just indices. A NoC-level VC allocator is built by wiring
 // (input port, source vc) candidates into one of these per output port.
-class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boolean,
+class GrantTable(roundRobinArbitration: Boolean,
                   allowed: Seq[Seq[Boolean]]) extends ComponentWithFormalProperties {
-  require(allowed.length == vcCount && allowed.forall(_.length == candidateCount),
-    s"allowed must be a $vcCount x $candidateCount matrix")
-  // Constructor default values can't reference other constructor params
-  // (Scala restriction), hence the Nil-sentinel indirection here.
+  val channelCount = allowed.length
+  val candidateCount = allowed.headOption.map(_.length).getOrElse(0)
+  require(allowed.forall(_.length == candidateCount),
+    s"allowed rows must all have the same length (candidateCount=$candidateCount)")
 
   val candidateBits = log2Up(candidateCount)
-  val vcBits = log2Up(vcCount)
+  val channelBits = log2Up(channelCount)
 
   val io = new Bundle {
-    val request = in Vec(Bool(), candidateCount)                // request(c): candidate c wants a lane
-    val release = in Vec(Bool(), vcCount)                       // release(v): lane v's current occupant is done
-    val grant   = out (new GrantTableOutput(candidateCount, vcCount, allowed)) // grant(v)(c): lane v is currently serving candidate c
+    val request = in Vec(Bool(), candidateCount)                     // request(c): candidate c wants a lane
+    val release = in Vec(Bool(), channelCount)                       // release(v): lane v's current occupant is done
+    val grant   = out (new GrantTableOutput(allowed))                // grant(v)(c): lane v is currently serving candidate c
 
     val activity = out (Bool())
   }
@@ -138,7 +148,7 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
 
   // At most one candidate bit is ever set per lane, so clearing the whole
   // lane is equivalent to clearing just the granted candidate.
-  for (v <- 0 until vcCount) {
+  for (v <- 0 until channelCount) {
     when(io.release(v)) {
       grant.clearLane(v)
     }
@@ -149,7 +159,7 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   // whether candidate c may use lane v.
   val allowedMask = grant.allowedMask
 
-  val laneSelector = new VcSelector(vcCount, roundRobinArbitration = false)
+  val laneSelector = new VcSelector(channelCount, roundRobinArbitration = false)
   val candidateSelector = new VcSelector(candidateCount, roundRobinArbitration)
 
   // A candidate is only eligible to be picked (held) if it currently has at
@@ -159,7 +169,7 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   // is waiting.
   val eligible = Vec(Bool(), candidateCount)
   for (c <- 0 until candidateCount) {
-    val hasFreeAllowedLane = (0 until vcCount)
+    val hasFreeAllowedLane = (0 until channelCount)
       .filter(v => grant.allowed(v, c))
       .map(v => !laneBusy(v))
       .foldLeft(False)(_ || _)
@@ -176,8 +186,8 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   // lane selection. allowedMask(v) is a compile-time (lane v fixed) lookup,
   // so indexing it by the runtime chosen candidate gives, for each lane,
   // whether the held candidate may use it.
-  val chosenAllowed = Vec.tabulate(vcCount)(v => allowedMask(v)(candidateSelector.io.chosen.payload))
-  for (v <- 0 until vcCount) {
+  val chosenAllowed = Vec.tabulate(channelCount)(v => allowedMask(v)(candidateSelector.io.chosen.payload))
+  for (v <- 0 until channelCount) {
     laneSelector.io.requests(v) := !laneBusy(v) && candidateSelector.io.chosen.valid && chosenAllowed(v)
   }
 
@@ -189,8 +199,8 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
   candidateSelector.io.chosen.ready := bothValid
 
   when(bothValid) {
-    for (v <- 0 until vcCount; c <- 0 until candidateCount) {
-      when(laneSelector.io.chosen.payload === U(v, vcBits bits) &&
+    for (v <- 0 until channelCount; c <- 0 until candidateCount) {
+      when(laneSelector.io.chosen.payload === U(v, channelBits bits) &&
         candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
         grant.claim(v, c)
       }
@@ -229,13 +239,13 @@ class GrantTableFormalTester extends AnyFunSuite with FormalTestSuite {
   })
 
   override def generateRtl() = {
-    (for (rr <- Seq(true, false); candidates <- Seq(1, 2, 5); vcs <- Seq(1, 2, 3)) yield
-      (s"AllowAll_rr${rr}_c${candidates}_vc${vcs}", () =>
-        GeneralFormalDut(() => new GrantTable(candidates, vcs, rr, GrantTable.allowAll(candidates, vcs)))
+    (for (rr <- Seq(true, false); candidates <- Seq(1, 2, 5); channels <- Seq(1, 2, 3)) yield
+      (s"AllowAll_rr${rr}_c${candidates}_vc${channels}", () =>
+        GeneralFormalDut(() => new GrantTable(rr, GrantTable.allowAll(candidates, channels)))
       )) ++
-    (for (rr <- Seq(true, false); vcs <- Seq(1, 2, 3); ports <- Seq(1, 2, 3)) yield
-      (s"Diagonal_rr${rr}_ports${ports}_vc${vcs}", () =>
-        GeneralFormalDut(() => new GrantTable(ports * vcs, vcs, rr, GrantTable.diagonal(ports * vcs, vcs)))
+    (for (rr <- Seq(true, false); channels <- Seq(1, 2, 3); ports <- Seq(1, 2, 3)) yield
+      (s"Diagonal_rr${rr}_ports${ports}_vc${channels}", () =>
+        GeneralFormalDut(() => new GrantTable(rr, GrantTable.diagonal(ports * channels, channels)))
       ))
   }
 }

@@ -24,7 +24,7 @@ import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 // GrantTable instance.
 class VcRouter[T <: Data](payloadType: HardType[T], candidateCount: Int, vcCount: Int, allowed: Seq[Seq[Boolean]] = null) extends ComponentWithFormalProperties {
   val io = new Bundle {
-    val grant   = in (new GrantTableOutput(candidateCount, vcCount, allowed))
+    val grant   = in (new GrantTableOutput(allowed))
     val sources = Vec(slave(Stream(Fragment(payloadType))), candidateCount)
     val dests   = Vec(master(Stream(Fragment(payloadType))), vcCount)
   }

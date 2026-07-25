@@ -98,7 +98,7 @@ class VirtualIdAllocator(cfg: NocConfig,
     val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
     val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
-    val table = new GrantTable(candidateCount, vcCount, roundRobinArbitration, allowed)
+    val table = new GrantTable(roundRobinArbitration, allowed)
     tables += table
     when(table.io.activity) {
       io.activity := True
