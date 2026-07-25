@@ -16,9 +16,11 @@ import scala.sys.process._
  */
 object NocGateCount {
 
-  case class GateCountResult(name: String, totalCells: Int, cellsByType: Map[String, Int], statOutput: String)
+  case class GateCountResult(name: String, totalCells: Int, cellsByType: Map[String, Int],
+                              summaryStats: Seq[(String, Int)], statOutput: String)
 
   private val cellTypeLine = """^\s*(\S+)\s+(\d+)\s*$""".r
+  private val summaryStatLine = """^\s*Number of ([^:]+):\s+(\d+)\s*$""".r
 
   /** Parses the `chtype  count` lines out of a yosys `stat` cell breakdown. */
   private def parseCellsByType(statOutput: String): Map[String, Int] = {
@@ -27,6 +29,15 @@ object NocGateCount {
       case cellTypeLine(name, count) => Some(name -> count.toInt)
       case _                         => None
     }.toMap
+  }
+
+  /** Parses the top-level `Number of ...: N` lines out of a yosys `stat` report,
+    * in the order yosys printed them (e.g. "wires", "wire bits", ..., "cells") --
+    * excludes the per-celltype breakdown that follows "Number of cells:". */
+  private def parseSummaryStats(statOutput: String): Seq[(String, Int)] = {
+    statOutput.linesIterator.collect {
+      case summaryStatLine(label, count) => label -> count.toInt
+    }.toSeq
   }
 
   /**
@@ -60,12 +71,13 @@ object NocGateCount {
     }
 
     val cellsByType = parseCellsByType(statOutput)
+    val summaryStats = parseSummaryStats(statOutput)
     val totalCells = "Number of cells:\\s+(\\d+)".r
       .findFirstMatchIn(statOutput)
       .map(_.group(1).toInt)
       .getOrElse(cellsByType.values.sum)
 
-    GateCountResult(name, totalCells, cellsByType, statOutput)
+    GateCountResult(name, totalCells, cellsByType, summaryStats, statOutput)
   }
 
   /** Runs [[gateCount]] over every configuration and prints a summary table sorted by cell count. */
@@ -90,5 +102,74 @@ object NocGateCount {
 
   def main(args: Array[String]): Unit = {
     report()
+  }
+
+  /** The NocConfig parameters that identify a configuration -- used both to
+    * label yosys work directories and as the leftmost columns of [[markdownTable]]. */
+  private def configParams(cfg: NocConfig): Seq[(String, String)] = Seq(
+    "Topology"   -> cfg.topology.getClass.getSimpleName,
+    "Nodes"      -> cfg.topology.nodes.toString,
+    "Data Width" -> cfg.dataWidth.toString,
+    "VCs"        -> cfg.virtualChannels.toString,
+    "VC Depth"   -> cfg.vcDepth.toString,
+    "VC Mode"    -> NocConfig.objectName(cfg.virtualChannelMode),
+    "VC Policy"  -> NocConfig.objectName(cfg.virtualChannelArbitrationPolicy),
+  )
+
+  private def configLabel(cfg: NocConfig, idx: Int): String =
+    (configParams(cfg).map(_._2) :+ idx.toString).mkString("_")
+
+  /**
+   * Runs [[gateCount]] over `configs` and renders a Markdown table: one row per
+   * configuration, with the NoC parameters ([[configParams]]) as the leftmost
+   * columns followed by every `Number of ...` line yosys' `stat` printed
+   * (wires, wire bits, memories, cells, etc, in the order yosys reports them) --
+   * the per-celltype ($mux, $adff, ...) breakdown is intentionally left out.
+   */
+  def markdownTable(configs: Seq[NocConfig], yosysCmd: String = "yosys"): String = {
+    val rows = configs.zipWithIndex.map { case (cfg, idx) =>
+      val label = configLabel(cfg, idx)
+      println(s"[NocGateCount] synthesizing $label ...")
+      val result = gateCount(label, cfg, yosysCmd)
+      (configParams(cfg), result.summaryStats)
+    }
+
+    // Union of stat labels across all rows, in first-seen order, in case some
+    // configuration is missing a stat category another one has (e.g. no memories).
+    val statHeaders = rows.flatMap(_._2.map(_._1)).distinct
+    val paramHeaders = configParams(configs.headOption.getOrElse(NocConfig())).map(_._1)
+    val headers = paramHeaders ++ statHeaders
+
+    val sb = new StringBuilder
+    sb.append("| ").append(headers.mkString(" | ")).append(" |\n")
+    sb.append("|").append(Seq.fill(headers.size)("---").mkString("|")).append("|\n")
+
+    for ((params, stats) <- rows) {
+      val statValues = statHeaders.map(h => stats.toMap.getOrElse(h, 0).toString)
+      val values = params.map(_._2) ++ statValues
+      sb.append("| ").append(values.mkString(" | ")).append(" |\n")
+    }
+
+    sb.toString()
+  }
+}
+
+/**
+ * Standalone entry point: runs [[NocGateCount.markdownTable]] over a list of
+ * configurations -- by default every configuration in
+ * `NocConfig.testConfigurations()` -- and prints the resulting Markdown table.
+ * Pass a file path as the first argument to also write the table there.
+ */
+object NocGateCountMarkdownApp {
+  def main(args: Array[String]): Unit = {
+    val configs = NocConfig.testConfigurations().map(_._2)
+    val table = NocGateCount.markdownTable(configs)
+
+    println(table)
+
+    args.headOption.foreach { path =>
+      java.nio.file.Files.write(java.nio.file.Paths.get(path), table.getBytes)
+      println(s"[NocGateCountMarkdownApp] wrote table to $path")
+    }
   }
 }
