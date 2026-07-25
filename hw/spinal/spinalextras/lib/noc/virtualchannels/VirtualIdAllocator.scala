@@ -4,7 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
-import spinalextras.lib.misc.arbitration.{GrantTable, GrantTableArbiter}
+import spinalextras.lib.misc.arbitration.{GrantTable, GrantTableArbiter, GrantTableCrossbar}
 import spinalextras.lib.noc.topology.Mesh
 import spinalextras.lib.noc.{Flit, NocConfig, RoundRobin, RoutedFlit, Topology}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
@@ -99,33 +99,21 @@ class VirtualIdAllocator(cfg: NocConfig,
     val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
     val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
-    val table = new GrantTableArbiter(roundRobinArbitration, allowed)
+    val crossbar = new GrantTableCrossbar(RoutedFlit(cfg, connectivityOut), allowed, roundRobinArbitration)
+    val table = crossbar.arbiter
     tables += table
     when(table.io.activity) {
       io.activity := True
     }
 
-    when(table.io.activity) {
-      io.activity := True
-    }
-
-    table.setName(s"grant_o${o}")
-    for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
-      table.io.request(candidateOf(i, s)) := demuxed(i)(s)(o).valid
-    }
-    for (v <- 0 until vcCount) {
-      table.io.release(v) := io.allocatedFlits(o)(v).lastFire
-    }
-
-    val router = table.io.grant.createRouter(RoutedFlit(cfg, connectivityOut))
-    router.setName(s"router_o${o}")
+    crossbar.setName(s"crossbar_o${o}")
 
     for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
-      router.io.sources(candidateOf(i, s)) <> demuxed(i)(s)(o)
+      crossbar.io.sources(candidateOf(i, s)) <> demuxed(i)(s)(o)
       candidateHolds += ((table, candidateOf(i, s), demuxed(i)(s)(o)))
     }
     for (v <- 0 until vcCount) {
-      router.io.dests(v).map(retag(_, v)) <> io.allocatedFlits(o)(v)
+      crossbar.io.dests(v).map(retag(_, v)) <> io.allocatedFlits(o)(v)
     }
   }
 
