@@ -19,7 +19,7 @@ object NocDebug {
     for (node <- noc.nodes) {
       val address = node.address
 
-      for ((table, o) <- node.allocator.tables.zipWithIndex) {
+      for ((table, o) <- node.allocator.outputCrossbars.map(_.crossbar.arbiter).zipWithIndex) {
         val candidateCount = table.io.request.length
         val canonicalPort = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
 

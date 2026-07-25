@@ -11,7 +11,7 @@ import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 import scala.collection.mutable.ArrayBuffer
 
-class VirtualIdAllocator(cfg: NocConfig,
+class VirtualIdAllocator(val cfg: NocConfig,
                          connectivityIn: Int,
                          connectivityOut: Int,
                          address : Topology.address_t,
@@ -58,35 +58,9 @@ class VirtualIdAllocator(cfg: NocConfig,
   val demuxed = Array.tabulate(connectivityIn, vcCount) { (i, s) =>
     StreamDemux(io.routedFlits(i)(s), io.routedFlits(i)(s).payload.fragment.routedNode, connectivityOut)
   }
-
-  // For each GrantTable's candidateSelector, ties its held pick back to the
-  // *external* stream it was actually sourced from. GrantTable's own
-  // properties are deliberately proven for an io.request that can drop
-  // freely at any time -- correct in isolation, since VcSelector is
-  // designed to tolerate that -- but here io.request(c) is really
-  // demuxed(i)(s)(o).valid, a genuine Stream backed by io.routedFlits'
-  // assumed producer-valid contract. Nothing states that connection, so
-  // k-induction can otherwise posit a held pick whose backing stream was
-  // never actually valid -- and since candidateOf() reuses the same index
-  // numbering across every output's independent GrantTable, two different
-  // outputs can simultaneously "hold" what looks like the same candidate
-  // with nothing tying either one back to reality.
-  val candidateHolds = new ArrayBuffer[(GrantTableArbiter, Int, Stream[Fragment[RoutedFlit]])]()
   io.activity := False
 
-  // One GrantTable per output port, in output-port order -- kept accessible
-  // (rather than a loop-local val) so a stalled testbench can reach in and
-  // dump each output's grant/request state for debugging (see NocDebug).
-  val tables = new ArrayBuffer[GrantTableArbiter]()
-
-  // Every output uses the same shape -- candidateCount = connectivityIn *
-  // vcCount candidates matched against vcCount lanes -- and differs only in
-  // which (candidate, lane) pairings GrantTable's `allowed` matrix permits:
-  //   - Static (or vcCount == 1): GrantTable.diagonal -- destVc pinned to
-  //     the candidate's own source-vc slot, no reassignment freedom.
-  //   - Dynamic: GrantTable.allowAll -- any candidate may reach any lane.
   val candidateCount = connectivityIn * vcCount
-
   def candidateOf(i: Int, s: Int): Int = i * vcCount + s
 
   // Physical input port 0 is always local injection (Topology.createNodes
@@ -95,14 +69,12 @@ class VirtualIdAllocator(cfg: NocConfig,
   // other input port is transit (relayed from a neighboring router).
   val LocalInputPort = 0
 
-  for (o <- 0 until connectivityOut) {
+  val outputCrossbars = for (o <- 0 until connectivityOut) yield new Area {
     val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
     val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
 
     val crossbar = new GrantTableCrossbar(RoutedFlit(cfg, connectivityOut), allowed, roundRobinArbitration)
-    val table = crossbar.arbiter
-    tables += table
-    when(table.io.activity) {
+    when(crossbar.io.activity) {
       io.activity := True
     }
 
@@ -110,20 +82,9 @@ class VirtualIdAllocator(cfg: NocConfig,
 
     for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
       crossbar.io.sources(candidateOf(i, s)) <> demuxed(i)(s)(o)
-      candidateHolds += ((table, candidateOf(i, s), demuxed(i)(s)(o)))
     }
     for (v <- 0 until vcCount) {
       crossbar.io.dests(v).map(retag(_, v)) <> io.allocatedFlits(o)(v)
-    }
-  }
-
-  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
-    for ((table, localIndex, src) <- candidateHolds) {
-      when(table.candidateSelector.io.chosen.valid &&
-        table.candidateSelector.io.chosen.payload === U(localIndex, table.candidateBits bits)) {
-        addFormalProperty(src.valid,
-          s"a candidate held by a GrantTable's candidateSelector must still be valid on its backing stream")
-      }
     }
   }
 }

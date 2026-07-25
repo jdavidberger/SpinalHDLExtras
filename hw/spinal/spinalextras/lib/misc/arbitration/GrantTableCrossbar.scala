@@ -3,7 +3,7 @@ package spinalextras.lib.misc.arbitration
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
-import spinalextras.lib.formal.ComponentWithFormalProperties
+import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 // An N:M crossbar switch: candidateCount source streams contend for
@@ -21,9 +21,13 @@ class GrantTableCrossbar[T <: Data](payloadType: HardType[T],
   val io = new Bundle {
     val sources = Vec(slave(Stream(Fragment(payloadType))), candidateCount)
     val dests   = Vec(master(Stream(Fragment(payloadType))), channelCount)
+
+    val activity = out(Bool())
   }
 
   val arbiter = new GrantTableArbiter(roundRobinArbitration, allowed)
+  io.activity := arbiter.io.activity
+
   val router = arbiter.io.grant.createRouter(payloadType)
 
   for (c <- 0 until candidateCount) {
@@ -35,6 +39,16 @@ class GrantTableCrossbar[T <: Data](payloadType: HardType[T],
 
   router.io.sources <> io.sources
   router.io.dests <> io.dests
+
+  override def formalComponentProperties(): Seq[FormalProperty] = new FormalProperties(this) {
+    for (i <- 0 until candidateCount; s <- 0 until channelCount) {
+      when(arbiter.candidateSelector.io.chosen.valid &&
+        arbiter.candidateSelector.io.chosen.payload === U(i, arbiter.candidateBits bits)) {
+        addFormalProperty(io.sources(i).valid,
+          s"a candidate held by a GrantTable's candidateSelector must still be valid on its backing stream")
+      }
+    }
+  }
 }
 
 class GrantTableCrossbarFormalTester extends AnyFunSuite with FormalTestSuite {
