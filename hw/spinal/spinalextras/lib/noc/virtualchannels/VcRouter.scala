@@ -8,7 +8,7 @@ import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties,
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 // Pure Stream muxing driven by an externally-supplied grant matrix: for each
-// dest lane v, whichever candidate c has io.grant(v)(c) set is connected
+// dest lane v, whichever candidate c has io.grant(v, c) set is connected
 // through to io.dests(v). No allocation logic and no payload transform live
 // here -- the payload type is generic and passes through unchanged; callers
 // needing to retag a payload (e.g. stamping a new vc id) do so with .map()
@@ -48,8 +48,8 @@ class VcRouter[T <: Data](payloadType: HardType[T], candidateCount: Int, vcCount
     for (v <- 0 until vcCount) {
       val laneWasReleased = past(io.dests(v).lastFire) init (False)
       for (c <- 0 until candidateCount) {
-        val wasGranted = past(io.grant(v)(c)) init (False)
-        addFormalProperty(laneWasReleased || !wasGranted || io.grant(v)(c),
+        val wasGranted = past(io.grant(v, c)) init (False)
+        addFormalProperty(laneWasReleased || !wasGranted || io.grant(v, c),
           s"grant($v)($c) must not be revoked except when lane $v's transaction completes")
       }
     }

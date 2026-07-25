@@ -78,7 +78,9 @@ class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
     cfg.virtualChannelMode match {
       case Dynamic if vcCount >= 2 =>
 
-        Seq.tabulate(candidateCount) { c =>
+        // Per-candidate predicate over v, transposed below into GrantTable's
+        // v-major allowed(v)(c) layout.
+        val perCandidate = Seq.tabulate(candidateCount) { c =>
           val inputPort = c / vcCount
           val sourceVc = c % vcCount
           // A candidate's incoming vc tag only means "already escaped" if it
@@ -92,10 +94,11 @@ class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
           val alreadyEscaped = sourceVc == escapeVc && inputPort != Local
 
           if (isDateline || alreadyEscaped)
-            Seq.tabulate(vcCount)(_ == escapeVc)      // forced/sticky escape
+            (v: Int) => v == escapeVc      // forced/sticky escape
           else
-            Seq.tabulate(vcCount)(_ != escapeVc)      // adaptive pool, escape excluded
+            (v: Int) => v != escapeVc      // adaptive pool, escape excluded
         }
+        Seq.tabulate(vcCount, candidateCount) { (v, c) => perCandidate(c)(v) }
       // Static's destVc is otherwise pinned to sourceVc forever -- including
       // across the dateline -- which is exactly the same cyclic-dependency
       // deadlock as Dynamic without an escape lane, just duplicated per vc
@@ -108,14 +111,15 @@ class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
       // picked, not a real class -- treat it as class 0 so it can't skip
       // the one-time bump or masquerade as already having crossed.
       case Static if vcCount >= 2 =>
-        Seq.tabulate(candidateCount) { c =>
+        val perCandidate = Seq.tabulate(candidateCount) { c =>
           val inputPort = c / vcCount
           val sourceVc = c % vcCount
           val effectiveClass = if (inputPort == Local && sourceVc == escapeVc) 0 else sourceVc
 
           val targetClass = if (isDateline) escapeVc else effectiveClass
-          Seq.tabulate(vcCount)(_ == targetClass)
+          (v: Int) => v == targetClass
         }
+        Seq.tabulate(vcCount, candidateCount) { (v, c) => perCandidate(c)(v) }
       case _ => super.allowedTransitionTable(cfg, port, candidateCount, vcCount)
     }
   }

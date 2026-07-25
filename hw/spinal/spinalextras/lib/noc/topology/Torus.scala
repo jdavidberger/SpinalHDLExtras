@@ -85,7 +85,9 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
 
     val dynamic = cfg.virtualChannelMode == Dynamic
 
-    Seq.tabulate(candidateCount) { c =>
+    // Per-candidate predicate over v, transposed below into GrantTable's
+    // v-major allowed(v)(c) layout.
+    val perCandidate = Seq.tabulate(candidateCount) { c =>
       val inputPort = c / vcCount
       val sourceVc = c % vcCount
       // As with Ring: a candidate's incoming vc tag only means "already
@@ -97,10 +99,11 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
       val alreadyEscaped = isEscapeInputVc && inputPort != Mesh.LOCAL
       val effectiveClass = if (inputPort == Mesh.LOCAL && isEscapeInputVc) 0 else sourceVc
 
-      if (isDateline || alreadyEscaped) Seq.tabulate(vcCount)(_ == escapeVc)   // forced/sticky escape
-      else if (dynamic) Seq.tabulate(vcCount)(_ != escapeVc)                  // adaptive pool
-      else Seq.tabulate(vcCount)(_ == effectiveClass)
+      if (isDateline || alreadyEscaped) (v: Int) => v == escapeVc      // forced/sticky escape
+      else if (dynamic) (v: Int) => v != escapeVc                     // adaptive pool
+      else (v: Int) => v == effectiveClass
     }
+    Seq.tabulate(vcCount, candidateCount) { (v, c) => perCandidate(c)(v) }
 
   }
 }
