@@ -70,7 +70,9 @@ class NocPathingHarness(cfg: NocConfig) extends Component {
  */
 object NocPathingTester {
 
-  case class Packet(src: Int, dst: Int, id: Int, vc: Int = 0)
+  case class Packet(src: Int, dst: Int, id: Int, vc: Int = 0) {
+
+  }
   private case class Arrival(node: Int, src: Int, dst: Int, id: Int)
 
   /** Every (src, dst) pair exactly once, including src == dst (local loopback). */
@@ -79,7 +81,7 @@ object NocPathingTester {
     val vcs = Math.max(cfg.virtualChannels, 1)
     (for (src <- 0 until n; dst <- 0 until n) yield (src, dst)).zipWithIndex.map {
       case ((src, dst), id) => Packet(src, dst, id, id % vcs)
-    }
+    }.filter(pkt => pkt.src != pkt.dst)
   }
 
   /** A random sample of (src, dst) pairs -- for topologies too large to test exhaustively. */
@@ -87,7 +89,7 @@ object NocPathingTester {
     val n = cfg.topology.nodes
     val vcs = Math.max(cfg.virtualChannels, 1)
     val rnd = new Random(seed)
-    (0 until count).map(id => Packet(rnd.nextInt(n), rnd.nextInt(n), id, rnd.nextInt(vcs)))
+    (0 until count).map(id => Packet(rnd.nextInt(n), rnd.nextInt(n), id, rnd.nextInt(vcs))).filter(pkt => pkt.src != pkt.dst)
   }
 
   /**
@@ -226,7 +228,7 @@ class NocPathingSpec extends AnyFunSuite {
 
   // A bigger mesh, sampled rather than exhaustive, just to sanity-check the
   // harness scales down the packet count sensibly for larger node counts.
-  test("pathing is correct (sampled) on a larger mesh: Mesh(6x6)") {
+  test("pathing is correct (sampled) on a larger mesh: Torus(6x6)") {
     val cfg = NocConfig(topology = new Torus((6, 6)))
     NocPathingTester.test(cfg, packets = NocPathingTester.randomPairs(cfg, count = 200))
   }

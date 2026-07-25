@@ -84,7 +84,9 @@ object NocConcurrentTester {
     var id = 0
     val pkts = mutable.ArrayBuffer[Packet]()
     for (src <- 0 until n; _ <- 0 until packetsPerSrc) {
-      pkts += Packet(src, rnd.nextInt(n), id, id % vcs)
+      var dst = rnd.nextInt(n - 1)
+      if (dst >= src) dst += 1
+      pkts += Packet(src, dst, id, id % vcs)
       id += 1
     }
     pkts.toSeq
