@@ -14,8 +14,8 @@ import scala.language.postfixOps
 
 class NoC(val cfg: NocConfig) extends ComponentWithFormalProperties {
   val io = new Bundle {
-    val inputs = Array.fill(cfg.topology.nodes)(slave(Stream(Fragment(Flit(cfg)))))
-    val outputs = Array.fill(cfg.topology.nodes)(master(Stream(Fragment(Flit(cfg)))))
+    val inputs = Array.fill(cfg.topology.nodes)(slave(Stream(Fragment(cfg.datatype))))
+    val outputs = Array.fill(cfg.topology.nodes)(master(Stream(Fragment(cfg.datatype))))
   }
 
   def sealUnusedPorts(): Unit = {
@@ -24,36 +24,23 @@ class NoC(val cfg: NocConfig) extends ComponentWithFormalProperties {
   }
 
   def configureOutputNode(node : Int, output: Stream[Fragment[Bits]]) = {
-    val flitStream = Stream(Fragment(Flit(cfg)))
-
-    val vcidStreams = StreamDemux(flitStream, flitStream.payload.vc, cfg.virtualChannels)
-
-    StreamArbiterFactory().lowerFirst.noLock.on(vcidStreams).map(flit => {
-      val p = cloneOf(output.payload)
-      p.last := flit.last
-      p.fragment := flit.fragment.datum
-      p
-    }) >> output
-
-    flitStream <> io.outputs(node)
+    output <> io.outputs(node)
   }
 
   def configureInputNode(node : Int, input : Stream[Fragment[Bits]], busIf : BusIf) {
     val reg = busIf.newReg(f"${input.name} exit_node")
     val destination = reg.field(UInt(16 bits), RW) init(0)
-    val vcid = reg.field(UInt(8 bits), RW) init(0)
-    configureInputNode(node, input, destination, vcid)
+    configureInputNode(node, input, destination)
   }
 
-  def configureInputNode(node : Int, input: Stream[Fragment[Bits]], destination : UInt, vc : UInt = U(0)): Unit = {
+  def configureInputNode(node : Int, input: Stream[Fragment[Bits]], destination : UInt): Unit = {
     val header = Header(cfg)
     header.dest := destination.resized
     header.application.setAll()
 
     input.insertHeader(header.asBits.resized).map(x => {
-      val flit = Fragment(Flit(cfg))
-      flit.datum := x.fragment
-      flit.vc := vc.resized
+      val flit = Fragment(cfg.datatype)
+      flit.fragment := x.fragment
       flit.last := x.last
       flit
     }) <> io.inputs(node)
@@ -89,11 +76,11 @@ class NoC(val cfg: NocConfig) extends ComponentWithFormalProperties {
 }
 
 trait NocProcessor {
-  def connect(input: Stream[Fragment[Flit]], output: Stream[Fragment[Flit]])
+  def connect(input: Stream[Fragment[Bits]], output: Stream[Fragment[Bits]])
 }
 
-case class TupleProcessor(input : Stream[Fragment[Flit]], output : Stream[Fragment[Flit]]) extends NocProcessor {
-  override def connect(input: Stream[Fragment[Flit]], output: Stream[Fragment[Flit]]): Unit = {
+case class TupleProcessor(input : Stream[Fragment[Bits]], output : Stream[Fragment[Bits]]) extends NocProcessor {
+  override def connect(input: Stream[Fragment[Bits]], output: Stream[Fragment[Bits]]): Unit = {
     if(this.input != null) {
       this.input <> input
     } else {
@@ -121,10 +108,10 @@ object NoC {
 }
 
 class NoCDesign(cfg : NocConfig) {
-  val outputs = new mutable.ArrayBuffer[NocConfig => Stream[Fragment[Flit]]]()
-  val inputs = new mutable.ArrayBuffer[NocConfig => Stream[Fragment[Flit]]]()
+  val outputs = new mutable.ArrayBuffer[NocConfig => Stream[Fragment[Bits]]]()
+  val inputs = new mutable.ArrayBuffer[NocConfig => Stream[Fragment[Bits]]]()
 
-  def addInput(input: NocConfig => Stream[Fragment[Flit]]): Unit = {
+  def addInput(input: NocConfig => Stream[Fragment[Bits]]): Unit = {
     inputs.append(input)
   }
 
@@ -140,31 +127,17 @@ class NoCDesign(cfg : NocConfig) {
       val header = Header(cfg)
       header.dest := exit_node.resized
 
-      input.insertHeader(header.asBits.resized).map(x => {
-        val flit = Fragment(Flit(cfg))
-        flit.datum := x.fragment
-        flit.vc := vc.resized
-        flit.last := x.last
-        flit
-      })
+      input.insertHeader(header.asBits.resized)
     })
   }
 
-  def addOutput(output: NocConfig => Stream[Fragment[Flit]]) = {
+  def addOutput(output: NocConfig => Stream[Fragment[Bits]]) = {
     outputs.append(output)
   }
 
   def addBitsOutput(output: Stream[Fragment[Bits]]) = {
     outputs.append(cfg => {
-      val flitStream = Stream(Fragment(Flit(cfg)))
-      flitStream.map(flit => {
-        val p = cloneOf(output.payload)
-        p.last := flit.last
-        p.fragment := flit.fragment.datum
-        p
-      }) >> output
-
-      flitStream
+      output
     })
   }
 
@@ -190,7 +163,7 @@ class NocFormalTester extends AnyFunSuite with FormalTestSuite {
 
   override def generateRtl() = {
     for((name, cfg) <- NocConfig.testConfigurations()) yield {
-      (name, () => GeneralFormalDut(() => new NoC(cfg), 1))
+      (name, () => GeneralFormalDut(() => new NoC(cfg.copy(dataWidth = 8)), 1))
     }
   }
 }

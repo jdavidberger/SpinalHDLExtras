@@ -32,10 +32,10 @@ class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithForm
     io.outputs(cfg.topology.resolveCanonicalOutputPort(address, canonicalPort))
   }
 
-  val inputPorts = io.inputs.map(InputPort(_))
-  val outputPorts = io.outputs.map(OutputPort(_))
+  val inputPorts = io.inputs.zipWithIndex.map {case (port, idx) => InputPort(port, if (idx == 0) 1 else cfg.virtualChannels)}
+  val outputPorts = io.outputs.zipWithIndex.map { case(port, idx) => OutputPort(port, if (idx == 0) 1 else cfg.virtualChannels) }
 
-  for (port <- 0 until connectivityIn; vc <- 0 until cfg.virtualChannels) {
+  for (port <- 0 until connectivityIn; vc <- inputPorts(port).io.outputs.indices) {
     val isStart = RegInit(True)
     val portFlowFire = inputPorts(port).io.outputs(vc).toFlowFire
     isStart := portFlowFire.lastFire
@@ -61,12 +61,20 @@ class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithForm
 
   val routerActivity = Vec(Vec(Bool(), connectivityIn), cfg.virtualChannels)
   for (inputPort <- 0 until connectivityIn; vcid <- 0 until cfg.virtualChannels) {
-    FlitRouter(this, inputPort = inputPort, vcid = vcid, input = inputPorts(inputPort).io.outputs(vcid)) <>
-      allocator.io.routedFlits(inputPort)(vcid)
+    if(vcid < inputPorts(inputPort).virtualChannels) {
+      FlitRouter(this, inputPort = inputPort, vcid = vcid, input = inputPorts(inputPort).io.outputs(vcid)) <>
+        allocator.io.routedFlits(inputPort)(vcid)
+    } else {
+      allocator.io.routedFlits(inputPort)(vcid).map(_.setIdle())
+    }
   }
 
   for (o <- 0 until connectivityOut; vcid <- 0 until cfg.virtualChannels) {
-    allocator.io.allocatedFlits(o)(vcid) <> outputPorts(o).io.inputs(vcid)
+    if(vcid < outputPorts(o).virtualChannels) {
+      allocator.io.allocatedFlits(o)(vcid) <> outputPorts(o).io.inputs(vcid)
+    } else {
+      allocator.io.allocatedFlits(o)(vcid).setBlocked()
+    }
   }
 }
 
@@ -86,9 +94,9 @@ class NocRouterFormalTester extends AnyFunSuite with FormalTestSuite {
 }
 
 
-class OutputPort(cfg : NocConfig) extends Component {
+class OutputPort(cfg : NocConfig, val virtualChannels : Int) extends Component {
   val io = new Bundle {
-    val inputs = Vec(slave(Stream(Fragment(Flit(cfg)))), cfg.virtualChannels)
+    val inputs = Vec(slave(Stream(Fragment(Flit(cfg)))), virtualChannels)
     val output = master(Stream(Fragment(Flit(cfg))))
   }
 
@@ -105,38 +113,45 @@ class OutputPort(cfg : NocConfig) extends Component {
 }
 
 object OutputPort {
-  def apply(i: Stream[Fragment[Flit]]) = {
-    val port = new OutputPort(i.payload.fragment.cfg)
+  def apply(i: Stream[Fragment[Flit]], virtualChannels : Int) = {
+    val port = new OutputPort(i.payload.fragment.cfg, virtualChannels)
     port.io.output <> i
     port
   }
 }
 
-class InputPort(cfg : NocConfig) extends Component {
+class InputPort(val cfg : NocConfig, val virtualChannels : Int) extends Component {
   val io = new Bundle {
     val input = slave(Stream(Fragment(Flit(cfg))))
 
     val outputs =
-      Vec(master(Stream(Fragment(Bits(cfg.dataWidth bits)))), cfg.virtualChannels)
+      Vec(master(Stream(Fragment(Bits(cfg.dataWidth bits)))), virtualChannels)
   }
 
-  val fifos = Array.fill(cfg.virtualChannels)(StreamFifo(
+  val fifos = Array.fill(virtualChannels)(StreamFifo(
     Fragment(Bits(cfg.dataWidth bits)),
     cfg.vcDepth
   ))
 
-  StreamDemux(io.input, io.input.payload.vc, cfg.virtualChannels).zip(fifos).foreach(x => {
-    x._1.map(x => CreateFragment(x.datum, x.last)) <> x._2.io.push
-  })
+  if(virtualChannels == 1) {
+    io.input.map(x => CreateFragment(x.datum, x.last)) <> fifos.head.io.push
+  } else {
+    StreamDemux(io.input, io.input.payload.vc, virtualChannels).zip(fifos).foreach(x => {
+      x._1.map(x => CreateFragment(x.datum, x.last)) <> x._2.io.push
+    })
+  }
   io.outputs.zip(fifos).foreach(x => x._1 <> x._2.io.pop)
 }
 
 object InputPort {
-  def apply(i: Stream[Fragment[Flit]]) = {
-    val port = new InputPort(i.payload.fragment.cfg)
+  def apply(i: Stream[Fragment[Flit]], virtualChannels : Int) = {
+    val port = new InputPort(i.payload.fragment.cfg, virtualChannels)
     port.io.input <> i
     port
   }
+
+  def apply(i: Stream[Fragment[Flit]]): InputPort = apply(i, i.payload.cfg.virtualChannels)
+  def apply(cfg : NocConfig): InputPort = new InputPort(cfg, cfg.virtualChannels)
 }
 
 class InputPortFormalTester extends AnyFunSuite with FormalTestSuite {
@@ -150,7 +165,7 @@ class InputPortFormalTester extends AnyFunSuite with FormalTestSuite {
   override def generateRtl() = {
     Seq(
       (s"Basic", () =>
-        GeneralFormalDut(() => new InputPort(cfg = NocConfig(topology = new Mesh((4, 3))))))
+        GeneralFormalDut(() => InputPort(cfg = NocConfig(topology = new Mesh((4, 3))))))
     )
   }
 }

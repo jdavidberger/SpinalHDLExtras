@@ -48,16 +48,15 @@ class NocConcurrentHarness(cfg: NocConfig) extends Component {
   val n = cfg.topology.nodes
 
   val io = new Bundle {
-    val rawInputs  = Vec(slave(Stream(Fragment(Bits(cfg.dataWidth bits)))), n)
+    val rawInputs  = Vec(slave(Stream(Fragment(cfg.datatype))), n)
     val destInputs = in(Vec(UInt(cfg.topology.addressSize bits), n))
-    val vcInputs   = in(Vec(UInt(cfg.virtualChannelBits bits), n))
-    val outputs    = Vec(master(Stream(Fragment(Flit(cfg)))), n)
+    val outputs    = Vec(master(Stream(Fragment(cfg.datatype))), n)
   }
 
   val noc = new NoC(cfg)
 
   for (i <- 0 until n) {
-    noc.configureInputNode(i, io.rawInputs(i), io.destInputs(i), io.vcInputs(i))
+    noc.configureInputNode(i, io.rawInputs(i), io.destInputs(i))
     io.outputs(i) <> noc.io.outputs(i)
   }
 
@@ -68,7 +67,7 @@ object NocConcurrentTester {
 
   import NocPathingTester.Packet
 
-  private case class Arrival(node: Int, src: Int, dst: Int, id: Int, vc: Int)
+  private case class Arrival(node: Int, src: Int, dst: Int, id: Int)
   private case class SendWindow(startCycle: Long, endCycle: Long)
 
   /**
@@ -79,14 +78,13 @@ object NocConcurrentTester {
    */
   def floodPackets(cfg: NocConfig, packetsPerSrc: Int = 4, seed: Long = 0): Seq[Packet] = {
     val n = cfg.topology.nodes
-    val vcs = Math.max(cfg.virtualChannels, 1)
     val rnd = new Random(seed)
     var id = 0
     val pkts = mutable.ArrayBuffer[Packet]()
     for (src <- 0 until n; _ <- 0 until packetsPerSrc) {
       var dst = rnd.nextInt(n - 1)
       if (dst >= src) dst += 1
-      pkts += Packet(src, dst, id, id % vcs)
+      pkts += Packet(src, dst, id)
       id += 1
     }
     pkts.toSeq
@@ -104,7 +102,7 @@ object NocConcurrentTester {
     val n = cfg.topology.nodes
     val vcs = Math.max(cfg.virtualChannels, 1)
     (0 until n).filter(src => includeSelf || src != dst).zipWithIndex.map {
-      case (src, id) => Packet(src, dst, id, id % vcs)
+      case (src, id) => Packet(src, dst, id)
     }
   }
 
@@ -127,8 +125,6 @@ object NocConcurrentTester {
     val maxId = packets.map(_.id).max
     require(BigInt(maxId) < (BigInt(1) << cfg.dataWidth),
       s"packet id $maxId doesn't fit in a ${cfg.dataWidth}-bit flit")
-    packets.foreach(p => require(p.vc < Math.max(cfg.virtualChannels, 1),
-      s"packet $p uses vc ${p.vc}, but cfg only has ${cfg.virtualChannels} virtual channel(s)"))
 
     Config.sim.compile(new NocConcurrentHarness(cfg)).doSim(seed = simSeed) { dut =>
       dut.clockDomain.forkStimulus(period = 10)
@@ -163,26 +159,22 @@ object NocConcurrentTester {
         port.ready #= true
 
         fork {
-          val expectHeader = mutable.Map[Int, Boolean]().withDefaultValue(true)
-          val bufs = mutable.Map[Int, mutable.ArrayBuffer[BigInt]]()
-
+          val buf = new mutable.ArrayBuffer[BigInt]()
+          var expectHeader = true
           while (true) {
             dut.clockDomain.waitSamplingWhere(port.valid.toBoolean && port.ready.toBoolean)
-            val vc = port.payload.fragment.vc.toInt
-            val buf = bufs.getOrElseUpdate(vc, mutable.ArrayBuffer[BigInt]())
-
-            if (expectHeader(vc)) {
-              expectHeader(vc) = false // header flit for this vc's packet: opaque, ignored
+            if (expectHeader) {
+              expectHeader = false // header flit for this vc's packet: opaque, ignored
             } else {
-              buf += port.payload.fragment.datum.toBigInt
+              buf += port.payload.fragment.toBigInt
               if (port.payload.last.toBoolean) {
                 if (buf.size == 3) {
-                  arrivals.enqueue(Arrival(node, buf(0).toInt, buf(1).toInt, buf(2).toInt, vc))
+                  arrivals.enqueue(Arrival(node, buf(0).toInt, buf(1).toInt, buf(2).toInt))
                 } else {
-                  malformed += s"node $node vc $vc: packet ended with ${buf.size} payload beats (expected 3): $buf"
+                  malformed += s"node $node: packet ended with ${buf.size} payload beats (expected 3): $buf"
                 }
                 buf.clear()
-                expectHeader(vc) = true
+                expectHeader = true
               }
             }
           }
@@ -192,7 +184,6 @@ object NocConcurrentTester {
       def sendPacket(p: Packet): Unit = {
         val stream = dut.io.rawInputs(p.src)
         dut.io.destInputs(p.src) #= cfg.topology.addressToRouteableAddress(p.dst)
-        dut.io.vcInputs(p.src) #= p.vc
 
         sendWindows(p.id) = SendWindow(cycle, -1)
 

@@ -26,6 +26,7 @@ case class NocConfig(
                     ) {
   def headerApplicationBits = dataWidth - topology.addressSize
   def virtualChannelBits = log2Up(virtualChannels)
+  def datatype = Bits(dataWidth bits)
 }
 
 object NocConfig {
@@ -43,13 +44,13 @@ object NocConfig {
     // something to fold into this suite silently, so vcDepth is left at the
     // default for now.
     (for((name, topology) <- Topology.testConfigurations();
-        virtualChannels <- Seq(2, 3);
+        virtualChannels <- Seq(1, 2, 4);
         virtualChannelMode <- Seq(Static, Dynamic);
         virtualChannelArbitrationPolicy <- Seq(RoundRobin, LowestFirst)
         ) yield
       f"${name}_vc${virtualChannels}_vcm${objectName(virtualChannelMode)}_vcp${objectName(virtualChannelArbitrationPolicy)}" ->
         NocConfig(topology = topology,
-          dataWidth = 8,
+          dataWidth = 16,
           virtualChannels = virtualChannels,
           virtualChannelMode = virtualChannelMode,
           virtualChannelArbitrationPolicy = virtualChannelArbitrationPolicy

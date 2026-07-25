@@ -85,12 +85,39 @@ trait Topology {
     }
   }
 
+  /*
+      val flitStream = Stream(Fragment(Flit(cfg)))
+
+    val vcidStreams = StreamDemux(flitStream, flitStream.payload.vc, cfg.virtualChannels)
+
+    StreamArbiterFactory().lowerFirst.noLock.on(vcidStreams).map(flit => {
+      val p = cloneOf(output.payload)
+      p.last := flit.last
+      p.fragment := flit.fragment.datum
+      p
+    }) >> output
+
+   */
   def createNodes(noc : NoC) : Seq[RouterNode] = {
     val nodes = for (x <- 0 until this.nodes) yield {
       val node = createNode(noc.cfg, x)
       node.setName(s"node_${x}")
-      node.io.inputs(0) <> noc.io.inputs(x)
-      node.io.outputs(0) <> noc.io.outputs(x)
+      node.io.inputs(0) <> noc.io.inputs(x).map(d => {
+        val f = Fragment(Flit(noc.cfg))
+        f.fragment.datum := d.fragment
+        f.vc.clearAll()
+        f.last := d.last
+        f
+      })
+
+      StreamArbiterFactory().lowerFirst.fragmentLock.on(
+        StreamDemux(node.io.outputs(0), node.io.outputs(0).payload.vc, noc.cfg.virtualChannels)
+      ).map(flit => {
+        val p = Fragment(noc.cfg.datatype)
+        p.last := flit.last
+        p.fragment := flit.fragment.datum
+        p
+      }) <> noc.io.outputs(x)
       node
     }
 

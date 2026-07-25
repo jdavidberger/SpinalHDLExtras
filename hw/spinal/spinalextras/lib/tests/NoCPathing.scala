@@ -38,14 +38,13 @@ class NocPathingHarness(cfg: NocConfig) extends Component {
   val io = new Bundle {
     val rawInputs  = Vec(slave(Stream(Fragment(Bits(cfg.dataWidth bits)))), n)
     val destInputs = in(Vec(UInt(cfg.topology.addressSize bits), n))
-    val vcInputs   = in(Vec(UInt(cfg.virtualChannelBits bits), n))
     val rawOutputs = Vec(master(Stream(Fragment(Bits(cfg.dataWidth bits)))), n)
   }
 
   val noc = new NoC(cfg)
 
   for (i <- 0 until n) {
-    noc.configureInputNode(i, io.rawInputs(i), io.destInputs(i), io.vcInputs(i))
+    noc.configureInputNode(i, io.rawInputs(i), io.destInputs(i))
     noc.configureOutputNode(i, io.rawOutputs(i))
   }
 }
@@ -70,7 +69,7 @@ class NocPathingHarness(cfg: NocConfig) extends Component {
  */
 object NocPathingTester {
 
-  case class Packet(src: Int, dst: Int, id: Int, vc: Int = 0) {
+  case class Packet(src: Int, dst: Int, id: Int) {
 
   }
   private case class Arrival(node: Int, src: Int, dst: Int, id: Int)
@@ -80,16 +79,15 @@ object NocPathingTester {
     val n = cfg.topology.nodes
     val vcs = Math.max(cfg.virtualChannels, 1)
     (for (src <- 0 until n; dst <- 0 until n) yield (src, dst)).zipWithIndex.map {
-      case ((src, dst), id) => Packet(src, dst, id, id % vcs)
+      case ((src, dst), id) => Packet(src, dst, id)
     }.filter(pkt => pkt.src != pkt.dst)
   }
 
   /** A random sample of (src, dst) pairs -- for topologies too large to test exhaustively. */
   def randomPairs(cfg: NocConfig, count: Int, seed: Long = 0): Seq[Packet] = {
     val n = cfg.topology.nodes
-    val vcs = Math.max(cfg.virtualChannels, 1)
     val rnd = new Random(seed)
-    (0 until count).map(id => Packet(rnd.nextInt(n), rnd.nextInt(n), id, rnd.nextInt(vcs))).filter(pkt => pkt.src != pkt.dst)
+    (0 until count).map(id => Packet(rnd.nextInt(n), rnd.nextInt(n), id)).filter(pkt => pkt.src != pkt.dst)
   }
 
   /**
@@ -155,9 +153,8 @@ object NocPathingTester {
 
       def sendPacket(p: Packet): Unit = {
         val stream = dut.io.rawInputs(p.src)
-        println(s"Sending ${p.src} -> ${p.dst} ${p.vc}")
+        println(s"Sending ${p.src} -> ${p.dst} ")
         dut.io.destInputs(p.src) #= cfg.topology.addressToRouteableAddress(p.dst)
-        dut.io.vcInputs(p.src) #= p.vc
 
         val beats = Seq(BigInt(p.src), BigInt(p.dst), BigInt(p.id))
         for ((data, idx) <- beats.zipWithIndex) {
