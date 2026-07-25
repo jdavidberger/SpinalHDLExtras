@@ -28,7 +28,7 @@ object NocDebug {
         val busy = for {
           v <- 0 until vcCount
           c <- 0 until candidateCount
-          if table.grant(v)(c).toBoolean
+          if table.io.grant(v, c).toBoolean
         } yield (v, c)
         val requesting = (0 until candidateCount).filter(c => table.io.request(c).toBoolean)
 

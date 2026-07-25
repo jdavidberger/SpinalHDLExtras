@@ -23,6 +23,30 @@ class GrantTableOutput(candidateCount : Int, vcCount : Int, allowed : Seq[Seq[Bo
     case Some(i) => grant(i)
     case None => False
   }
+
+  def laneBusy(v: Int): Bool =
+    allowedPairs.zipWithIndex.collect { case ((vv, _), i) if vv == v => grant(i) }.foldLeft(False: Bool)(_ || _)
+  def candidateBusy(c: Int): Bool =
+    allowedPairs.zipWithIndex.collect { case ((_, cc), i) if cc == c => grant(i) }.foldLeft(False: Bool)(_ || _)
+  def laneBusy(v: UInt): Bool = Vec.tabulate(vcCount)(vv => laneBusy(vv))(v)
+  def candidateBusy(c: UInt): Bool = Vec.tabulate(candidateCount)(cc => candidateBusy(cc))(c)
+
+  // Producer-side (GrantTable) mutation API: `makeRegisters()` wires the real
+  // register state backing `grant` -- call it exactly once, unconditionally
+  // (never from inside a `when`, or that would wrongly scope the `grant :=`
+  // mirror to that condition) -- then use the returned handle's claim/
+  // clearLane to mutate just the allowed pairings, without the caller ever
+  // seeing the flat/index-mapped layout underneath.
+  class Registers {
+    private val state = Vec(RegInit(False), allowedPairs.length)
+    grant := state
+
+    def claim(v: Int, c: Int): Unit = pairIndex.get((v, c)).foreach(i => state(i) := True)
+
+    def clearLane(v: Int): Unit =
+      allowedPairs.zipWithIndex.foreach { case ((vv, _), i) => if (vv == v) state(i) := False }
+  }
+  def makeRegisters(): Registers = new Registers()
   /**
    * @return Whether or not the current state of the bundle is valid. Typically either asserted or assumed by a
    *         component which has this bundle as an input or an output.
@@ -103,21 +127,19 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
     val activity = out (Bool())
   }
 
-  val grant = Vec(Vec(RegInit(False), candidateCount), vcCount)
-  io.grant.grant := Vec(io.grant.allowedPairs.map { case (v, c) => grant(v)(c) })
-  // Kept peekable from a stalled testbench (see NocDebug) even if otherwise
-  // unused/prunable in a given build.
-  grant.simPublic()
+  // Called unconditionally, before any `when`, so the internal `grant :=`
+  // mirror this wires up isn't accidentally scoped to a condition.
+  val grantRegs = io.grant.makeRegisters()
   io.request.simPublic()
 
-  def laneBusy(v: Int): Bool = grant(v).reduce(_ || _)
-  def candidateBusy(c: Int): Bool = grant.map(_(c)).reduce(_ || _)
+  def laneBusy(v: Int): Bool = io.grant.laneBusy(v)
+  def candidateBusy(c: Int): Bool = io.grant.candidateBusy(c)
 
   // At most one candidate bit is ever set per lane, so clearing the whole
-  // row is equivalent to clearing just the granted candidate.
+  // lane is equivalent to clearing just the granted candidate.
   for (v <- 0 until vcCount) {
     when(io.release(v)) {
-      grant(v).foreach(_ := False)
+      grantRegs.clearLane(v)
     }
   }
 
@@ -167,14 +189,14 @@ class GrantTable(candidateCount: Int, vcCount: Int, roundRobinArbitration: Boole
       if(allowed(v)(c)) {
         when(laneSelector.io.chosen.payload === U(v, vcBits bits) &&
           candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
-          grant(v)(c) := True
+          grantRegs.claim(v, c)
         }
       }
     }
   }
 
-  def laneBusy(v: UInt): Bool = grant(v).reduce(_ || _)
-  def candidateBusy(c: UInt): Bool = grant.map(_(c)).reduce(_ || _)
+  def laneBusy(v: UInt): Bool = io.grant.laneBusy(v)
+  def candidateBusy(c: UInt): Bool = io.grant.candidateBusy(c)
 
   // The exclusion properties on io.grant (see GrantTableOutput) constrain
   // `grant` itself, but say nothing about laneSelector/candidateSelector's
