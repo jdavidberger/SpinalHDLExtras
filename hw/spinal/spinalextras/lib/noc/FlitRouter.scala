@@ -18,6 +18,7 @@ class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical
     val activity = out(Bool())
   }
 
+  io.output.zip(outputNodeIndices).foreach { case(port, canonical_port) => port.setName(s"io_output_${cfg.topology.portName(canonical_port)}")}
   // Already expressed in the connectivityOut-sized, inputPort-excluded
   // numbering -- resolveDestPort guarantees this never points back through
   // inputPort, so no self-redirect or compaction is needed here.

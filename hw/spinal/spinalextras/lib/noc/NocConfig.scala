@@ -27,6 +27,14 @@ case class NocConfig(
   def headerApplicationBits = dataWidth - topology.addressSize
   def virtualChannelBits = log2Up(virtualChannels)
   def datatype = Bits(dataWidth bits)
+
+  def packHeader(dest: UInt, subheader: UInt): Bits = {
+    val header = Header(this)
+    header.dest := dest
+    header.application := B(0, headerApplicationBits bits)
+    header.application(topology.addressSize - 1 downto 0) := subheader.asBits
+    header.asBits.resized
+  }
 }
 
 object NocConfig {

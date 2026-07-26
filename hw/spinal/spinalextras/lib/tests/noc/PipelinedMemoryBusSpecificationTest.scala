@@ -1,4 +1,4 @@
-package spinalextras.lib.tests
+package spinalextras.lib.tests.noc
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
@@ -6,6 +6,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
+import spinalextras.lib.Config
 import spinalextras.lib.noc.NocConfig
 import spinalextras.lib.noc.protocols.{NoCBuilder, PipelinedMemoryBusSpecification}
 import spinalextras.lib.noc.topology.Mesh
@@ -47,8 +48,9 @@ class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
     val nocCfg = NocConfig(topology = new Mesh(2, 2), dataWidth = 32)
     val pmbConfig = PipelinedMemoryBusConfig(addressWidth = 8, dataWidth = 8)
 
-    SimConfig.compile(new PipelinedMemoryBusSpecificationHarness(nocCfg, pmbConfig, masterAddress, slaveAddress)).doSim(seed = 42) { dut =>
+    Config.sim.compile(new PipelinedMemoryBusSpecificationHarness(nocCfg, pmbConfig, masterAddress, slaveAddress)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(period = 10)
+      SimTimeout(1 us)
 
       val io = dut.io
       io.masterBus.cmd.valid #= false
@@ -58,20 +60,22 @@ class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
       dut.clockDomain.waitSampling(5)
 
       val mem = mutable.Map[BigInt, BigInt]().withDefaultValue(0)
-
+      var running = true
       // Models the peripheral behind the slave port: a 1-cycle-latency memory.
-      fork {
-        while (true) {
-          dut.clockDomain.waitSamplingWhere(io.slaveBus.cmd.valid.toBoolean)
-          val addr = io.slaveBus.cmd.address.toBigInt
-          if (io.slaveBus.cmd.write.toBoolean) {
-            mem(addr) = io.slaveBus.cmd.data.toBigInt
-          } else {
-            dut.clockDomain.waitSampling()
-            io.slaveBus.rsp.valid #= true
-            io.slaveBus.rsp.data #= mem(addr)
-            dut.clockDomain.waitSampling()
-            io.slaveBus.rsp.valid #= false
+      val slaveFork = fork {
+        while (running) {
+          dut.clockDomain.waitSampling()
+          if(io.slaveBus.cmd.valid.toBoolean) {
+            val addr = io.slaveBus.cmd.address.toBigInt
+            if (io.slaveBus.cmd.write.toBoolean) {
+              mem(addr) = io.slaveBus.cmd.data.toBigInt
+            } else {
+              dut.clockDomain.waitSampling()
+              io.slaveBus.rsp.valid #= true
+              io.slaveBus.rsp.data #= mem(addr)
+              dut.clockDomain.waitSampling()
+              io.slaveBus.rsp.valid #= false
+            }
           }
         }
       }
@@ -82,7 +86,9 @@ class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
         io.masterBus.cmd.address #= addr
         io.masterBus.cmd.data #= data
         io.masterBus.cmd.mask #= (BigInt(1) << (pmbConfig.dataWidth / 8)) - 1
+        println(s"Writing ${io.masterBus.cmd.data.toBigInt} to ${io.masterBus.cmd.address.toBigInt}")
         dut.clockDomain.waitSamplingWhere(io.masterBus.cmd.ready.toBoolean)
+        println(s"Writing done")
         io.masterBus.cmd.valid #= false
       }
 
@@ -92,9 +98,12 @@ class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
         io.masterBus.cmd.address #= addr
         io.masterBus.cmd.data #= 0
         io.masterBus.cmd.mask #= 0
+        println(s"Reading ${io.masterBus.cmd.data.toBigInt} to ${io.masterBus.cmd.address.toBigInt}")
         dut.clockDomain.waitSamplingWhere(io.masterBus.cmd.ready.toBoolean)
         io.masterBus.cmd.valid #= false
+        println(s"Reading wait")
         dut.clockDomain.waitSamplingWhere(io.masterBus.rsp.valid.toBoolean)
+        println(s"Reading done")
         val result = io.masterBus.rsp.data.toBigInt
         dut.clockDomain.waitSampling()
         result
@@ -123,6 +132,10 @@ class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
         val got = read(addr)
         assert(got == expected(addr), s"address $addr after overwrite: expected ${expected(addr)}, got $got")
       }
+
+      println("Waiting for join")
+      running = false
+      slaveFork.join()
     }
   }
 

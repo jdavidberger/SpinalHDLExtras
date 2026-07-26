@@ -1,12 +1,11 @@
-package spinalextras.lib.tests
+package spinalextras.lib.tests.noc
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinalextras.lib.noc._
-import spinalextras.lib.noc.topology.{Mesh, Ring, Star, Torus, Tree}
-import spinalextras.lib.noc.virtualchannels._
+import spinalextras.lib.noc.topology.Torus
 
 import scala.collection.mutable
 import scala.language.postfixOps

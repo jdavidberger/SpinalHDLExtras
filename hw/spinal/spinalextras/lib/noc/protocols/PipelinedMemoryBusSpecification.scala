@@ -3,18 +3,116 @@ package spinalextras.lib.noc.protocols
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.AddressMapping
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig, PipelinedMemoryBusCmd}
+import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinalextras.lib.misc.StreamTools
 import spinalextras.lib.misc.StreamTools.CreateFragment
-import spinalextras.lib.noc.Header
+import spinalextras.lib.noc.{Header, NocConfig}
 
 import scala.collection.mutable
 import scala.language.postfixOps
 
 /** A rsp payload paired with the requesting master's NoC node address, queued in receive order. */
-private case class PendingRsp(rspBits: Int, addressSize: Int) extends Bundle {
+case class PendingRsp(rspBits: Int, addressSize: Int) extends Bundle {
   val data = Bits(rspBits bits)
   val dest = UInt(addressSize bits)
+}
+
+class PipelinedMemoryNocSlave(val cfg : NocConfig, val pmbConfig : PipelinedMemoryBusConfig) extends Component {
+  private val cmdBits = 1 + pmbConfig.addressWidth + pmbConfig.dataWidth + pmbConfig.dataWidth / 8
+  private val rspBits = pmbConfig.dataWidth
+
+  val io = new Bundle {
+    val bus = master(PipelinedMemoryBus(pmbConfig))
+
+    val input = slave(Stream(Fragment(Bits(cfg.dataWidth bits))))
+    val output = master(Stream(Fragment(Bits(cfg.dataWidth bits))))
+  }
+
+  private val addressSize = cfg.topology.addressSize
+  val bus = io.bus
+
+  val cmdIn = io.input
+
+  val (cmdHeaderBits, cmdPayload) = StreamTools.takeHead(cmdIn)
+  val cmdHeader = Header(cfg)
+  cmdHeader.assignFromBits(cmdHeaderBits)
+  val sourceAddress = cmdHeader.application(addressSize - 1 downto 0).asUInt
+
+  val cmd = PipelinedMemoryBusCmd(pmbConfig)
+  cmd.assignFromBits(cmdPayload.payload.fragment.resize(cmdBits bits))
+
+  // Tracks, in receive order, which requesting master a read is owed back to -- depth is
+  // generous headroom rather than a hard requirement, since only reads that are actually
+  // in flight ever occupy a slot and every master permits just one outstanding read itself.
+  val pendingSrc = StreamFifo(UInt(addressSize bits), depth = 4)
+  pendingSrc.io.push.valid := cmdPayload.fire && !cmd.write
+  pendingSrc.io.push.payload := sourceAddress
+
+  bus.cmd.valid := cmdPayload.valid
+  bus.cmd.payload := cmd
+  cmdPayload.ready := bus.cmd.ready && (cmd.write || pendingSrc.io.push.ready)
+
+  // bus.rsp is a Flow (no backpressure): it must always be captured the cycle it fires. That's
+  // safe here without ever overflowing because pendingSrc (above) already bounds the number of
+  // reads in flight at this slave to its own depth, so a same-depth FIFO here can never see more
+  // pushes than it has room for.
+  val rspRoute = PendingRsp(rspBits, addressSize)
+  val rspFifo = StreamFifo(rspRoute, depth = 4)
+  rspFifo.io.push.valid := bus.rsp.valid
+  rspFifo.io.push.payload.data := bus.rsp.payload.asBits
+  rspFifo.io.push.payload.dest := pendingSrc.io.pop.payload
+  pendingSrc.io.pop.ready := bus.rsp.valid
+
+  val rspOut = Stream(Fragment(Bits(cfg.dataWidth bits)))
+  rspOut.valid := rspFifo.io.pop.valid
+  rspOut.payload.fragment := rspFifo.io.pop.payload.data.resize(cfg.dataWidth bits)
+  rspOut.payload.last := True
+  rspFifo.io.pop.ready := rspOut.ready
+
+  io.output <> rspOut.insertHeader(cfg.packHeader(rspFifo.io.pop.payload.dest, U(0, addressSize bits)))
+}
+
+/** @param slaveMappings each downstream slave's address hit-test paired with its already-resolved
+  *                       (`addressToRouteableAddress`) NoC routing address. */
+class PipelinedMemoryNocMaster(val cfg : NocConfig, val pmbConfig : PipelinedMemoryBusConfig,
+                                val address : Int, val slaveMappings : IndexedSeq[(AddressMapping, Int)]) extends Component {
+  private val rspBits = pmbConfig.dataWidth
+
+  val io = new Bundle {
+    val bus = slave(PipelinedMemoryBus(pmbConfig))
+
+    val input = slave(Stream(Fragment(Bits(cfg.dataWidth bits))))
+    val output = master(Stream(Fragment(Bits(cfg.dataWidth bits))))
+  }
+
+  private val addressSize = cfg.topology.addressSize
+  val bus = io.bus
+
+  val hits = slaveMappings.map(s => s._1.hit(bus.cmd.address))
+  when(bus.cmd.valid) {
+    assert(CountOne(hits) === U(1), "PipelinedMemoryBusSpecification: master command address matched != 1 slave mapping")
+  }
+  val destNode = MuxOH(hits, slaveMappings.map(s => U(s._2, addressSize bits)))
+
+  // Only one outstanding read may be in flight at a time -- see class doc for why.
+  val waitingRsp = RegInit(False)
+  val gatedCmd = bus.cmd.haltWhen(waitingRsp)
+
+  val cmdOut = gatedCmd.map(c => CreateFragment(c.asBits.resize(cfg.dataWidth bits), True))
+  when(cmdOut.fire && !gatedCmd.payload.write) {
+    waitingRsp := True
+  }
+
+  io.output <> cmdOut.insertHeader(cfg.packHeader(destNode, U(address, addressSize bits)))
+
+  val (_, rspPayload) = StreamTools.takeHead(io.input)
+  rspPayload.ready := True
+  bus.rsp.valid := rspPayload.valid
+  bus.rsp.payload.assignFromBits(rspPayload.payload.fragment.resize(rspBits bits))
+
+  when(rspPayload.fire) {
+    waitingRsp := False
+  }
 }
 
 /**
@@ -93,92 +191,23 @@ class PipelinedMemoryBusSpecification(pmbConfig: PipelinedMemoryBusConfig, build
     a
   }
 
-  // Packs the NoC routing header (dest) and our return-address subheader (source node,
-  // stashed in the otherwise-unused low application bits) into one dataWidth-wide flit.
-  private def packHeader(dest: UInt, subheader: UInt): Bits = {
-    val header = Header(cfg)
-    header.dest := dest
-    header.application := B(0, cfg.headerApplicationBits bits)
-    header.application(addressSize - 1 downto 0) := subheader.asBits
-    header.asBits.resized
-  }
-
   private def buildMaster(m: MasterPort): Area = new Area {
-    val bus = m.bus
-
-    val hits = slavePorts.map(s => s.mapping.hit(bus.cmd.address))
-    when(bus.cmd.valid) {
-      assert(CountOne(hits) === U(1), "PipelinedMemoryBusSpecification: master command address matched != 1 slave mapping")
-    }
-    val destNode = MuxOH(hits, slavePorts.map(s => U(s.address, addressSize bits)))
-
-    // Only one outstanding read may be in flight at a time -- see class doc for why.
-    val waitingRsp = RegInit(False)
-    val gatedCmd = bus.cmd.haltWhen(waitingRsp)
-
-    val cmdOut = gatedCmd.map(c => CreateFragment(c.asBits.resize(cfg.dataWidth bits), True))
-    when(cmdOut.fire && !gatedCmd.payload.write) {
-      waitingRsp := True
-    }
-
-    builder.addInput(cmdOut.insertHeader(packHeader(destNode, U(m.address, addressSize bits))), m.address)
-
-    val rspIn = Stream(Fragment(Bits(cfg.dataWidth bits)))
-    builder.addOutput(rspIn, m.address)
-
-    val (_, rspPayload) = StreamTools.takeHead(rspIn)
-    rspPayload.ready := True
-    bus.rsp.valid := rspPayload.valid
-    bus.rsp.payload.assignFromBits(rspPayload.payload.fragment.resize(rspBits bits))
-
-    when(rspPayload.fire) {
-      waitingRsp := False
-    }
+    val masterAdapter = new PipelinedMemoryNocMaster(cfg, pmbConfig, m.address,
+      slavePorts.map(s => (s.mapping, cfg.topology.addressToRouteableAddress(s.address))))
+    masterAdapter.setName(s"masterAdapter_${cfg.topology.addressName(m.address)}")
+    masterAdapter.io.bus <> m.bus
+    builder.addInput(masterAdapter.io.output, m.address)
+    builder.addOutput(masterAdapter.io.input, m.address)
   }.setName(s"pmbMaster_${m.address}")
 
   private def buildSlave(s: SlavePort): Area = new Area {
     val bus = s.bus
 
-    val cmdIn = Stream(Fragment(Bits(cfg.dataWidth bits)))
-    builder.addOutput(cmdIn, s.address)
-
-    val (cmdHeaderBits, cmdPayload) = StreamTools.takeHead(cmdIn)
-    val cmdHeader = Header(cfg)
-    cmdHeader.assignFromBits(cmdHeaderBits)
-    val sourceAddress = cmdHeader.application(addressSize - 1 downto 0).asUInt
-
-    val cmd = PipelinedMemoryBusCmd(pmbConfig)
-    cmd.assignFromBits(cmdPayload.payload.fragment.resize(cmdBits bits))
-
-    // Tracks, in receive order, which requesting master a read is owed back to -- depth is
-    // generous headroom rather than a hard requirement, since only reads that are actually
-    // in flight ever occupy a slot and every master permits just one outstanding read itself.
-    val pendingSrc = StreamFifo(UInt(addressSize bits), depth = 4)
-    pendingSrc.io.push.valid := cmdPayload.fire && !cmd.write
-    pendingSrc.io.push.payload := sourceAddress
-
-    bus.cmd.valid := cmdPayload.valid
-    bus.cmd.payload := cmd
-    cmdPayload.ready := bus.cmd.ready && (cmd.write || pendingSrc.io.push.ready)
-
-    // bus.rsp is a Flow (no backpressure): it must always be captured the cycle it fires. That's
-    // safe here without ever overflowing because pendingSrc (above) already bounds the number of
-    // reads in flight at this slave to its own depth, so a same-depth FIFO here can never see more
-    // pushes than it has room for.
-    val rspRoute = PendingRsp(rspBits, addressSize)
-    val rspFifo = StreamFifo(rspRoute, depth = 4)
-    rspFifo.io.push.valid := bus.rsp.valid
-    rspFifo.io.push.payload.data := bus.rsp.payload.asBits
-    rspFifo.io.push.payload.dest := pendingSrc.io.pop.payload
-    pendingSrc.io.pop.ready := bus.rsp.valid
-
-    val rspOut = Stream(Fragment(Bits(cfg.dataWidth bits)))
-    rspOut.valid := rspFifo.io.pop.valid
-    rspOut.payload.fragment := rspFifo.io.pop.payload.data.resize(cfg.dataWidth bits)
-    rspOut.payload.last := True
-    rspFifo.io.pop.ready := rspOut.ready
-
-    builder.addInput(rspOut.insertHeader(packHeader(rspFifo.io.pop.payload.dest, U(0, addressSize bits))), s.address)
+    val slaveAdapter = new PipelinedMemoryNocSlave(cfg, pmbConfig)
+    slaveAdapter.setName(s"slaveAdapter_${cfg.topology.addressName(s.address)}")
+    slaveAdapter.io.bus <> s.bus
+    builder.addOutput(slaveAdapter.io.input, s.address)
+    builder.addInput(slaveAdapter.io.output, s.address)
   }.setName(s"pmbSlave_${s.address}")
 
   override def build(): Unit = {

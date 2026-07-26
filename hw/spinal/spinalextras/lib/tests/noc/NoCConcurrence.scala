@@ -1,4 +1,4 @@
-package spinalextras.lib.tests
+package spinalextras.lib.tests.noc
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
@@ -6,9 +6,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.sim.SimManagerContext
 import spinalextras.lib.Config
-import spinalextras.lib.logging.GlobalLogger
 import spinalextras.lib.noc._
-import spinalextras.lib.noc.topology.{Mesh, Ring, Star, Torus, Tree}
 import spinalextras.lib.noc.virtualchannels.Dynamic
 
 import scala.collection.mutable
