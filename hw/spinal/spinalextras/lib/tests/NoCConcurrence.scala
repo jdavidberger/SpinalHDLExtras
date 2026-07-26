@@ -20,29 +20,26 @@ import scala.util.Random
  * Concurrency / VC-isolation test harness
  * ============================================================================
  *
- * `NocPathingSim.scala` deliberately tests one packet at a time, precisely
- * because the raw `Bits` ports it exposes don't carry the `vc` tag needed to
- * tell two *simultaneously* in-flight packets apart if their flits end up
- * interleaved on a shared physical link. This harness exists to remove that
- * restriction and test the thing it explicitly punted on:
+ * `NocPathingSim.scala` deliberately tests one packet at a time -- see its
+ * own header comment for why. This harness removes that restriction and
+ * tests the thing `NocPathingHarness` explicitly punts on:
  *
  *   1. That multiple packets can genuinely be in flight through the NoC at
  *      the same time (not just pipelined-but-effectively-serial).
- *   2. That packets on different VCIDs sharing a physical link don't get
+ *   2. That packets sharing an internal link on different VCs don't get
  *      their flits mixed up with each other.
  *
- * `NocConcurrentHarness` is almost identical to `NocPathingHarness`, except
- * the output side exposes the full `Stream(Fragment(Flit(cfg)))` (including
- * `.vc`) instead of going through `configureOutputNode`. That's what lets
- * the receive side in `NocConcurrentTester` demultiplex flits from several
- * concurrently-arriving packets sharing one output port: it keeps one
- * "packet currently being reassembled" buffer *per VCID* instead of one per
- * node. That's a safe way to disambiguate because of how routing already
- * works here: a router only ever binds one in-flight packet to a given
- * (output port, vc) pair at a time (see `vcToOutputNode` / `vc.has_value` in
- * `RouterNode`) -- so at any single hop, two packets that are genuinely
- * concurrent on the same wire are guaranteed to be on different VCs, which
- * is exactly the tag this harness uses to keep them apart.
+ * `NocConcurrentHarness` is otherwise identical to `NocPathingHarness`: like
+ * every external NoC port, its output is a plain `Stream(Fragment(Bits))`
+ * with no `vc` tag (see `NocConfig.datatype`). `Topology.createNodes`
+ * arbitrates that final external link with `fragmentLock`, so a full packet
+ * always finishes before the next one starts on it -- flits from different
+ * packets can never interleave there. That's what lets `NocConcurrentTester`
+ * get away with one reconstruction buffer per node instead of per VC: the
+ * genuine concurrency under test happens deeper in the network, on the
+ * shared internal links between routers, but it's already resolved by the
+ * time flits reach a node's external output. Packets are told apart purely
+ * by the `id` each one carries as a payload beat (see `Arrival`), not by VC.
  */
 class NocConcurrentHarness(cfg: NocConfig) extends Component {
   val n = cfg.topology.nodes
@@ -149,11 +146,12 @@ object NocConcurrentTester {
       val malformed = mutable.ArrayBuffer[String]()
       val sendWindows = mutable.Map[Int, SendWindow]() // packet id -> (start, end) cycle
 
-      // --- receive side: one reconstruction buffer per (node, vc). Two
-      //     packets concurrently sharing a node's output link are
-      //     guaranteed (by how routing claims a vc) to be on different
-      //     VCs, so keying by vc is sufficient to keep them apart even if
-      //     their flits interleave beat-by-beat. ---
+      // --- receive side: one reconstruction buffer per node. The NoC's
+      //     final external output arbitration (Topology.createNodes) uses
+      //     fragmentLock, so a full packet always finishes before the next
+      //     one starts on a given node's output -- flits from different
+      //     packets can't interleave there, so no per-vc keying is needed;
+      //     packets are told apart by their `id` payload beat instead. ---
       for (node <- 0 until n) {
         val port = dut.io.outputs(node)
         port.ready #= true

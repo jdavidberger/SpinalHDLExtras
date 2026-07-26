@@ -60,12 +60,6 @@ class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithForm
     canonicalPort     = p
   )
 
-
-  // Maps a destination output port o (o != inputPort) to its slot in the
-  // connectivityOut - 1-sized, inputPort-excluded vector FlitRouter produces
-  // (see FlitRouter.io.output / Topology.resolveDestPort).
-  def destSlot(inputPort: Int, o: Int): Int = if (o < inputPort) o else o - 1
-
   for ((canonical_port, port_idx) <- canonicalInputPortIndices.zipWithIndex; vcid <- 0 until cfg.virtualChannels) {
     if(vcid < inputPorts(port_idx).virtualChannels) {
       val routed = FlitRouter(this, inputPort = canonical_port, vcid = vcid, input = inputPorts(port_idx).io.outputs(vcid))

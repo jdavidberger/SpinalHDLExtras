@@ -66,12 +66,6 @@ class VirtualIdAllocator(val cfg: NocConfig,
   val candidateCount = connectivityIn * vcCount
   def candidateOf(i: Int, s: Int): Int = i * vcCount + s
 
-  // Physical input port 0 is always local injection (Topology.createNodes
-  // wires it directly, bypassing canonical-port resolution used for every
-  // inter-router link) -- so candidates sourced from it are local, and every
-  // other input port is transit (relayed from a neighboring router).
-  val LocalInputPort = 0
-
   val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonicalPort), candidateCount, vcCount)
 
   val crossbar = new GrantTableCrossbar(Bits(cfg.dataWidth bits), allowed, roundRobinArbitration)

@@ -55,17 +55,15 @@ class NocPathingHarness(cfg: NocConfig) extends Component {
  * and that nothing shows up anywhere it shouldn't.
  *
  * Packets are injected strictly one at a time, globally: the previous packet
- * is fully drained before the next one is sent. That's a deliberate
- * simplification, not an oversight -- `OutputPort` arbitrates with
- * `StreamArbiterFactory(...).noLock`, so in general flits belonging to two
- * *different* in-flight packets that happen to share an output port could
- * interleave beat-by-beat. The raw `Bits` ports this harness drives (via
- * `configureInputNode`/`configureOutputNode`) don't expose the `vc` tag a
- * receiver would need to de-interleave that. Testing one packet at a time
- * sidesteps that ambiguity entirely and keeps this harness scoped to the
+ * is fully drained before the next one is sent. That's a deliberate scoping
+ * choice, not a requirement -- `Topology.createNodes` arbitrates the shared
+ * external output with `fragmentLock`, so on the `Flit`-to-`Bits` boundary
+ * this harness actually exercises, one packet's flits always finish before
+ * the next one's begin, and interleaving isn't possible here regardless.
+ * Testing one packet at a time just keeps this harness scoped to the
  * question it's meant to answer -- is the path from every source to every
- * destination correct? -- rather than also trying to be a VC/throughput
- * stress test.
+ * destination correct? -- leaving genuine concurrency and VC isolation to
+ * `NocConcurrentTester`.
  */
 object NocPathingTester {
 

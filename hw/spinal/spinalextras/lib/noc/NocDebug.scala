@@ -19,11 +19,12 @@ object NocDebug {
     for (node <- noc.nodes) {
       val address = node.address
 
-      for ((table, o) <- node.allocators.map(_.crossbar.arbiter).zipWithIndex) {
+      for ((allocator, o) <- node.allocators.zipWithIndex) {
+        val table = allocator.crossbar.arbiter
         val candidateCount = table.io.request.length
-        val canonicalPort = cfg.topology.nodePortIndicesForCanonicalPorts(address)(o)
+        val canonicalPort = allocator.canonicalPort
 
-        def describe(c: Int): String = s"candidate=$c (inputPort=${c / vcCount}, sourceVc=${c % vcCount})"
+        def describe(c: Int): String = s"candidate=$c (inputPort=${allocator.inputPorts(c / vcCount)}, sourceVc=${c % vcCount})"
 
         val busy = for {
           v <- 0 until vcCount

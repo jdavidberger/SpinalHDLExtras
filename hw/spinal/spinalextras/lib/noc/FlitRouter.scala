@@ -18,7 +18,7 @@ class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical
     val activity = out(Bool())
   }
 
-  // Already expressed in the connectivityOut - 1-sized, inputPort-excluded
+  // Already expressed in the connectivityOut-sized, inputPort-excluded
   // numbering -- resolveDestPort guarantees this never points back through
   // inputPort, so no self-redirect or compaction is needed here.
   val outputNode = RegInit(Optional.Empty(UInt(log2Up(connectivityOut) bits)))
