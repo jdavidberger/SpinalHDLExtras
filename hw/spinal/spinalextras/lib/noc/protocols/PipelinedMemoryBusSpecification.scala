@@ -216,6 +216,16 @@ class PipelinedMemoryBusSpecification(pmbConfig: PipelinedMemoryBusConfig, build
     builder.addInput(slaveAdapter.io.output, inputAddress)
   }.setName(s"pmbSlave_${s.ports.input.resolvedAddress}_${s.ports.output.resolvedAddress}")
 
+  // Every master can address every slave (no static crossbar restricting who can reach whom, unlike
+  // PipelinedMemoryBusInterconnect), so by default assume full connectivity both ways: each master's
+  // request must reach each slave, and each slave's response must reach back to each master.
+  override def registerRoutes(): Unit = {
+    for (m <- masterPorts; s <- slavePorts) {
+      builder.requireRoute(m.ports.input, s.ports.output)
+      builder.requireRoute(s.ports.input, m.ports.output)
+    }
+  }
+
   override def build(): Unit = {
     for (m <- masterPorts) buildMaster(m)
     for (s <- slavePorts) buildSlave(s)

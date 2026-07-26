@@ -35,7 +35,6 @@ class NoCBuilder(val cfg: NocConfig) {
     * request from). So each direction gets its own address space to allocate/auto-assign from. */
   private class SlotAllocator {
     private val usedAddresses = new mutable.HashSet[Int]()
-    private var nextAutoAddress = 0
     private val pendingAutoClaims = new ArrayBuffer[NodeSlot]()
 
     /** Reserves a NoC node address for later use: pass a concrete address to pin a node in place,
@@ -58,13 +57,17 @@ class NoCBuilder(val cfg: NocConfig) {
       }
     }
 
-    def resolveAutoClaims(): Unit = {
+    /** Resolves every pending auto-assigned slot to the lowest-numbered free node, skipping any
+      * node `forbiddenFor(handle)` rules out for that particular slot (used to steer auto
+      * addressing away from routes `NoCBuilder.requireRoute` has flagged as required -- see
+      * there for why some address combinations are unroutable). */
+    def resolveAutoClaims(forbiddenFor: NodeSlot => Set[Int] = _ => Set.empty): Unit = {
       for (handle <- pendingAutoClaims) {
-        while (nextAutoAddress < cfg.topology.nodes && usedAddresses.contains(nextAutoAddress)) nextAutoAddress += 1
-        require(nextAutoAddress < cfg.topology.nodes, "No free NoC node addresses remain")
-        usedAddresses += nextAutoAddress
-        handle.resolve(nextAutoAddress)
-        nextAutoAddress += 1
+        val forbidden = forbiddenFor(handle)
+        val candidate = (0 until cfg.topology.nodes).find(a => !usedAddresses.contains(a) && !forbidden.contains(a))
+        require(candidate.isDefined, "No free NoC node address remains that satisfies this slot's routing constraints")
+        usedAddresses += candidate.get
+        handle.resolve(candidate.get)
       }
       pendingAutoClaims.clear()
     }
@@ -73,8 +76,22 @@ class NoCBuilder(val cfg: NocConfig) {
   private val inputSlots = new SlotAllocator()
   private val outputSlots = new SlotAllocator()
 
+  /** (input, output) pairs a packet must actually be able to travel between -- see `requireRoute`. */
+  private val requiredRoutes = new ArrayBuffer[(NodeSlot, NodeSlot)]()
+
   def createInputSlot(address: Int = -1): NodeSlot = inputSlots.createSlot(address)
   def createOutputSlot(address: Int = -1): NodeSlot = outputSlots.createSlot(address)
+
+  /** Declares that a packet injected at `input`'s node must be deliverable to `output`'s node.
+    * The NoC fabric can never route a packet back out the very node it was injected from (its
+    * local delivery port is excluded as a destination for anything arriving on its local
+    * injection port), so `input` and `output` must not end up resolving to the same node --
+    * registering the pair here lets auto-addressing steer away from that collision instead of
+    * silently producing an unroutable pair. Must be called from `ProtocolSpecification.registerRoutes`,
+    * before any address on either slot has been read, so auto-assignment can still take it into account. */
+  def requireRoute(input: NodeSlot, output: NodeSlot): Unit = {
+    requiredRoutes += ((input, output))
+  }
 
   def addSpecification(protocolSpecification: ProtocolSpecification) = {
     protocols.append(protocolSpecification)
@@ -96,8 +113,20 @@ class NoCBuilder(val cfg: NocConfig) {
   }
 
   def build(): NoC = {
-    inputSlots.resolveAutoClaims()
+    protocols.foreach(_.registerRoutes())
+
+    // Outputs resolve first so that, by the time inputs resolve, every route an input slot needs
+    // to avoid (its registered partners' node) is already a concrete address.
     outputSlots.resolveAutoClaims()
+    inputSlots.resolveAutoClaims(handle =>
+      requiredRoutes.collect { case (in, out) if in == handle => out.resolvedAddress }.toSet)
+
+    for ((input, output) <- requiredRoutes) {
+      require(input.resolvedAddress != output.resolvedAddress,
+        s"NoC route from node ${input.resolvedAddress} to node ${output.resolvedAddress} is not routeable: " +
+          "a packet can't be delivered back out the same local port it was injected from")
+    }
+
     protocols.foreach(_.build())
 
     val noc = new NoC(cfg)

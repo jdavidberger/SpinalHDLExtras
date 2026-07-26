@@ -147,12 +147,22 @@ class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
     // the two address spaces are tracked/resolved independently. Note they must still avoid
     // colliding a sender's injection node with its packet's own destination node (e.g. master's
     // input == slave's output) -- the underlying NoC fabric can't route a "local loopback" where a
-    // packet enters and needs to exit at the very same node's local port, which is an existing
-    // fabric limitation, not something specific to this specification.
+    // packet enters and needs to exit at the very same node's local port. NoCBuilder.requireRoute
+    // turns that into a clear elaboration-time error instead of a silent simulation hang; explicit
+    // addresses (unlike auto-assigned ones) are the caller's responsibility to pick correctly.
     runBasicTest(masterInputAddress = 0, masterOutputAddress = 1, slaveInputAddress = 2, slaveOutputAddress = 3)
   }
 
   test("PipelinedMemoryBusSpecification routes writes/reads correctly with auto-assigned node addresses") {
     runBasicTest()
+  }
+
+  test("PipelinedMemoryBusSpecification auto-assigns addresses around an explicit pin that would otherwise collide") {
+    // Pins the slave's output to node 0 -- the address a master's auto-assigned input would
+    // otherwise claim first (plain lowest-free, registration order), which would create exactly
+    // the unroutable local-loopback the other tests avoid by hand. This only passes if NoCBuilder
+    // is actually steering the master's auto-assigned input away from it via requireRoute, rather
+    // than just picking the lowest free node with no awareness of what needs to route where.
+    runBasicTest(slaveOutputAddress = 0)
   }
 }
