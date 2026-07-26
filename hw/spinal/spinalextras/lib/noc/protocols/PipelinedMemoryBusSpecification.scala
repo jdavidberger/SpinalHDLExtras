@@ -72,7 +72,11 @@ class PipelinedMemoryNocSlave(val cfg : NocConfig, val pmbConfig : PipelinedMemo
   io.output <> rspOut.insertHeader(cfg.packHeader(rspFifo.io.pop.payload.dest, U(0, addressSize bits)))
 }
 
-/** @param slaveMappings each downstream slave's address hit-test paired with its already-resolved
+/** @param address this master's own output (delivery) address, already resolved via
+  *                 `addressToRouteableAddress` -- embedded as the return-address subheader on
+  *                 every outgoing request, so it must be in the same routeable encoding that
+  *                 `Header.dest` uses, not the plain node index.
+  * @param slaveMappings each downstream slave's address hit-test paired with its already-resolved
   *                       (`addressToRouteableAddress`) NoC routing address. */
 class PipelinedMemoryNocMaster(val cfg : NocConfig, val pmbConfig : PipelinedMemoryBusConfig,
                                 val address : Int, val slaveMappings : IndexedSeq[(AddressMapping, Int)]) extends Component {
@@ -119,15 +123,22 @@ class PipelinedMemoryNocMaster(val cfg : NocConfig, val pmbConfig : PipelinedMem
  * Exposes a PipelinedMemoryBus master/slave fabric on top of a NoC -- the PMB analogue of
  * `PipelinedMemoryBusInterconnect`'s addMaster/addSlave, except that instead of building a
  * static crossbar (decoder + arbiter per bus), traffic is routed as NoC flits, and every
- * master/slave's physical NoC node address is optional (pass -1, the default, to have one
+ * master/slave's physical NoC node addresses are optional (pass -1, the default, to have one
  * auto-assigned from whatever nodes are still free).
  *
+ * Each PMB port -- master or slave -- actually needs two NoC node addresses, not one: an input
+ * address (where it injects its own outgoing packets into the fabric) and an output address
+ * (where the fabric delivers packets addressed to it). These need not be the same physical node,
+ * so they're tracked and auto-assigned independently (see `NoCBuilder.SlotAllocator`) -- the only
+ * address that actually has to match anything is a port's *output* address, since that's the
+ * value someone else's outgoing packet must carry as `dest` to reach it.
+ *
  * Each PMB transaction is carried as exactly one NoC packet: a routing Header flit (NoC
- * `dest` = the target node) followed by a single payload flit holding the serialized
- * `PipelinedMemoryBusCmd` (request direction) or the rsp data (response direction). A slave
- * node can be shared by several masters, so a response needs a way back to whichever master
+ * `dest` = the target port's output address) followed by a single payload flit holding the
+ * serialized `PipelinedMemoryBusCmd` (request direction) or the rsp data (response direction). A
+ * slave can be shared by several masters, so a response needs a way back to whichever master
  * issued the request -- the Header's `application` bits, otherwise unused once routing has
- * picked a path, carry that requesting master's own node address as a subheader, which the
+ * picked a path, carry that requesting master's own output address as a subheader, which the
  * slave gateway echoes back as the `dest` of its response packet.
  *
  * `PipelinedMemoryBusRsp` is a Flow (no backpressure, no per-transaction tag): whichever
@@ -152,47 +163,58 @@ class PipelinedMemoryBusSpecification(pmbConfig: PipelinedMemoryBusConfig, build
   require(rspBits <= cfg.dataWidth,
     s"PipelinedMemoryBusRsp ($rspBits bits) does not fit in a single NoC flit (${cfg.dataWidth} bits)")
 
-  private case class MasterPort(bus: PipelinedMemoryBus, address: NodeSlot)
-  private case class SlavePort(bus: PipelinedMemoryBus, mapping: AddressMapping, address: NodeSlot)
+  /** A node's NoC injection point (where it feeds packets into the fabric) and delivery point
+    * (where the fabric hands packets addressed to it back out) -- see `NoCBuilder.SlotAllocator`
+    * for why these are tracked as two independent slots rather than one. */
+  private case class NodePorts(input: NodeSlot, output: NodeSlot)
+  private case class MasterPort(bus: PipelinedMemoryBus, ports: NodePorts)
+  private case class SlavePort(bus: PipelinedMemoryBus, mapping: AddressMapping, ports: NodePorts)
 
   private val masterPorts = new mutable.ArrayBuffer[MasterPort]()
   private val slavePorts = new mutable.ArrayBuffer[SlavePort]()
 
-  /** @param address Physical NoC node this master attaches to; -1 (default) auto-assigns the next free node. */
-  def addMaster(bus: PipelinedMemoryBus, address: Int = -1): NodeSlot = {
+  private def claimPorts(inputAddress: Int, outputAddress: Int): NodePorts =
+    NodePorts(builder.createInputSlot(inputAddress), builder.createOutputSlot(outputAddress))
+
+  /** @param inputAddress Physical NoC node this master injects requests from; -1 (default) auto-assigns the next free node.
+    * @param outputAddress Physical NoC node this master's responses are delivered to (its own "return address"); -1 (default) auto-assigns the next free node. */
+  def addMaster(bus: PipelinedMemoryBus, inputAddress: Int = -1, outputAddress: Int = -1): (NodeSlot, NodeSlot) = {
     require(bus.config == pmbConfig, "PipelinedMemoryBus config mismatch")
-    val a = builder.createSlot(address)
-    masterPorts += MasterPort(bus, a)
-    a
+    val ports = claimPorts(inputAddress, outputAddress)
+    masterPorts += MasterPort(bus, ports)
+    (ports.input, ports.output)
   }
 
-  /** @param address Physical NoC node this slave attaches to; -1 (default) auto-assigns the next free node. */
-  def addSlave(bus: PipelinedMemoryBus, mapping: AddressMapping, address: Int = -1): NodeSlot = {
+  /** @param inputAddress Physical NoC node this slave injects responses from; -1 (default) auto-assigns the next free node.
+    * @param outputAddress Physical NoC node this slave's requests are delivered to (what masters route to); -1 (default) auto-assigns the next free node. */
+  def addSlave(bus: PipelinedMemoryBus, mapping: AddressMapping, inputAddress: Int = -1, outputAddress: Int = -1): (NodeSlot, NodeSlot) = {
     require(bus.config == pmbConfig, "PipelinedMemoryBus config mismatch")
-    val a = builder.createSlot(address)
-    slavePorts += SlavePort(bus, mapping, a)
-    a
+    val ports = claimPorts(inputAddress, outputAddress)
+    slavePorts += SlavePort(bus, mapping, ports)
+    (ports.input, ports.output)
   }
 
   private def buildMaster(m: MasterPort): Area = new Area {
-    val address = m.address.resolvedAddress
-    val masterAdapter = new PipelinedMemoryNocMaster(cfg, pmbConfig, address,
-      slavePorts.map(s => (s.mapping, cfg.topology.addressToRouteableAddress(s.address.resolvedAddress))))
-    masterAdapter.setName(s"masterAdapter_${cfg.topology.addressName(address)}")
+    val inputAddress = m.ports.input.resolvedAddress
+    val outputAddress = m.ports.output.resolvedAddress
+    val masterAdapter = new PipelinedMemoryNocMaster(cfg, pmbConfig, cfg.topology.addressToRouteableAddress(outputAddress),
+      slavePorts.map(s => (s.mapping, cfg.topology.addressToRouteableAddress(s.ports.output.resolvedAddress))))
+    masterAdapter.setName(s"masterAdapter_${cfg.topology.addressName(inputAddress)}_${cfg.topology.addressName(outputAddress)}")
     masterAdapter.io.bus <> m.bus
-    builder.addInput(masterAdapter.io.output, address)
-    builder.addOutput(masterAdapter.io.input, address)
-  }.setName(s"pmbMaster_${m.address.resolvedAddress}")
+    builder.addInput(masterAdapter.io.output, inputAddress)
+    builder.addOutput(masterAdapter.io.input, outputAddress)
+  }.setName(s"pmbMaster_${m.ports.input.resolvedAddress}_${m.ports.output.resolvedAddress}")
 
   private def buildSlave(s: SlavePort): Area = new Area {
-    val address = s.address.resolvedAddress
+    val inputAddress = s.ports.input.resolvedAddress
+    val outputAddress = s.ports.output.resolvedAddress
 
     val slaveAdapter = new PipelinedMemoryNocSlave(cfg, pmbConfig)
-    slaveAdapter.setName(s"slaveAdapter_${cfg.topology.addressName(address)}")
+    slaveAdapter.setName(s"slaveAdapter_${cfg.topology.addressName(inputAddress)}_${cfg.topology.addressName(outputAddress)}")
     slaveAdapter.io.bus <> s.bus
-    builder.addOutput(slaveAdapter.io.input, address)
-    builder.addInput(slaveAdapter.io.output, address)
-  }.setName(s"pmbSlave_${s.address.resolvedAddress}")
+    builder.addOutput(slaveAdapter.io.input, outputAddress)
+    builder.addInput(slaveAdapter.io.output, inputAddress)
+  }.setName(s"pmbSlave_${s.ports.input.resolvedAddress}_${s.ports.output.resolvedAddress}")
 
   override def build(): Unit = {
     for (m <- masterPorts) buildMaster(m)

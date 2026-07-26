@@ -21,7 +21,8 @@ import scala.util.Random
  * `slaveBus` for the testbench to model as a real bus slave (peripheral).
  */
 class PipelinedMemoryBusSpecificationHarness(nocCfg: NocConfig, pmbConfig: PipelinedMemoryBusConfig,
-                                              masterAddress: Int = -1, slaveAddress: Int = -1) extends Component {
+                                              masterInputAddress: Int = -1, masterOutputAddress: Int = -1,
+                                              slaveInputAddress: Int = -1, slaveOutputAddress: Int = -1) extends Component {
   val io = new Bundle {
     val masterBus = slave(PipelinedMemoryBus(pmbConfig))
     val slaveBus = master(PipelinedMemoryBus(pmbConfig))
@@ -30,8 +31,8 @@ class PipelinedMemoryBusSpecificationHarness(nocCfg: NocConfig, pmbConfig: Pipel
   val builder = new NoCBuilder(nocCfg)
   val spec = new PipelinedMemoryBusSpecification(pmbConfig, builder)
 
-  spec.addMaster(io.masterBus, masterAddress)
-  spec.addSlave(io.slaveBus, SizeMapping(0, BigInt(1) << pmbConfig.addressWidth), slaveAddress)
+  spec.addMaster(io.masterBus, masterInputAddress, masterOutputAddress)
+  spec.addSlave(io.slaveBus, SizeMapping(0, BigInt(1) << pmbConfig.addressWidth), slaveInputAddress, slaveOutputAddress)
 
   val noc = builder.build()
 }
@@ -44,11 +45,13 @@ class PipelinedMemoryBusSpecificationHarness(nocCfg: NocConfig, pmbConfig: Pipel
  */
 class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
 
-  def runBasicTest(masterAddress: Int, slaveAddress: Int): Unit = {
+  def runBasicTest(masterInputAddress: Int = -1, masterOutputAddress: Int = -1,
+                   slaveInputAddress: Int = -1, slaveOutputAddress: Int = -1): Unit = {
     val nocCfg = NocConfig(topology = new Mesh(2, 2), dataWidth = 32)
     val pmbConfig = PipelinedMemoryBusConfig(addressWidth = 8, dataWidth = 8)
 
-    Config.sim.compile(new PipelinedMemoryBusSpecificationHarness(nocCfg, pmbConfig, masterAddress, slaveAddress)).doSim(seed = 42) { dut =>
+    Config.sim.compile(new PipelinedMemoryBusSpecificationHarness(nocCfg, pmbConfig,
+      masterInputAddress, masterOutputAddress, slaveInputAddress, slaveOutputAddress)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(period = 10)
       SimTimeout(1 us)
 
@@ -139,11 +142,17 @@ class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
     }
   }
 
-  test("PipelinedMemoryBusSpecification routes writes/reads correctly with explicit node addresses") {
-    runBasicTest(masterAddress = 0, slaveAddress = 1)
+  test("PipelinedMemoryBusSpecification routes writes/reads correctly with explicit, independently-addressed input/output slots") {
+    // Each port's input and output addresses are deliberately different from each other, proving
+    // the two address spaces are tracked/resolved independently. Note they must still avoid
+    // colliding a sender's injection node with its packet's own destination node (e.g. master's
+    // input == slave's output) -- the underlying NoC fabric can't route a "local loopback" where a
+    // packet enters and needs to exit at the very same node's local port, which is an existing
+    // fabric limitation, not something specific to this specification.
+    runBasicTest(masterInputAddress = 0, masterOutputAddress = 1, slaveInputAddress = 2, slaveOutputAddress = 3)
   }
 
   test("PipelinedMemoryBusSpecification routes writes/reads correctly with auto-assigned node addresses") {
-    runBasicTest(masterAddress = -1, slaveAddress = -1)
+    runBasicTest()
   }
 }
