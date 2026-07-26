@@ -152,48 +152,47 @@ class PipelinedMemoryBusSpecification(pmbConfig: PipelinedMemoryBusConfig, build
   require(rspBits <= cfg.dataWidth,
     s"PipelinedMemoryBusRsp ($rspBits bits) does not fit in a single NoC flit (${cfg.dataWidth} bits)")
 
-  private case class MasterPort(bus: PipelinedMemoryBus, address: NodeAddress)
-  private case class SlavePort(bus: PipelinedMemoryBus, mapping: AddressMapping, address: NodeAddress)
+  private case class MasterPort(bus: PipelinedMemoryBus, address: NodeSlot)
+  private case class SlavePort(bus: PipelinedMemoryBus, mapping: AddressMapping, address: NodeSlot)
 
   private val masterPorts = new mutable.ArrayBuffer[MasterPort]()
   private val slavePorts = new mutable.ArrayBuffer[SlavePort]()
 
   /** @param address Physical NoC node this master attaches to; -1 (default) auto-assigns the next free node. */
-  def addMaster(bus: PipelinedMemoryBus, address: Int = -1): NodeAddress = {
+  def addMaster(bus: PipelinedMemoryBus, address: Int = -1): NodeSlot = {
     require(bus.config == pmbConfig, "PipelinedMemoryBus config mismatch")
-    val a = builder.claim(address)
+    val a = builder.createSlot(address)
     masterPorts += MasterPort(bus, a)
     a
   }
 
   /** @param address Physical NoC node this slave attaches to; -1 (default) auto-assigns the next free node. */
-  def addSlave(bus: PipelinedMemoryBus, mapping: AddressMapping, address: Int = -1): NodeAddress = {
+  def addSlave(bus: PipelinedMemoryBus, mapping: AddressMapping, address: Int = -1): NodeSlot = {
     require(bus.config == pmbConfig, "PipelinedMemoryBus config mismatch")
-    val a = builder.claim(address)
+    val a = builder.createSlot(address)
     slavePorts += SlavePort(bus, mapping, a)
     a
   }
 
   private def buildMaster(m: MasterPort): Area = new Area {
-    val address = m.address.address
+    val address = m.address.resolvedAddress
     val masterAdapter = new PipelinedMemoryNocMaster(cfg, pmbConfig, address,
-      slavePorts.map(s => (s.mapping, cfg.topology.addressToRouteableAddress(s.address.address))))
+      slavePorts.map(s => (s.mapping, cfg.topology.addressToRouteableAddress(s.address.resolvedAddress))))
     masterAdapter.setName(s"masterAdapter_${cfg.topology.addressName(address)}")
     masterAdapter.io.bus <> m.bus
     builder.addInput(masterAdapter.io.output, address)
     builder.addOutput(masterAdapter.io.input, address)
-  }.setName(s"pmbMaster_${m.address.address}")
+  }.setName(s"pmbMaster_${m.address.resolvedAddress}")
 
   private def buildSlave(s: SlavePort): Area = new Area {
-    val bus = s.bus
-    val address = s.address.address
+    val address = s.address.resolvedAddress
 
     val slaveAdapter = new PipelinedMemoryNocSlave(cfg, pmbConfig)
     slaveAdapter.setName(s"slaveAdapter_${cfg.topology.addressName(address)}")
     slaveAdapter.io.bus <> s.bus
     builder.addOutput(slaveAdapter.io.input, address)
     builder.addInput(slaveAdapter.io.output, address)
-  }.setName(s"pmbSlave_${s.address.address}")
+  }.setName(s"pmbSlave_${s.address.resolvedAddress}")
 
   override def build(): Unit = {
     for (m <- masterPorts) buildMaster(m)

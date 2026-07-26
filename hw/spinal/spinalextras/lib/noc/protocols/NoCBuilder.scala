@@ -11,10 +11,10 @@ import scala.language.postfixOps
 
 /** A NoC node address that may not be resolved yet -- see `NoCBuilder.claim` for when it's safe
   * to read `address`. */
-class NodeAddress private[protocols] (requested: Int) {
+class NodeSlot private[protocols](requested: Int) {
   private var resolved: Int = requested
 
-  def address: Int = {
+  def resolvedAddress: Int = {
     require(resolved >= 0, "NoC node address read before NoCBuilder.build() resolved auto-assigned addresses")
     resolved
   }
@@ -30,7 +30,7 @@ class NoCBuilder(val cfg: NocConfig) {
 
   private val usedAddresses = new mutable.HashSet[Int]()
   private var nextAutoAddress = 0
-  private val pendingAutoClaims = new ArrayBuffer[NodeAddress]()
+  private val pendingAutoClaims = new ArrayBuffer[NodeSlot]()
 
   /** Reserves a NoC node address for later use: pass a concrete address to pin a node in place, or
     * -1 (default) to auto-assign the next free node. Auto addresses are only resolved once
@@ -38,14 +38,14 @@ class NoCBuilder(val cfg: NocConfig) {
     * its own claims -- so that an auto-assignment can never collide with an explicit claim made by
     * another specification later. Because of this, `NodeAddress.address` must only be read from
     * within a specification's own `build()` method, never at registration time. */
-  def claim(address: Int = -1): NodeAddress = {
+  def createSlot(address: Int = -1): NodeSlot = {
     if (address >= 0) {
       require(address < cfg.topology.nodes, s"NoC node address $address is out of range (0 until ${cfg.topology.nodes})")
       require(!usedAddresses.contains(address), s"NoC node address $address already assigned")
       usedAddresses += address
-      new NodeAddress(address)
+      new NodeSlot(address)
     } else {
-      val handle = new NodeAddress(-1)
+      val handle = new NodeSlot(-1)
       pendingAutoClaims += handle
       handle
     }
