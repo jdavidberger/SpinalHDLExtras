@@ -14,19 +14,27 @@ import spinal.lib._
  * partially filled with real bits; a small footer beat (carrying how many low bits of the
  * preceding beat were real) is appended so the decoder can discard the padding exactly.
  */
-object StreamFragmentWidthAdapter {
+object StreamFragmentWidthAdapterEncoding {
   def needsFooter(widthIn: Int, widthOut: Int): Boolean = (widthIn % widthOut) != 0
 
   def encode(input: Stream[Fragment[Bits]], widthOut: Int, endianness: Endianness = LITTLE): Stream[Fragment[Bits]] = {
-    val enc = new StreamFragmentWidthAdapterEncoder(input.fragment.getWidth, widthOut, endianness)
-    enc.io.input <> input
-    enc.io.output
+    if(widthOut == input.payload.fragment.getBitsWidth) {
+      input
+    } else {
+      val enc = new StreamFragmentWidthAdapterEncoder(input.fragment.getWidth, widthOut, endianness)
+      enc.io.input <> input
+      enc.io.output
+    }
   }
 
   def decode(input: Stream[Fragment[Bits]], widthIn: Int, endianness: Endianness = LITTLE): Stream[Fragment[Bits]] = {
-    val dec = new StreamFragmentWidthAdapterDecoder(widthIn, input.fragment.getWidth, endianness)
-    dec.io.input <> input
-    dec.io.output
+    if(widthIn == input.payload.fragment.getBitsWidth) {
+      input
+    } else {
+      val dec = new StreamFragmentWidthAdapterDecoder(widthIn, input.fragment.getWidth, endianness)
+      dec.io.input <> input
+      dec.io.output
+    }
   }
 }
 

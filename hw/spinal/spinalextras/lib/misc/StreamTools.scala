@@ -293,6 +293,22 @@ class StreamFragmentGather[T <: Data](dataType : HardType[T], gatherCount : Int)
 }
 
 object StreamTools {
+
+  def takeHead(s : Stream[Fragment[Bits]]) = {
+    val header = RegInit(s.fragment)
+    val stream = cloneOf(s)
+    stream.setIdle()
+    s.ready := s.isFirst
+    when(s.first) {
+      when(s.fire) {
+        header := s.payload
+      }
+    } otherwise {
+      stream << s
+    }
+    (header, stream)
+  }
+
   def continueWhenUnstalled[T <: Data](s : Stream[T], cond : Bool) = {
     s.continueWhen(cond || RegNext(s.isStall, init = False))
   }
