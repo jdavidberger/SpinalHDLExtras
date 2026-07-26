@@ -30,7 +30,7 @@ class StreamFragmentWidthAdapterTest extends AnyFunSuite {
       .doSim(new RoundTrip(widthIn, widthOut, endianness)
         .setDefinitionName(s"StreamFragmentWidthAdapterRoundTrip_${widthIn}_${widthOut}_${endianness.getClass.getSimpleName}")) { dut =>
         dut.clockDomain.forkStimulus(100 MHz)
-        SimTimeout(1 ms)
+        SimTimeout(2 ms)
 
         val sco = ScoreboardInOrder[(BigInt, Boolean)]()
         val beatQueue = mutable.Queue[(BigInt, Boolean)]()

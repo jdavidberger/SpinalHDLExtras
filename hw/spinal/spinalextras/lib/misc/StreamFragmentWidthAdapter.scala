@@ -98,11 +98,12 @@ class StreamFragmentWidthAdapterEncoder(widthIn: Int, widthOut: Int, endianness:
     val doFooterOnly = wantFooterOnly && io.output.fire
     val doFooterArmed = footerArmed && io.output.fire
 
-    val hasRoom = (valid - Mux(doDrain, U(widthOut, validBits bits), U(0, validBits bits))) + widthIn <= bufWidth
+    val validAfterDrainForRoom = valid - Mux(doDrain, U(widthOut, validBits bits), U(0, validBits bits))
+    val hasRoom = (validAfterDrainForRoom.resize(validBits + 1 bits) + U(widthIn, validBits + 1 bits)) <= bufWidth
     io.input.ready := !pendingLast && hasRoom
     val inFire = io.input.fire
 
-    val bufAfterDrain = Mux(doDrain, buffer >> widthOut, buffer)
+    val bufAfterDrain = Mux(doDrain, buffer |>> widthOut, buffer)
     val validAfterDrain = valid - Mux(doDrain, U(widthOut, validBits bits), U(0, validBits bits))
     val insertShift = validAfterDrain.resize(log2Up(bufWidth) bits)
     val bufAfterInsert = Mux(inFire,
@@ -193,7 +194,7 @@ class StreamFragmentWidthAdapterDecoder(widthIn: Int, widthOut: Int, endianness:
     val validAfterDrain = valid - Mux(doDrain, U(widthIn, validBits bits), U(0, validBits bits))
     val commitAmount = Mux(committingFull, U(widthOut, validBits bits),
       Mux(committingFooter, footerValue.resize(validBits bits), U(0, validBits bits)))
-    val hasRoom = (validAfterDrain + commitAmount) <= bufWidth
+    val hasRoom = (validAfterDrain.resize(validBits + 1 bits) + commitAmount.resize(validBits + 1 bits)) <= bufWidth
     io.input.ready := !finalizing && hasRoom
     val inFire = io.input.fire
 
@@ -204,7 +205,7 @@ class StreamFragmentWidthAdapterDecoder(widthIn: Int, widthOut: Int, endianness:
     val footerMask = Bits(widthOut bits)
     for ((bit, id) <- footerMask.asBools.zipWithIndex) bit := U(id) < footerValue
 
-    val bufAfterDrain = Mux(doDrain, buffer >> widthIn, buffer)
+    val bufAfterDrain = Mux(doDrain, buffer |>> widthIn, buffer)
     val insertBits = Mux(doCommitFull, stage, Mux(doCommitFooter, stage & footerMask, B(0, widthOut bits)))
     val insertShift = validAfterDrain.resize(log2Up(bufWidth) bits)
     val bufAfterInsert = Mux(doCommitFull || doCommitFooter,
@@ -212,7 +213,7 @@ class StreamFragmentWidthAdapterDecoder(widthIn: Int, widthOut: Int, endianness:
       bufAfterDrain)
 
     buffer := bufAfterInsert
-    valid := validAfterDrain + commitAmount
+    valid := validAfterDrain + Mux(inFire, commitAmount, U(0, validBits bits))
 
     when(doDrain && finalizing && valid === widthIn) {
       finalizing := False
