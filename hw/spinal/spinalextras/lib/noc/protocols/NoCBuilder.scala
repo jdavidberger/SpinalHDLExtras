@@ -9,11 +9,58 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
+/** A NoC node address that may not be resolved yet -- see `NoCBuilder.claim` for when it's safe
+  * to read `address`. */
+class NodeAddress private[protocols] (requested: Int) {
+  private var resolved: Int = requested
+
+  def address: Int = {
+    require(resolved >= 0, "NoC node address read before NoCBuilder.build() resolved auto-assigned addresses")
+    resolved
+  }
+
+  private[protocols] def resolve(value: Int): Unit = resolved = value
+}
+
 class NoCBuilder(val cfg: NocConfig) {
   val protocols = new mutable.ArrayBuffer[ProtocolSpecification]()
 
   val inputs = new ArrayBuffer[(Int, Stream[Fragment[Bits]])]()
   val outputs = new ArrayBuffer[(Int, Stream[Fragment[Bits]])]()
+
+  private val usedAddresses = new mutable.HashSet[Int]()
+  private var nextAutoAddress = 0
+  private val pendingAutoClaims = new ArrayBuffer[NodeAddress]()
+
+  /** Reserves a NoC node address for later use: pass a concrete address to pin a node in place, or
+    * -1 (default) to auto-assign the next free node. Auto addresses are only resolved once
+    * `build()` runs -- after every specification sharing this builder has had a chance to register
+    * its own claims -- so that an auto-assignment can never collide with an explicit claim made by
+    * another specification later. Because of this, `NodeAddress.address` must only be read from
+    * within a specification's own `build()` method, never at registration time. */
+  def claim(address: Int = -1): NodeAddress = {
+    if (address >= 0) {
+      require(address < cfg.topology.nodes, s"NoC node address $address is out of range (0 until ${cfg.topology.nodes})")
+      require(!usedAddresses.contains(address), s"NoC node address $address already assigned")
+      usedAddresses += address
+      new NodeAddress(address)
+    } else {
+      val handle = new NodeAddress(-1)
+      pendingAutoClaims += handle
+      handle
+    }
+  }
+
+  private def resolveAutoClaims(): Unit = {
+    for (handle <- pendingAutoClaims) {
+      while (nextAutoAddress < cfg.topology.nodes && usedAddresses.contains(nextAutoAddress)) nextAutoAddress += 1
+      require(nextAutoAddress < cfg.topology.nodes, "No free NoC node addresses remain")
+      usedAddresses += nextAutoAddress
+      handle.resolve(nextAutoAddress)
+      nextAutoAddress += 1
+    }
+    pendingAutoClaims.clear()
+  }
 
   def addSpecification(protocolSpecification: ProtocolSpecification) = {
     protocols.append(protocolSpecification)
@@ -35,6 +82,7 @@ class NoCBuilder(val cfg: NocConfig) {
   }
 
   def build(): NoC = {
+    resolveAutoClaims()
     protocols.foreach(_.build())
 
     val noc = new NoC(cfg)

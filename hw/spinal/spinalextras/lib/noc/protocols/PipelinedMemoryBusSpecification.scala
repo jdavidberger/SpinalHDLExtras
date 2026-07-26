@@ -152,63 +152,48 @@ class PipelinedMemoryBusSpecification(pmbConfig: PipelinedMemoryBusConfig, build
   require(rspBits <= cfg.dataWidth,
     s"PipelinedMemoryBusRsp ($rspBits bits) does not fit in a single NoC flit (${cfg.dataWidth} bits)")
 
-  private case class MasterPort(bus: PipelinedMemoryBus, address: Int)
-  private case class SlavePort(bus: PipelinedMemoryBus, mapping: AddressMapping, address: Int)
+  private case class MasterPort(bus: PipelinedMemoryBus, address: NodeAddress)
+  private case class SlavePort(bus: PipelinedMemoryBus, mapping: AddressMapping, address: NodeAddress)
 
   private val masterPorts = new mutable.ArrayBuffer[MasterPort]()
   private val slavePorts = new mutable.ArrayBuffer[SlavePort]()
 
-  private val usedAddresses = new mutable.HashSet[Int]()
-  private var nextAutoAddress = 0
-
-  private def claim(address: Int): Int = {
-    if (address >= 0) {
-      require(address < cfg.topology.nodes, s"NoC node address $address is out of range (0 until ${cfg.topology.nodes})")
-      require(!usedAddresses.contains(address), s"NoC node address $address already assigned")
-      usedAddresses += address
-      address
-    } else {
-      while (nextAutoAddress < cfg.topology.nodes && usedAddresses.contains(nextAutoAddress)) nextAutoAddress += 1
-      require(nextAutoAddress < cfg.topology.nodes, "No free NoC node addresses remain")
-      usedAddresses += nextAutoAddress
-      nextAutoAddress
-    }
-  }
-
   /** @param address Physical NoC node this master attaches to; -1 (default) auto-assigns the next free node. */
-  def addMaster(bus: PipelinedMemoryBus, address: Int = -1): Int = {
+  def addMaster(bus: PipelinedMemoryBus, address: Int = -1): NodeAddress = {
     require(bus.config == pmbConfig, "PipelinedMemoryBus config mismatch")
-    val a = claim(address)
+    val a = builder.claim(address)
     masterPorts += MasterPort(bus, a)
     a
   }
 
   /** @param address Physical NoC node this slave attaches to; -1 (default) auto-assigns the next free node. */
-  def addSlave(bus: PipelinedMemoryBus, mapping: AddressMapping, address: Int = -1): Int = {
+  def addSlave(bus: PipelinedMemoryBus, mapping: AddressMapping, address: Int = -1): NodeAddress = {
     require(bus.config == pmbConfig, "PipelinedMemoryBus config mismatch")
-    val a = claim(address)
+    val a = builder.claim(address)
     slavePorts += SlavePort(bus, mapping, a)
     a
   }
 
   private def buildMaster(m: MasterPort): Area = new Area {
-    val masterAdapter = new PipelinedMemoryNocMaster(cfg, pmbConfig, m.address,
-      slavePorts.map(s => (s.mapping, cfg.topology.addressToRouteableAddress(s.address))))
-    masterAdapter.setName(s"masterAdapter_${cfg.topology.addressName(m.address)}")
+    val address = m.address.address
+    val masterAdapter = new PipelinedMemoryNocMaster(cfg, pmbConfig, address,
+      slavePorts.map(s => (s.mapping, cfg.topology.addressToRouteableAddress(s.address.address))))
+    masterAdapter.setName(s"masterAdapter_${cfg.topology.addressName(address)}")
     masterAdapter.io.bus <> m.bus
-    builder.addInput(masterAdapter.io.output, m.address)
-    builder.addOutput(masterAdapter.io.input, m.address)
-  }.setName(s"pmbMaster_${m.address}")
+    builder.addInput(masterAdapter.io.output, address)
+    builder.addOutput(masterAdapter.io.input, address)
+  }.setName(s"pmbMaster_${m.address.address}")
 
   private def buildSlave(s: SlavePort): Area = new Area {
     val bus = s.bus
+    val address = s.address.address
 
     val slaveAdapter = new PipelinedMemoryNocSlave(cfg, pmbConfig)
-    slaveAdapter.setName(s"slaveAdapter_${cfg.topology.addressName(s.address)}")
+    slaveAdapter.setName(s"slaveAdapter_${cfg.topology.addressName(address)}")
     slaveAdapter.io.bus <> s.bus
-    builder.addOutput(slaveAdapter.io.input, s.address)
-    builder.addInput(slaveAdapter.io.output, s.address)
-  }.setName(s"pmbSlave_${s.address}")
+    builder.addOutput(slaveAdapter.io.input, address)
+    builder.addInput(slaveAdapter.io.output, address)
+  }.setName(s"pmbSlave_${s.address.address}")
 
   override def build(): Unit = {
     for (m <- masterPorts) buildMaster(m)
