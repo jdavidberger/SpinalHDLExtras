@@ -2,6 +2,7 @@ package spinalextras.lib.noc.protocols
 
 import spinal.core.{Bits, Data, HardType, IntToBuilder}
 import spinal.lib.{Fragment, Stream}
+import spinalextras.lib.misc.StreamTools
 import spinalextras.lib.misc.StreamTools.CreateFragment
 import spinalextras.lib.soc.spinex.plugins.BusType.PipelinedMemoryBus
 
@@ -14,16 +15,23 @@ class DataStreamSpecification[T <: Data](datatype: HardType[T], builder: NoCBuil
   private val sources = new ArrayBuffer[Source]()
   private val sinks = new ArrayBuffer[Sink]()
 
-  def addSource(hdr: Bits, address: Int = -1): Stream[Fragment[T]] = {
+  /** @return the source's driveable stream, and the NodeSlot it injects from -- read
+    *         `.resolvedAddress` only after `NoCBuilder.build()` (e.g. to address a sink whose own
+    *         address was auto-assigned). */
+  def addSource(hdr: Bits, address: Int = -1): (Stream[Fragment[T]], NodeSlot) = {
     val rtn = Stream(Fragment(datatype))
-    sources.append(Source(hdr, builder.createInputSlot(address), rtn))
-    rtn
+    val slot = builder.createInputSlot(address)
+    sources.append(Source(hdr, slot, rtn))
+    (rtn, slot)
   }
 
-  def addSink(address: Int = -1): Stream[Fragment[T]] = {
+  /** @return the sink's readable stream, and the NodeSlot packets must be addressed to in order
+    *         to reach it -- read `.resolvedAddress` only after `NoCBuilder.build()`. */
+  def addSink(address: Int = -1): (Stream[Fragment[T]], NodeSlot) = {
     val rtn = Stream(Fragment(datatype))
-    sinks.append(Sink(builder.createOutputSlot(address), rtn))
-    rtn
+    val slot = builder.createOutputSlot(address)
+    sinks.append(Sink(slot, rtn))
+    (rtn, slot)
   }
 
   // A source's destination is baked into the header bits the caller supplies, entirely opaque to
@@ -42,7 +50,11 @@ class DataStreamSpecification[T <: Data](datatype: HardType[T], builder: NoCBuil
     }
     for (k <- sinks) {
       val o = Stream(Fragment(Bits(k.stream.fragment.getBitsWidth bits)))
-      o.map(x => CreateFragment(x.fragment.as(datatype), x.last)) >> k.stream
+      // The fabric delivers the routing header flit as an ordinary leading fragment, same as it
+      // does for every other NoC consumer (see PipelinedMemoryNocSlave/Master) -- strip it here so
+      // the caller-visible sink stream only ever sees real payload beats.
+      val (_, payload) = StreamTools.takeHead(o)
+      payload.map(x => CreateFragment(x.fragment.as(datatype), x.last)) >> k.stream
       builder.addOutput(o, k.address.resolvedAddress)
     }
   }

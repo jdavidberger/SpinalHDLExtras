@@ -38,13 +38,13 @@ class TestDesign extends Component {
   val spec1 = new DataStreamSpecification(SInt(24 bit), builder)
   val spec2 = new DataStreamSpecification(SInt(20 bit), builder)
 
-  val sink = spec1.addSink(0)
+  val (sink, _) = spec1.addSink(0)
   val header = B(0, 24 bits)
-  val src = spec1.addSource(header, 1)
+  val (src, _) = spec1.addSource(header, 1)
 
-  val sink2 = spec2.addSink(2)
+  val (sink2, _) = spec2.addSink(2)
   val header2 = B(2, 20 bits)
-  val src2 = spec2.addSource(header2, 3)
+  val (src2, _) = spec2.addSource(header2, 3)
 
   sink.map(x => CreateFragment(x.fragment.resize(20 bits), x.last)) >> src2
 
