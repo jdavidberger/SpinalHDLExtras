@@ -16,7 +16,10 @@ import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
 class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithFormalProperties {
-  var connectivityIn : Int = cfg.topology.nodePortIndicesForCanonicalPorts(address).size
+  val canonicalOutputPortIndices = cfg.topology.nodePortIndicesForCanonicalPorts(address)
+  val canonicalInputPortIndices = cfg.topology.nodePortIndicesForCanonicalPorts(address)
+
+  var connectivityIn : Int = canonicalOutputPortIndices.size
   var connectivityOut : Int = connectivityIn
 
   val io = new Bundle {
@@ -33,7 +36,10 @@ class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithForm
   }
 
   val inputPorts = io.inputs.zipWithIndex.map {case (port, idx) => InputPort(port, if (idx == 0) 1 else cfg.virtualChannels)}
-  val outputPorts = io.outputs.zipWithIndex.map { case(port, idx) => OutputPort(port, if (idx == 0) 1 else cfg.virtualChannels) }
+  val outputPorts = io.outputs.zipWithIndex.map { case(port, idx) => OutputPort(port, cfg.virtualChannels) }
+
+  outputPorts.zip(canonicalOutputPortIndices).foreach { case(op, p) => op.setName(s"outputPort_${cfg.topology.portName(p)}")}
+  inputPorts.zip(canonicalInputPortIndices).foreach { case(op, p) => op.setName(s"inputPort_${cfg.topology.portName(p)}")}
 
   for (port <- 0 until connectivityIn; vc <- inputPorts(port).io.outputs.indices) {
     val isStart = RegInit(True)
@@ -48,44 +54,36 @@ class RouterNode(val cfg: NocConfig, val address: Int) extends ComponentWithForm
     )
   }
 
-  // Allocate one downstream (destNode, destVc) slot per packet and route the
-  // granted flits to the matching output port. This replaces the old
-  // Static/Dynamic VcMap, which only arbitrated per-VC without any output-slot
-  // locking. One allocator per output port -- each output's vc lanes are an
-  // independent arbitration domain, so there's no shared state to gain by
-  // bundling every output of a router into a single component.
-  val allocators = for (o <- 0 until connectivityOut) yield new VirtualIdAllocator(
+  val allocators = for (p <- canonicalOutputPortIndices) yield new VirtualIdAllocator(
     cfg            = cfg,
-    connectivityIn = connectivityIn,
     address        = address,
-    outputPort     = o
+    canonicalPort     = p
   )
+
 
   // Maps a destination output port o (o != inputPort) to its slot in the
   // connectivityOut - 1-sized, inputPort-excluded vector FlitRouter produces
   // (see FlitRouter.io.output / Topology.resolveDestPort).
   def destSlot(inputPort: Int, o: Int): Int = if (o < inputPort) o else o - 1
 
-  val routerActivity = Vec(Vec(Bool(), connectivityIn), cfg.virtualChannels)
-  for (inputPort <- 0 until connectivityIn; vcid <- 0 until cfg.virtualChannels) {
-    if(vcid < inputPorts(inputPort).virtualChannels) {
-      val routed = FlitRouter(this, inputPort = inputPort, vcid = vcid, input = inputPorts(inputPort).io.outputs(vcid))
-      for (o <- 0 until connectivityOut if o != inputPort) {
-        routed(destSlot(inputPort, o)) <> allocators(o).io.routedFlits(inputPort)(vcid)
-      }
+  for ((canonical_port, port_idx) <- canonicalInputPortIndices.zipWithIndex; vcid <- 0 until cfg.virtualChannels) {
+    if(vcid < inputPorts(port_idx).virtualChannels) {
+      val routed = FlitRouter(this, inputPort = canonical_port, vcid = vcid, input = inputPorts(port_idx).io.outputs(vcid))
+
+      allocators.foreach(allocator =>
+        allocator.routedFlits(canonical_port).foreach(
+          routed(cfg.topology.resolveCanonicalOutputPort(address, allocator.canonicalPort, canonical_port)) <> _(vcid)
+        )
+      )
     } else {
-      for (o <- 0 until connectivityOut if o != inputPort) {
-        allocators(o).io.routedFlits(inputPort)(vcid).setIdle()
-      }
+      allocators.foreach(allocator => allocator.routedFlits(canonical_port).foreach(
+        _(vcid).setIdle()
+      ))
     }
   }
 
-  for (o <- 0 until connectivityOut; vcid <- 0 until cfg.virtualChannels) {
-    if(vcid < outputPorts(o).virtualChannels) {
-      allocators(o).io.allocatedFlits(vcid) <> outputPorts(o).io.inputs(vcid)
-    } else {
-      allocators(o).io.allocatedFlits(vcid).setBlocked()
-    }
+  for ((allocator, idx) <- allocators.zipWithIndex; vcid <- 0 until cfg.virtualChannels) {
+    allocator.io.allocatedFlits(vcid) <> outputPorts(idx).io.inputs(vcid)
   }
 }
 
@@ -120,7 +118,11 @@ class OutputPort(cfg : NocConfig, val virtualChannels : Int) extends Component {
   // here since each flit carries its own vc tag and is redemuxed downstream
   // (see InputPort) -- which is what actually lets a low-duty-cycle transit
   // flow get its fair share of turns.
-  StreamArbiterFactory().roundRobin.noLock.on(io.inputs) <> io.output
+  if(virtualChannels > 1) {
+    StreamArbiterFactory().roundRobin.noLock.on(io.inputs) <> io.output
+  } else {
+    io.inputs(0) <> io.output
+  }
 }
 
 object OutputPort {

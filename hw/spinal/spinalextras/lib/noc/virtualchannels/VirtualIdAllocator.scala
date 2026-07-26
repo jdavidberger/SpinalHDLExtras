@@ -17,14 +17,16 @@ import scala.collection.mutable.ArrayBuffer
 // lanes are an independent arbitration domain, so there is no shared state
 // to gain by bundling multiple outputs into one component.
 class VirtualIdAllocator(val cfg: NocConfig,
-                         connectivityIn: Int,
                          address : Topology.address_t,
-                         outputPort: Int,
+                         val canonicalPort: Int,
                         ) extends ComponentWithFormalProperties {
   val roundRobinArbitration = cfg.virtualChannelArbitrationPolicy == RoundRobin
 
   val vcCount = cfg.virtualChannels
+  val inputPorts = cfg.topology.nodeInputPortIndicesForCanonicalPorts(address, canonicalPort)
+  val connectivityIn = inputPorts.size
 
+  setName(s"allocator_${address}_${cfg.topology.portName(canonicalPort)}")
   val io = new Bundle {
     // One inbound stream per (input port, source vc lane) targeting this
     // allocator's output port -- FlitRouter already demuxed by resolved
@@ -42,6 +44,14 @@ class VirtualIdAllocator(val cfg: NocConfig,
 
     val activity = out(Bool())
   }
+
+  def routedFlits(port : Topology.canonical_port) = {
+    val idx = inputPorts.indexOf(port)
+    if (idx != -1) Some(io.routedFlits(idx))
+    else None
+  }
+
+  io.routedFlits.zip(inputPorts).foreach { case(flit, port) => flit.setName(s"routedFlits_${cfg.topology.portName(port)}")}
 
   def retag(rf: Fragment[Bits], v: Int): Fragment[Flit] = {
     val f = Fragment(Flit(cfg))
@@ -62,25 +72,17 @@ class VirtualIdAllocator(val cfg: NocConfig,
   // other input port is transit (relayed from a neighboring router).
   val LocalInputPort = 0
 
-  val canonical_port = cfg.topology.nodePortIndicesForCanonicalPorts(address)(outputPort)
-  val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonical_port), candidateCount, vcCount)
+  val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonicalPort), candidateCount, vcCount)
 
   val crossbar = new GrantTableCrossbar(Bits(cfg.dataWidth bits), allowed, roundRobinArbitration)
   when(crossbar.io.activity) {
     io.activity := True
   }
 
-  crossbar.setName(s"crossbar_o${outputPort}")
+  crossbar.setName(s"crossbar_o${cfg.topology.portName(canonicalPort)}")
 
   for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
-    val source = crossbar.io.sources(candidateOf(i, s))
-    if (i == outputPort) {
-      // A port never routes back through itself, so no routedFlits slot
-      // exists for this candidate; leave it permanently idle.
-      source.setIdle()
-    } else {
-      source <> io.routedFlits(i)(s)
-    }
+    crossbar.io.sources(candidateOf(i, s)) <> io.routedFlits(i)(s)
   }
   for (v <- 0 until vcCount) {
     crossbar.io.dests(v).map(retag(_, v)) <> io.allocatedFlits(v)
@@ -101,7 +103,7 @@ class VirtualIdAllocatorFormalTester extends AnyFunSuite with FormalTestSuite {
     for (rr <- Seq(true, false); dynamic <- Seq(true, false); o <- 0 until connectivityOut) yield
       (s"Basic_rr${rr}_dyn${dynamic}_o${o}", () =>
         GeneralFormalDut(() => new VirtualIdAllocator(
-          cfg = NocConfig(topology = new Mesh((4, 3))), 2, 0, o
+          cfg = NocConfig(topology = new Mesh((4, 3))), 2, o
         ))
       )
   }

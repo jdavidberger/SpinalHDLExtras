@@ -50,6 +50,7 @@ class Tree(totalNodes: Int = 0, maxChildren: Int = 2) extends Topology {
 
   // LOCAL + UP + up to maxChildren DOWN ports
   def defaultConnectivityIn: Int = maxChildren + 2
+  override def portNamess: Seq[String] = Seq("Local", "Up") ++ (0 until maxChildren).map(idx => s"Down_${idx}")
 
   override def nodes: Int = totalNodes
 
@@ -144,18 +145,9 @@ class Tree(totalNodes: Int = 0, maxChildren: Int = 2) extends Topology {
    * elaboration time (curr, and every lo/hi, are known at build time) --
    * no division, no dependence on dest's runtime value beyond compares.
    */
-  override def resolveDestPortRaw(dest: UInt, curr: Int): UInt = {
+  override def resolveCanonicalDestPort(dest : routeable_address_t, curr : address_t, setResult : canonical_port => Unit): Unit = {
     val shape = shapes(curr)
     val w = addressSize
-
-    val result = UInt(log2Up(nodePortIndicesForCanonicalPorts(curr).size) bits)
-
-    def setResult(canonicalPort : Int): Unit = {
-      val port = resolveCanonicalOutputPort(curr, canonicalPort)
-      if(port != -1) {
-        result := port
-      }
-    }
 
     setResult(Tree.LOCAL)
 
@@ -174,8 +166,6 @@ class Tree(totalNodes: Int = 0, maxChildren: Int = 2) extends Topology {
         }
       }
     }
-
-    result
   }
 
   def sizeFor(nodes: Int): Topology = {

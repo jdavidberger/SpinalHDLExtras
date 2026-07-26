@@ -6,6 +6,9 @@ import spinalextras.lib.misc.arbitration.GrantTable
 import spinalextras.lib.noc.topology._
 import spinalextras.lib.noc.virtualchannels.{Dynamic, Static}
 
+import scala.collection.mutable
+import scala.language.postfixOps
+
 trait Topology {
   type address_t = Int
   type routeable_address_constant_t = Int
@@ -15,6 +18,9 @@ trait Topology {
   type port_index = Int
 
   def minimumVirtualChannels : Int = 1
+
+  def portNamess : Seq[String]
+  def portName(canonicalPort : canonical_port) = portNamess(canonicalPort)
 
   override def toString: String = f"${getClass.getSimpleName.replace("$", "")}"
 
@@ -26,45 +32,55 @@ trait Topology {
   // numbering -- may resolve to the port the flit arrived on (e.g. a
   // dimension-order routing corner case, or a self-addressed packet); that
   // gets excluded by the public resolveDestPort below.
-  protected def resolveDestPortRaw(dest : routeable_address_t, curr : address_t): UInt
-
-  // A port never routes back through itself, so the result is expressed
-  // directly in the connectivityOut - 1-sized space that excludes
-  // inputPort's own physical slot: raw results equal to inputPort are
-  // redirected to LOCAL first (matching resolveDestPortRaw's convention
-  // that port 0 is always LOCAL), then every port number is shifted down
-  // to close the gap left by dropping inputPort.
-  final def resolveDestPort(dest : routeable_address_t, curr : address_t, inputPort : port_index): UInt = {
-    val raw = resolveDestPortRaw(dest, curr)
-    val w = raw.getBitsWidth bits
-    val redirected = Mux(raw === U(inputPort, w), U(0, w), raw)
-    val portCount = nodePortIndicesForCanonicalPorts(curr, inputPort).size
-    Mux(redirected > U(inputPort, w), redirected - 1, redirected).resize(log2Up(portCount) bits)
+  def resolveDestPort(dest : routeable_address_t, curr : address_t, inputPort : canonical_port) = {
+    val nodeIndices = nodePortIndicesForCanonicalPorts(curr, inputPort)
+    val destPortIndex = U(0, log2Up(nodeIndices.size) bits)
+    destPortIndex.allowOverride()
+    resolveCanonicalDestPort(dest, curr, canonical_port => {
+      val idx = nodeIndices.indexOf(canonical_port)
+      if(idx != -1) {
+        destPortIndex := idx
+      }
+    })
+    destPortIndex
   }
+
+  def resolveCanonicalDestPort(dest : routeable_address_t, curr : address_t, set_result : canonical_port => Unit): Unit
 
   def addressToRouteableAddress(address : address_t) : routeable_address_constant_t = address
   def routeableAddressToAddress(routeable_address : routeable_address_constant_t) : address_t = routeable_address
 
   def addressName(address : Int) : String = s"node_${address}"
-  def defaultConnectivityIn : Int
-  def defaultConnectivityOut : Int = defaultConnectivityIn
-  def maxCanonicalPorts: Int = Math.max(defaultConnectivityIn, defaultConnectivityOut)
+
+  def maxCanonicalPorts: Int = portNamess.size
 
   // Sequence of canonical port numbers in their logical port index
   def nodePortIndicesForCanonicalPorts(address : Int): Seq[canonical_port]
 
-  // Same, but with the physical slot at inputPort dropped -- so the index
-  // into this filtered sequence is exactly the connectivityOut - 1-sized,
-  // inputPort-excluded numbering resolveDestPort returns.
-  def nodePortIndicesForCanonicalPorts(address : Int, inputPort : port_index): Seq[canonical_port] =
-    nodePortIndicesForCanonicalPorts(address).zipWithIndex.filter(_._2 != inputPort).map(_._1)
+  def nodeHasInputPort(address : Int, inputPort : canonical_port) = nodePortIndicesForCanonicalPorts(address).indexOf(inputPort) != -1
+
+  // The output port indices as seen from an input port
+  def nodePortIndicesForCanonicalPorts(address : Int, inputPort : canonical_port): Seq[canonical_port] =
+    if(nodeHasInputPort(address, inputPort))
+      nodePortIndicesForCanonicalPorts(address).filter(_ != inputPort)
+    else
+      Seq()
+
+  def nodeInputPortIndicesForCanonicalPorts(address : Int, outputPort : canonical_port) : Seq[canonical_port] = {
+    val rtn = new mutable.ArrayBuffer[Int]()
+    for(i <- 0 until maxCanonicalPorts) {
+      if(resolveCanonicalOutputPort(address, outputPort, i) != -1)
+        rtn.append(i)
+    }
+    rtn
+  }
 
   def resolveCanonicalOutputPort(address : Int, port : Int): Int = nodePortIndicesForCanonicalPorts(address).indexOf(port)
 
   // Physical port for `port`, excluding inputPort's own slot -- -1 if
   // `port` isn't reachable from `address` at all, or if it *is* inputPort's
   // own canonical port (never a valid destination, by definition).
-  def resolveCanonicalOutputPort(address : Int, port : Int, inputPort : port_index): Int =
+  def resolveCanonicalOutputPort(address : Int, port : Int, inputPort : canonical_port): port_index =
     nodePortIndicesForCanonicalPorts(address, inputPort).indexOf(port)
 
   // Returns the neighbor address and the opposite port
@@ -85,23 +101,10 @@ trait Topology {
     }
   }
 
-  /*
-      val flitStream = Stream(Fragment(Flit(cfg)))
-
-    val vcidStreams = StreamDemux(flitStream, flitStream.payload.vc, cfg.virtualChannels)
-
-    StreamArbiterFactory().lowerFirst.noLock.on(vcidStreams).map(flit => {
-      val p = cloneOf(output.payload)
-      p.last := flit.last
-      p.fragment := flit.fragment.datum
-      p
-    }) >> output
-
-   */
   def createNodes(noc : NoC) : Seq[RouterNode] = {
     val nodes = for (x <- 0 until this.nodes) yield {
       val node = createNode(noc.cfg, x)
-      node.setName(s"node_${x}")
+      node.setName(s"${addressName(x)}")
       node.io.inputs(0) <> noc.io.inputs(x).map(d => {
         val f = Fragment(Flit(noc.cfg))
         f.fragment.datum := d.fragment

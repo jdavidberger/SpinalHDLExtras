@@ -1,6 +1,7 @@
 package spinalextras.lib.noc.topology
 
 import spinal.core._
+import spinalextras.lib.noc.Topology.canonical_port
 import spinalextras.lib.noc.topology.Ring.{ClockWise, CounterClockWise, Local}
 import spinalextras.lib.noc.virtualchannels.{Dynamic, Static}
 import spinalextras.lib.noc.{NoC, NocConfig, RouterNode, Topology}
@@ -12,19 +13,22 @@ object Ring {
   val ClockWise = 1
   val CounterClockWise = 2
 
-  def apply(dest: UInt, curr: Int, size: Int): UInt = {
-    val R = UInt(2 bits)
+  def apply(dest: UInt, curr: Int, size: Int, setResult : canonical_port => Unit ): Unit = {
     val delta = (dest.intoSInt - curr)
     val direction = delta > 0
     val wrap = delta >= S(size / 2, delta.getBitsWidth bits)
 
     when(dest === curr) {
-      R := 0
+      setResult(0)
     } elsewhen (direction ^ wrap) {
-      R := ClockWise
+      setResult(ClockWise)
     } otherwise {
-      R := CounterClockWise
+      setResult(CounterClockWise)
     }
+  }
+  def apply(dest: UInt, curr: Int, size: Int): UInt = {
+    val R = UInt(2 bits)
+    apply(dest, curr, size, p => R := p)
     R
   }
 }
@@ -42,12 +46,16 @@ class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
 
   override def sizeFor(nodes: Int): Topology = new Ring(nodes)
 
-  override def resolveDestPortRaw(dest: UInt, curr: Int): UInt = {
+  override def resolveCanonicalDestPort(dest : routeable_address_t, curr : address_t, setResult : canonical_port => Unit): Unit = {
     if (routeing == ClockwiseAlways) {
-      Mux(dest === curr, U(0, 2 bits), U(ClockWise, 2 bits))
+      setResult(Local)
+      when(dest =/= curr) {
+        setResult(ClockWise)
+      }
     } else
-      Ring(dest, curr, size)
+      Ring(dest, curr, size, setResult)
   }
+  override def portNamess: Seq[String] = Seq("Local", "ClockWise", "CounterClockWise")
 
   override def nodePortIndicesForCanonicalPorts(address: Int): Seq[Int] = (0 until maxCanonicalPorts)
   override def resolveNeighborAddress(address: Int, canonicalPort: Int): (Int, Int) = {
@@ -73,6 +81,7 @@ class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
     val (address, canonicalPort) = port
     val isDateline = (address == size - 1 && canonicalPort == ClockWise) ||
                      (address == 0 && canonicalPort == CounterClockWise)
+    val canonicalPorts = this.nodePortIndicesForCanonicalPorts(address, canonicalPort)
 
     val escapeVc = vcCount - 1
     cfg.virtualChannelMode match {
@@ -81,7 +90,7 @@ class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
         // Per-candidate predicate over v, transposed below into GrantTable's
         // v-major allowed(v)(c) layout.
         val perCandidate = Seq.tabulate(candidateCount) { c =>
-          val inputPort = c / vcCount
+          val inputPort = canonicalPorts(c / vcCount)
           val sourceVc = c % vcCount
           // A candidate's incoming vc tag only means "already escaped" if it
           // was actually assigned that way by an upstream router's own
@@ -112,7 +121,7 @@ class Ring(size: Int = 0, routeing : RingRouteing = Closest) extends Topology {
       // the one-time bump or masquerade as already having crossed.
       case Static if vcCount >= 2 =>
         val perCandidate = Seq.tabulate(candidateCount) { c =>
-          val inputPort = c / vcCount
+          val inputPort = canonicalPorts(c / vcCount)
           val sourceVc = c % vcCount
           val effectiveClass = if (inputPort == Local && sourceVc == escapeVc) 0 else sourceVc
 

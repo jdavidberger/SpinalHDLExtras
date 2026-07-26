@@ -8,25 +8,7 @@ import spinalextras.lib.noc.{NoC, RouterNode, Topology}
 import scala.collection.mutable
 
 class Mesh(gridSize: (Int, Int) = (0, 0)) extends Topology {
-  def defaultConnectivityIn : Int = 5
-
   override def toString: String = f"${getClass.getSimpleName.replace("$", "")} ${gridSize}"
-
-  override def createNodes(noc: NoC): Seq[RouterNode] = {
-    val nodes = super.createNodes (noc)
-
-    def getNode(x: Int, y: Int) = {
-      val idx = createAddress(x, y)
-      if (idx >= 0) nodes(idx) else null
-    }
-
-    for (x <- 0 until gridSize._1; y <- 0 until gridSize._2) {
-      val Node = getNode(x, y)
-      Node.setName(s"node_${x}_${y}")
-    }
-
-    nodes
-  }
 
   override def nodes: Int = gridSize._1 * gridSize._2
 
@@ -72,30 +54,20 @@ class Mesh(gridSize: (Int, Int) = (0, 0)) extends Topology {
     createAddress(x, y)
   }
 
-  override def resolveDestPortRaw(dest: routeable_address_t, curr: address_t): UInt = {
+  override def resolveCanonicalDestPort(dest : routeable_address_t, curr : address_t, set_result : canonical_port => Unit): Unit = {
     val destAddress = unpackRouteableAddress(dest)
     val (x, y) = addressToXY(curr)
 
-    val N = UInt(log2Up(nodePortIndicesForCanonicalPorts(curr).size) bits)
-    def setResult(canonicalPort : Int): Unit = {
-      val port = resolveCanonicalOutputPort(curr, canonicalPort)
-      if(port != -1) {
-        N := port
-      }
-    }
-
-    setResult(Mesh.LOCAL)
+    set_result(Mesh.LOCAL)
     when(destAddress._1 < x) {
-      setResult(Mesh.WEST)
+      set_result(Mesh.WEST)
     } elsewhen(destAddress._1 > x) {
-      setResult(Mesh.EAST)
+      set_result(Mesh.EAST)
     } elsewhen(destAddress._2 < y) {
-      setResult(Mesh.NORTH)
+      set_result(Mesh.NORTH)
     } elsewhen(destAddress._2 > y) {
-      setResult(Mesh.SOUTH)
+      set_result(Mesh.SOUTH)
     }
-
-    N
   }
 
   def getBestGridSize(n: Int): (Int, Int) = {
@@ -139,6 +111,8 @@ class Mesh(gridSize: (Int, Int) = (0, 0)) extends Topology {
 
     (createAddress(x + dx, y + dy), opposite_port)
   }
+
+  override def portNamess: Seq[String] = Seq("Local", "West", "East", "North", "South")
 }
 
 object Mesh {

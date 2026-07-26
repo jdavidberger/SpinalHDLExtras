@@ -7,12 +7,13 @@ import spinalextras.lib.misc.Optional
 
 import scala.language.postfixOps
 
-class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, connectivityOut: Int) extends Component {
+class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical_port) extends Component {
+  val outputNodeIndices = cfg.topology.nodePortIndicesForCanonicalPorts(address, inputPort)
+  val connectivityOut = outputNodeIndices.size
+
   val io = new Bundle {
     val input = slave(Stream(Fragment(Bits(cfg.dataWidth bits))))
-    // One stream per possible destination port, excluding inputPort itself --
-    // a port never routes back through itself, so that slot doesn't exist.
-    val output = Vec(master(Stream(Fragment(Bits(cfg.dataWidth bits)))), connectivityOut - 1)
+    val output = Vec(master(Stream(Fragment(Bits(cfg.dataWidth bits)))), connectivityOut)
 
     val activity = out(Bool())
   }
@@ -20,7 +21,7 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, connectivityOut: 
   // Already expressed in the connectivityOut - 1-sized, inputPort-excluded
   // numbering -- resolveDestPort guarantees this never points back through
   // inputPort, so no self-redirect or compaction is needed here.
-  val outputNode = RegInit(Optional.Empty(UInt(log2Up(connectivityOut - 1) bits)))
+  val outputNode = RegInit(Optional.Empty(UInt(log2Up(connectivityOut) bits)))
   val input = io.input
 
   io.activity := False
@@ -40,19 +41,18 @@ class FlitRouter(cfg: NocConfig, address: Int, inputPort: Int, connectivityOut: 
   }
 
   when(outputNode.has_value) {
-    if (outputNode.value.maxValue >= connectivityOut - 1) {
-      assert(outputNode.value < connectivityOut - 1)
+    if (outputNode.value.maxValue >= connectivityOut) {
+      assert(outputNode.value < connectivityOut)
     }
   }
 
-  StreamDemux(input.continueWhen(outputNode.has_value), outputNode.value, connectivityOut - 1) <> io.output
+  StreamDemux(input.continueWhen(outputNode.has_value), outputNode.value, connectivityOut) <> io.output
 }
 
 object FlitRouter {
-  def apply(node: RouterNode, inputPort: Int, vcid: Int, input: Stream[Fragment[Bits]]): Vec[Stream[Fragment[Bits]]] = {
-    val router = new FlitRouter(node.cfg, node.address, inputPort = inputPort, connectivityOut = node.connectivityOut)
-    router.setName(s"flit_router_p${inputPort}_v${vcid}")
-    node.routerActivity(vcid)(inputPort) := router.io.activity
+  def apply(node: RouterNode, inputPort: Topology.canonical_port, vcid: Int, input: Stream[Fragment[Bits]]): Vec[Stream[Fragment[Bits]]] = {
+    val router = new FlitRouter(node.cfg, node.address, inputPort = inputPort)
+    router.setName(s"flit_router_${node.address}_p${node.cfg.topology.portName(inputPort)}_v${vcid}")
     router.io.input <> input
     router.io.output
   }

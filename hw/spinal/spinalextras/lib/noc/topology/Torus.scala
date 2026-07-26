@@ -24,20 +24,12 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
 
   override def nodePortIndicesForCanonicalPorts(address: Int): Seq[Int] = (0 until maxCanonicalPorts)
 
-  override def resolveDestPortRaw(dest: routeable_address_t, curr: address_t): UInt = {
+  override def resolveCanonicalDestPort(dest : routeable_address_t, curr : address_t, setResult : canonical_port => Unit): Unit = {
     val (dx, dy) = unpackRouteableAddress(dest)
     val (x, y) = addressToXY(curr)
 
     val dir_x = Ring(dx, x, gridSize._1)
     val dir_y = Ring(dy, y, gridSize._2)
-
-    val N = UInt(log2Up(nodePortIndicesForCanonicalPorts(curr).size) bits)
-    def setResult(canonicalPort : Int): Unit = {
-      //spinal.core.report(Seq("Setting ", canonicalPort, " from ", dir_x, " ", dir_y, " ", x, " ", y, " ", dx, " ", dy))
-      val output_port = resolveCanonicalOutputPort(curr, canonicalPort)
-      assert(output_port >= 0)
-      N := output_port
-    }
 
     setResult(Mesh.LOCAL)
 
@@ -52,8 +44,6 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
     } elsewhen(dir_x === Ring.CounterClockWise) {
       setResult(Mesh.WEST)
     }
-
-    N
   }
 
   // Two physical cycles here (an X-ring and a Y-ring), so -- like Ring --
@@ -77,6 +67,7 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
     val (address, canonicalPort) = port
     val (x, y) = addressToXY(address)
     val escapeVc = vcCount - 1
+    val canonicalPorts = this.nodePortIndicesForCanonicalPorts(address, canonicalPort)
 
     val isDateline = (x == gridSize._1 - 1 && canonicalPort == Mesh.EAST) ||
       (x == 0 && canonicalPort == Mesh.WEST) ||
@@ -88,7 +79,7 @@ class Torus(gridSize: (Int, Int) = (0, 0)) extends Mesh(gridSize) {
     // Per-candidate predicate over v, transposed below into GrantTable's
     // v-major allowed(v)(c) layout.
     val perCandidate = Seq.tabulate(candidateCount) { c =>
-      val inputPort = c / vcCount
+      val inputPort = canonicalPorts(c / vcCount)
       val sourceVc = c % vcCount
       // As with Ring: a candidate's incoming vc tag only means "already
       // escaped" if an upstream router's own allowedTransitionTable
