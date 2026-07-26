@@ -38,7 +38,7 @@ class NoCBuilder(val cfg: NocConfig) {
     * its own claims -- so that an auto-assignment can never collide with an explicit claim made by
     * another specification later. Because of this, `NodeAddress.address` must only be read from
     * within a specification's own `build()` method, never at registration time. */
-  def claim(address: Int = -1): NodeSlot = {
+  def createSlot(address: Int = -1): NodeSlot = {
     if (address >= 0) {
       require(address < cfg.topology.nodes, s"NoC node address $address is out of range (0 until ${cfg.topology.nodes})")
       require(!usedAddresses.contains(address), s"NoC node address $address already assigned")

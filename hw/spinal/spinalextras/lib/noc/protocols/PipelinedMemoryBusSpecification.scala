@@ -161,7 +161,7 @@ class PipelinedMemoryBusSpecification(pmbConfig: PipelinedMemoryBusConfig, build
   /** @param address Physical NoC node this master attaches to; -1 (default) auto-assigns the next free node. */
   def addMaster(bus: PipelinedMemoryBus, address: Int = -1): NodeSlot = {
     require(bus.config == pmbConfig, "PipelinedMemoryBus config mismatch")
-    val a = builder.claim(address)
+    val a = builder.createSlot(address)
     masterPorts += MasterPort(bus, a)
     a
   }
@@ -169,7 +169,7 @@ class PipelinedMemoryBusSpecification(pmbConfig: PipelinedMemoryBusConfig, build
   /** @param address Physical NoC node this slave attaches to; -1 (default) auto-assigns the next free node. */
   def addSlave(bus: PipelinedMemoryBus, mapping: AddressMapping, address: Int = -1): NodeSlot = {
     require(bus.config == pmbConfig, "PipelinedMemoryBus config mismatch")
-    val a = builder.claim(address)
+    val a = builder.createSlot(address)
     slavePorts += SlavePort(bus, mapping, a)
     a
   }
