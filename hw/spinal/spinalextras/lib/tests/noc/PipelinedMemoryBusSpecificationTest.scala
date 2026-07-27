@@ -7,8 +7,8 @@ import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinalextras.lib.Config
-import spinalextras.lib.noc.NocConfig
-import spinalextras.lib.noc.protocols.{NoCBuilder, PipelinedMemoryBusSpecification}
+import spinalextras.lib.noc.{NoCBuilder, NocConfig}
+import spinalextras.lib.noc.protocols.PipelinedMemoryBusSpecification
 import spinalextras.lib.noc.topology.Mesh
 
 import scala.collection.mutable

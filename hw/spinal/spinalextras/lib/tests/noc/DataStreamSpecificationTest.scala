@@ -5,8 +5,8 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinalextras.lib.Config
-import spinalextras.lib.noc.NocConfig
-import spinalextras.lib.noc.protocols.{DataStreamSpecification, NoCBuilder}
+import spinalextras.lib.noc.{NoCBuilder, NocConfig}
+import spinalextras.lib.noc.protocols.DataStreamSpecification
 import spinalextras.lib.noc.topology.Mesh
 
 import scala.collection.mutable

@@ -6,7 +6,7 @@ import spinal.lib.bus.amba4.axi.{Axi4Arw, Axi4B, Axi4Config, Axi4R, Axi4Shared, 
 import spinal.lib.bus.misc.AddressMapping
 import spinalextras.lib.misc.StreamTools
 import spinalextras.lib.misc.StreamTools.CreateFragment
-import spinalextras.lib.noc.{Header, NocConfig}
+import spinalextras.lib.noc.{Header, NoCBuilder, NocConfig, NodeSlot}
 
 import scala.collection.mutable
 import scala.language.postfixOps

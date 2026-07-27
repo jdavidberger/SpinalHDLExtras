@@ -6,7 +6,7 @@ import spinal.lib.bus.misc.AddressMapping
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusCmd, PipelinedMemoryBusConfig}
 import spinalextras.lib.misc.StreamTools
 import spinalextras.lib.misc.StreamTools.CreateFragment
-import spinalextras.lib.noc.{Header, NocConfig}
+import spinalextras.lib.noc.{Header, NoCBuilder, NocConfig, NodeSlot}
 
 import scala.collection.mutable
 import scala.language.postfixOps

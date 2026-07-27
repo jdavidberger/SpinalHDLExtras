@@ -6,6 +6,7 @@ import spinal.lib.bus.regif.BusIf
 import spinal.lib.{Fragment, Stream}
 import spinalextras.lib.misc.{RegisterTools, StreamTools}
 import spinalextras.lib.misc.StreamTools.CreateFragment
+import spinalextras.lib.noc.{NoCBuilder, NodeSlot}
 import spinalextras.lib.soc.{BusIfDeviceTreeProvider, DeviceTree}
 import spinalextras.lib.soc.spinex.plugins.BusType.PipelinedMemoryBus
 

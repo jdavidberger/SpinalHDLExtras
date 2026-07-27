@@ -7,8 +7,8 @@ import spinal.lib._
 import spinal.lib.bus.amba4.axi.{Axi4Config, Axi4Shared}
 import spinal.lib.bus.misc.SizeMapping
 import spinalextras.lib.Config
-import spinalextras.lib.noc.NocConfig
-import spinalextras.lib.noc.protocols.{Axi4Specification, NoCBuilder}
+import spinalextras.lib.noc.{NoCBuilder, NocConfig}
+import spinalextras.lib.noc.protocols.Axi4Specification
 import spinalextras.lib.noc.topology.Mesh
 
 import scala.collection.mutable

@@ -10,13 +10,22 @@ import scala.collection.mutable
 import scala.language.postfixOps
 
 trait Topology {
+  // 'address' is essentially the index of the node in the nodes list
   type address_t = Int
+
+  // 'routeable_address' is topology defined and not necessarilly the same as address. Most notably for mesh topologies
+  // the routeable_address is encoded as XY.
   type routeable_address_constant_t = Int
   type routeable_address_t = UInt
 
+  // Canonical ports span the range of all possible logic ports -- Local, North, East, West, South for mesh for instance.
+  // 0 is always the local port
   type canonical_port = Int
+  // Used to mark where a port_index is returned. A port index indexs into the port object on a given node or port. So
+  // if a port can only see Local, East, South, a port index of 2 points to the south port.
   type port_index = Int
 
+  // Topologies with different shapes have different requirements for minimum virtual channels to prevent deadlocks.
   def minimumVirtualChannels : Int = 1
 
   def portNamess : Seq[String]
@@ -92,6 +101,8 @@ trait Topology {
     new RouterNode(cfg, address = address)
   }
 
+  // Describes the transition table at any given interchange. More allowed transitions tends to lead to higher gate
+  // usage but lower congestion. Cyclic topologies have complicated transition tables at their wrap around point.
   def allowedTransitionTable(cfg: NocConfig, port : (address_t, canonical_port),
                              candidateCount : Int, vcCount : Int
                             ): Seq[Seq[Boolean]] = {

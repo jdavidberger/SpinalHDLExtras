@@ -1,18 +1,8 @@
 package spinalextras.lib.noc.protocols
 
 
-import spinal.core._
-import spinal.lib._
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusInterconnect}
-import spinal.lib.misc.aia.APlicGenParam.test
-import spinalextras.lib.Config
-import spinalextras.lib.misc.StreamTools.CreateFragment
-import spinalextras.lib.noc.{Header, NoC, NocConfig}
-import spinalextras.lib.misc.{StreamFragmentWidthAdapterEncoding, StreamTools}
-import spinalextras.lib.noc.topology.Mesh
+import spinalextras.lib.noc.NoCBuilder
 
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
 class ProtocolSpecification(builder : NoCBuilder) {
@@ -24,5 +14,5 @@ class ProtocolSpecification(builder : NoCBuilder) {
     * them into account. */
   def registerRoutes(): Unit = {}
 
-  def build() = {}
+  def build(): Unit = {}
 }

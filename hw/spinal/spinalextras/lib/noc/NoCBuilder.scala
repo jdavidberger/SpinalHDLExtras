@@ -1,9 +1,9 @@
-package spinalextras.lib.noc.protocols
+package spinalextras.lib.noc
 
 import spinal.core.{Bits, IntToBuilder}
 import spinal.lib.{Fragment, Stream}
 import spinalextras.lib.misc.{StreamFragmentWidthAdapterEncoding, StreamTools}
-import spinalextras.lib.noc.{NoC, NocConfig}
+import spinalextras.lib.noc.protocols.ProtocolSpecification
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -11,7 +11,7 @@ import scala.language.postfixOps
 
 /** A NoC node address that may not be resolved yet -- see `NoCBuilder.SlotAllocator.createSlot`
   * for when it's safe to read `resolvedAddress`. */
-class NodeSlot private[protocols](requested: Int) {
+class NodeSlot(requested: Int) {
   private var resolved: Int = requested
 
   def resolvedAddress: Int = {
@@ -19,7 +19,7 @@ class NodeSlot private[protocols](requested: Int) {
     resolved
   }
 
-  private[protocols] def resolve(value: Int): Unit = resolved = value
+  def resolve(value: Int): Unit = resolved = value
 }
 
 class NoCBuilder(val cfg: NocConfig) {
