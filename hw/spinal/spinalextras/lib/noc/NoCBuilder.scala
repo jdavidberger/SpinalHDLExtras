@@ -100,7 +100,7 @@ class NoCBuilder(val cfg: NocConfig) {
   def addInput(input: Stream[Fragment[Bits]], address: Int = -1): Unit = {
     if (input.payload.fragment.getBitsWidth != cfg.dataWidth) {
       val (header, tail) = StreamTools.takeHead(input)
-      inputs.append((address, StreamFragmentWidthAdapterEncoding.encode(tail, cfg.dataWidth).insertHeader(header.resize(cfg.dataWidth bits))))
+      inputs.append((address, StreamFragmentWidthAdapterEncoding.encode(tail, cfg.dataWidth).insertHeader(header.resize(cfg.dataWidth bits)).setName(f"${input.name}Adapted")))
     } else {
       inputs.append((address, input))
     }
@@ -108,8 +108,8 @@ class NoCBuilder(val cfg: NocConfig) {
 
   def addOutput(output: Stream[Fragment[Bits]], address: Int = -1) = {
     val outputStream = new Stream(Fragment(Bits(cfg.dataWidth bits)))
-    outputs.append((address, outputStream))
-    StreamFragmentWidthAdapterEncoding.decode(outputStream, output.fragment.getBitsWidth) >> output
+    outputs.append((address, outputStream.setName(f"${output.name}")))
+    StreamFragmentWidthAdapterEncoding.decode(outputStream, output.fragment.getBitsWidth).setName(f"${output.name}Adapted") >> output
   }
 
   def build(): NoC = {
@@ -123,10 +123,14 @@ class NoCBuilder(val cfg: NocConfig) {
     protocols.foreach(_.build())
 
     val noc = new NoC(cfg)
+    println("Input:")
     for (input <- inputs) {
+      println(s"  - ${input._2.name}: ${cfg.topology.addressName(input._1)}")
       noc.io.inputs(input._1) <> input._2
     }
+    println("Output:")
     for (output <- outputs) {
+      println(s"  - ${output._2.name}: ${cfg.topology.addressName(output._1)}")
       noc.io.outputs(output._1) <> output._2
     }
     noc.sealUnusedPorts()

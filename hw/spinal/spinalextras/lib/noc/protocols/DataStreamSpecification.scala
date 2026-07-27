@@ -55,7 +55,7 @@ class DataStreamSpecification[T <: Data](datatype: HardType[T], builder: NoCBuil
 
   override def build(): Unit = {
     for (s <- sources) {
-      builder.addInput(s.stream.map(x => CreateFragment(x.fragment.asBits, x.last)).insertHeader(s.hdr.resized), s.address.resolvedAddress)
+      builder.addInput(s.stream.map(x => CreateFragment(x.fragment.asBits, x.last)).insertHeader(s.hdr.resized).setName(s"${s.stream.name}Packet"), s.address.resolvedAddress)
     }
     for (k <- sinks) {
       val o = Stream(Fragment(Bits(k.stream.fragment.getBitsWidth bits)))
@@ -64,7 +64,7 @@ class DataStreamSpecification[T <: Data](datatype: HardType[T], builder: NoCBuil
       // the caller-visible sink stream only ever sees real payload beats.
       val (_, payload) = StreamTools.takeHead(o)
       payload.map(x => CreateFragment(x.fragment.as(datatype), x.last)) >> k.stream
-      builder.addOutput(o, k.address.resolvedAddress)
+      builder.addOutput(o.setName(k.stream.name), k.address.resolvedAddress)
     }
   }
 }
@@ -83,7 +83,7 @@ class DataStreamSpecificationWithRegisters[T <: Data](val datatype: HardType[T],
     val header_reg = RegisterTools.Register(busIf, f"${name}_hdr", B(0, 32 bits))
     val stream = this.addSource(header_reg, address)
     sourceRegisters.update(this.sourceSlot(stream).get, header_reg)
-    stream
+    stream.setName(name)
   }
 
   def addSourceWithInit(name : String, dst : Stream[Fragment[T]]): Stream[Fragment[T]] = {
