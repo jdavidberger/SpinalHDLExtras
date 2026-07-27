@@ -30,29 +30,7 @@ are verbatim from the source.
 
 ---
 
-```mermaid
-flowchart LR
-  classDef ext fill:#e8eef7,stroke:#4b6fa8,color:#1c2b40
-  classDef fabric fill:#fdf3e3,stroke:#b8863b,color:#3a2c10
-
-  In0["io.inputs(0)"]:::ext --> R0["RouterNode 0"]:::fabric
-  In1["io.inputs(1)"]:::ext --> R1["RouterNode 1"]:::fabric
-  In2["io.inputs(2)"]:::ext --> R2["RouterNode 2"]:::fabric
-  In3["io.inputs(3)"]:::ext --> R3["RouterNode 3"]:::fabric
-
-  R0 --> Out0["io.outputs(0)"]:::ext
-  R1 --> Out1["io.outputs(1)"]:::ext
-  R2 --> Out2["io.outputs(2)"]:::ext
-  R3 --> Out3["io.outputs(3)"]:::ext
-
-  subgraph Fabric["Interconnect wired by cfg.topology.createNodes(this)"]
-    direction LR
-    R0 <--> R1
-    R1 <--> R2
-    R0 <--> R2
-    R2 <--> R3
-  end
-```
+![RouterNode internals: per-VC StreamFifo lanes, FlitRouter's registered routing decision, and the per-output-port VirtualIdAllocator crossbar](router-node.svg)
 
 ## Configuration
 
@@ -102,9 +80,13 @@ override points a subclass actually implements:
 The public `resolveDestPort(dest, curr, inputPort)` wraps
 `resolveCanonicalDestPort` and compacts its result into the *port-index*
 space a specific node/input actually has — importantly, **excluding
-`inputPort`'s own canonical port**, so a flit can never be routed back out the
-port it arrived on (no U-turns, and no self-redirect for a locally-injected
-packet either). Per-node port *count* varies with position — a mesh corner
+`inputPort`'s own canonical port** (no U-turns: a flit can never be routed
+back out the port it arrived on), **except when `inputPort` is `Local`**
+(canonical port 0): `nodePortIndicesForCanonicalPorts`'s self-exclusion is
+gated on `inputPort != 0`, so a locally-injected packet may still target
+Local as its own destination — i.e. a packet addressed to this node's own
+address loops straight back to local delivery instead of having no valid
+route at all. Per-node port *count* varies with position — a mesh corner
 has fewer ports than an interior node — via
 `nodePortIndicesForCanonicalPorts(address)`; the same function with an
 `inputPort` argument gives the output-side numbering used by

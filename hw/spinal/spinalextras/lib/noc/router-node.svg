@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 815" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrowGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <marker id="arrowSlate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7a7f87"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4b6fa8"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a8a55"/>
+    </marker>
+    <marker id="arrowAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b8863b"/>
+    </marker>
+  </defs>
+
+  <!-- background -->
+  <rect x="0" y="0" width="1150" height="815" fill="#ffffff"/>
+
+  <!-- title -->
+  <text x="575" y="26" text-anchor="middle" font-size="18" font-weight="600" fill="#1c2b40">RouterNode internals</text>
+  <text x="575" y="46" text-anchor="middle" font-size="12.5" fill="#555">
+    Illustrative 3-port node (connectivityIn = connectivityOut = 3) — port names shown are Ring's (Local · ClockWise · CounterClockWise);
+  </text>
+  <text x="575" y="62" text-anchor="middle" font-size="12.5" fill="#555">
+    a Mesh interior node has 5 ports instead, but the same structure repeats per port. virtualChannels = 2.
+  </text>
+
+  <!-- RouterNode component boundary -->
+  <rect x="90" y="82" width="955" height="600" rx="18" fill="none" stroke="#9aa0a8" stroke-width="1.5" stroke-dasharray="7,5"/>
+  <text x="106" y="106" font-size="13" font-weight="600" fill="#555">RouterNode(cfg, address)</text>
+
+  <!-- ================= LOCAL ROW (rowCenter = 168) ================= -->
+
+  <!-- external input arrow -->
+  <text x="8" y="158" font-size="12" fill="#1c2b40">io.inputs(Local)</text>
+  <line x1="0" y1="168" x2="98" y2="168" stroke="#4b6fa8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- InputPort container: wraps only the FIFO; FlitRouter is a sibling component in RouterNode, not part of InputPort -->
+  <text x="112" y="122" font-size="11" font-style="italic" fill="#777">InputPort — StreamDemux by vc</text>
+  <rect x="106" y="128" width="115" height="80" rx="10" fill="none" stroke="#9aa0a8" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <!-- single vc0 lane (Local always gets exactly 1 VC lane, regardless of cfg.virtualChannels) -->
+  <text x="121" y="138" font-size="10" font-weight="600" fill="#555">vc0 (only lane)</text>
+  <rect x="121" y="143" width="88" height="50" rx="8" fill="#eef6ee" stroke="#4a8a55" stroke-width="1.3"/>
+  <text x="165" y="163" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
+  <text x="165" y="177" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
+  <line x1="209" y1="168" x2="228" y2="168" stroke="#555" stroke-width="1.4" marker-end="url(#arrowGray)"/>
+  <rect x="230" y="143" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#888" stroke-width="1.3"/>
+  <text x="275" y="157" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
+  <text x="275" y="169" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
+  <text x="275" y="180" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
+
+  <!-- VirtualIdAllocator -->
+  <rect x="680" y="123" width="190" height="90" rx="10" fill="#f5eef7" stroke="#8a4a97" stroke-width="1.3"/>
+  <text x="775" y="146" text-anchor="middle" font-size="13" font-weight="600" fill="#2f1834">VirtualIdAllocator</text>
+  <text x="775" y="162" text-anchor="middle" font-size="10.5" fill="#2f1834">output = Local</text>
+  <text x="775" y="177" text-anchor="middle" font-size="10" font-style="italic" fill="#2f1834">GrantTableCrossbar</text>
+  <text x="775" y="200" text-anchor="middle" font-size="9.5" fill="#6a4570">5 candidates (Local·vc0, CW·vc0/1, CCW·vc0/1)</text>
+
+  <!-- OutputPort -->
+  <line x1="870" y1="168" x2="898" y2="168" stroke="#8a4a97" stroke-width="1.6" marker-end="url(#arrowGray)"/>
+  <rect x="900" y="138" width="140" height="60" rx="10" fill="#fdf3e3" stroke="#b8863b" stroke-width="1.3"/>
+  <text x="970" y="158" text-anchor="middle" font-size="12" font-weight="600" fill="#3a2c10">OutputPort</text>
+  <text x="970" y="173" text-anchor="middle" font-size="9" fill="#3a2c10">StreamArbiter(roundRobin,</text>
+  <text x="970" y="185" text-anchor="middle" font-size="9" fill="#3a2c10">noLock)</text>
+
+  <!-- external output arrow -->
+  <line x1="1040" y1="168" x2="1078" y2="168" stroke="#4b6fa8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <text x="1059" y="128" text-anchor="middle" font-size="11" fill="#1c2b40">io.outputs(Local)</text>
+
+  <!-- annotation: Topology.createNodes re-wrap on the external boundary -->
+  <rect x="900" y="222" width="235" height="58" rx="8" fill="none" stroke="#b8863b" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="990" y1="198" x2="990" y2="222" stroke="#b8863b" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="910" y="238" font-size="9" fill="#7a5a20">Local port only: Topology.createNodes wraps</text>
+  <text x="910" y="250" font-size="9" fill="#7a5a20">io.outputs(Local) with an extra demux +</text>
+  <text x="910" y="262" font-size="9" fill="#7a5a20">lowerFirst.fragmentLock merge, stripping the</text>
+  <text x="910" y="274" font-size="9" fill="#7a5a20">vc tag — this step is outside RouterNode itself.</text>
+
+  <!-- ================= CLOCKWISE ROW (rowCenter = 373) ================= -->
+
+  <text x="8" y="316" font-size="12" fill="#1c2b40">io.inputs(CW)</text>
+  <line x1="0" y1="326" x2="98" y2="326" stroke="#4b6fa8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <text x="112" y="292" font-size="11" font-style="italic" fill="#777">InputPort — StreamDemux by vc</text>
+  <rect x="106" y="298" width="115" height="180" rx="10" fill="none" stroke="#9aa0a8" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="121" y="308" font-size="10" font-weight="600" fill="#555">vc0</text>
+  <rect x="121" y="313" width="88" height="50" rx="8" fill="#eef6ee" stroke="#4a8a55" stroke-width="1.3"/>
+  <text x="165" y="333" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
+  <text x="165" y="347" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
+  <line x1="209" y1="338" x2="228" y2="338" stroke="#555" stroke-width="1.4" marker-end="url(#arrowGray)"/>
+  <rect x="230" y="313" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#888" stroke-width="1.3"/>
+  <text x="275" y="327" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
+  <text x="275" y="339" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
+  <text x="275" y="350" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
+
+  <text x="121" y="408" font-size="10" font-weight="600" fill="#555">vc1</text>
+  <rect x="121" y="413" width="88" height="50" rx="8" fill="#eef6ee" stroke="#4a8a55" stroke-width="1.3"/>
+  <text x="165" y="433" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
+  <text x="165" y="447" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
+  <line x1="209" y1="438" x2="228" y2="438" stroke="#555" stroke-width="1.4" marker-end="url(#arrowGray)"/>
+  <rect x="230" y="413" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#888" stroke-width="1.3"/>
+  <text x="275" y="427" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
+  <text x="275" y="439" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
+  <text x="275" y="450" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
+
+  <rect x="680" y="328" width="190" height="90" rx="10" fill="#f5eef7" stroke="#8a4a97" stroke-width="1.3"/>
+  <text x="775" y="351" text-anchor="middle" font-size="13" font-weight="600" fill="#2f1834">VirtualIdAllocator</text>
+  <text x="775" y="367" text-anchor="middle" font-size="10.5" fill="#2f1834">output = ClockWise</text>
+  <text x="775" y="382" text-anchor="middle" font-size="10" font-style="italic" fill="#2f1834">GrantTableCrossbar</text>
+  <text x="775" y="405" text-anchor="middle" font-size="9.5" fill="#6a4570">3 candidates (Local·vc0, CCW·vc0/1)</text>
+
+  <line x1="870" y1="373" x2="898" y2="373" stroke="#8a4a97" stroke-width="1.6" marker-end="url(#arrowGray)"/>
+  <rect x="900" y="343" width="140" height="60" rx="10" fill="#fdf3e3" stroke="#b8863b" stroke-width="1.3"/>
+  <text x="970" y="363" text-anchor="middle" font-size="12" font-weight="600" fill="#3a2c10">OutputPort</text>
+  <text x="970" y="378" text-anchor="middle" font-size="9" fill="#3a2c10">StreamArbiter(roundRobin,</text>
+  <text x="970" y="390" text-anchor="middle" font-size="9" fill="#3a2c10">noLock)</text>
+
+  <line x1="1040" y1="373" x2="1078" y2="373" stroke="#4b6fa8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <text x="1059" y="333" text-anchor="middle" font-size="11" fill="#1c2b40">io.outputs(CW)</text>
+
+  <!-- ================= COUNTER-CLOCKWISE ROW (rowCenter = 578) ================= -->
+
+  <text x="8" y="521" font-size="12" fill="#1c2b40">io.inputs(CCW)</text>
+  <line x1="0" y1="531" x2="98" y2="531" stroke="#4b6fa8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <text x="112" y="497" font-size="11" font-style="italic" fill="#777">InputPort — StreamDemux by vc</text>
+  <rect x="106" y="503" width="115" height="180" rx="10" fill="none" stroke="#9aa0a8" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="121" y="513" font-size="10" font-weight="600" fill="#555">vc0</text>
+  <rect x="121" y="518" width="88" height="50" rx="8" fill="#eef6ee" stroke="#4a8a55" stroke-width="1.3"/>
+  <text x="165" y="538" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
+  <text x="165" y="552" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
+  <line x1="209" y1="543" x2="228" y2="543" stroke="#555" stroke-width="1.4" marker-end="url(#arrowGray)"/>
+  <rect x="230" y="518" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#888" stroke-width="1.3"/>
+  <text x="275" y="532" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
+  <text x="275" y="544" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
+  <text x="275" y="555" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
+
+  <text x="121" y="613" font-size="10" font-weight="600" fill="#555">vc1</text>
+  <rect x="121" y="618" width="88" height="50" rx="8" fill="#eef6ee" stroke="#4a8a55" stroke-width="1.3"/>
+  <text x="165" y="638" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
+  <text x="165" y="652" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
+  <line x1="209" y1="643" x2="228" y2="643" stroke="#555" stroke-width="1.4" marker-end="url(#arrowGray)"/>
+  <rect x="230" y="618" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#888" stroke-width="1.3"/>
+  <text x="275" y="632" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
+  <text x="275" y="644" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
+  <text x="275" y="655" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
+
+  <rect x="680" y="533" width="190" height="90" rx="10" fill="#f5eef7" stroke="#8a4a97" stroke-width="1.3"/>
+  <text x="775" y="556" text-anchor="middle" font-size="13" font-weight="600" fill="#2f1834">VirtualIdAllocator</text>
+  <text x="775" y="572" text-anchor="middle" font-size="10.5" fill="#2f1834">output = CounterClockWise</text>
+  <text x="775" y="587" text-anchor="middle" font-size="10" font-style="italic" fill="#2f1834">GrantTableCrossbar</text>
+  <text x="775" y="610" text-anchor="middle" font-size="9.5" fill="#6a4570">3 candidates (Local·vc0, CW·vc0/1)</text>
+
+  <line x1="870" y1="578" x2="898" y2="578" stroke="#8a4a97" stroke-width="1.6" marker-end="url(#arrowGray)"/>
+  <rect x="900" y="548" width="140" height="60" rx="10" fill="#fdf3e3" stroke="#b8863b" stroke-width="1.3"/>
+  <text x="970" y="568" text-anchor="middle" font-size="12" font-weight="600" fill="#3a2c10">OutputPort</text>
+  <text x="970" y="583" text-anchor="middle" font-size="9" fill="#3a2c10">StreamArbiter(roundRobin,</text>
+  <text x="970" y="595" text-anchor="middle" font-size="9" fill="#3a2c10">noLock)</text>
+
+  <line x1="1040" y1="578" x2="1078" y2="578" stroke="#4b6fa8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <text x="1059" y="538" text-anchor="middle" font-size="11" fill="#1c2b40">io.outputs(CCW)</text>
+
+  <!-- ================= CROSSBAR CANDIDATE LINES ================= -->
+  <!-- Every (input port, vc) candidate that can reach a given output's VirtualIdAllocator, drawn as
+       a curve converging on that allocator's left edge. A candidate's own canonical port is never a
+       valid destination for it EXCEPT Local: nodePortIndicesForCanonicalPorts's self-exclusion only
+       fires when inputPort != Local (canonical port 0), so Local·vc0 is the one lane with 3 outgoing
+       curves (Local-out included); CW and CCW still each have exactly 2 (no U-turn). -->
+
+  <!-- Local·vc0 -> Local-out: a locally-addressed injected packet loops straight back to local
+       delivery; this candidate did not exist before nodePortIndicesForCanonicalPorts's inputPort==0
+       exemption; drawn as an arc since source and target sit on the same row. -->
+  <path d="M320,168 C 420,235 580,235 680,168" fill="none" stroke="#7a7f87" stroke-width="1.6" stroke-opacity="0.55" marker-end="url(#arrowSlate)"/>
+  <text x="500" y="228" text-anchor="middle" font-size="9" font-style="italic" fill="#6b6f76">Local·vc0 → Local-out: a locally-addressed packet loops straight back to local delivery</text>
+
+  <!-- Local·vc0 -> CW-out, CCW-out (slate) -->
+  <path d="M320,168 C 460,168 520,373 680,373" fill="none" stroke="#7a7f87" stroke-width="1.6" stroke-opacity="0.55" marker-end="url(#arrowSlate)"/>
+  <path d="M320,168 C 460,168 520,578 680,578" fill="none" stroke="#7a7f87" stroke-width="1.6" stroke-opacity="0.55" marker-end="url(#arrowSlate)"/>
+
+  <!-- CW·vc0 -> Local-out, CCW-out (blue) -->
+  <path d="M320,338 C 460,338 520,168 680,168" fill="none" stroke="#4b6fa8" stroke-width="1.6" stroke-opacity="0.45" marker-end="url(#arrowBlue)"/>
+  <path d="M320,338 C 460,338 520,578 680,578" fill="none" stroke="#4b6fa8" stroke-width="1.6" stroke-opacity="0.45" marker-end="url(#arrowBlue)"/>
+
+  <!-- CW·vc1 -> Local-out (blue), and -> CCW-out highlighted as the example granted path -->
+  <path d="M320,438 C 460,438 520,168 680,168" fill="none" stroke="#4b6fa8" stroke-width="1.6" stroke-opacity="0.45" marker-end="url(#arrowBlue)"/>
+  <path d="M320,438 C 460,438 520,578 680,578" fill="none" stroke="#b8863b" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowAccent)"/>
+
+  <!-- CCW·vc0 -> Local-out, CW-out (green) -->
+  <path d="M320,543 C 460,543 520,168 680,168" fill="none" stroke="#4a8a55" stroke-width="1.6" stroke-opacity="0.45" marker-end="url(#arrowGreen)"/>
+  <path d="M320,543 C 460,543 520,373 680,373" fill="none" stroke="#4a8a55" stroke-width="1.6" stroke-opacity="0.45" marker-end="url(#arrowGreen)"/>
+
+  <!-- CCW·vc1 -> Local-out, CW-out (green) -->
+  <path d="M320,643 C 460,643 520,168 680,168" fill="none" stroke="#4a8a55" stroke-width="1.6" stroke-opacity="0.45" marker-end="url(#arrowGreen)"/>
+  <path d="M320,643 C 460,643 520,373 680,373" fill="none" stroke="#4a8a55" stroke-width="1.6" stroke-opacity="0.45" marker-end="url(#arrowGreen)"/>
+
+  <!-- callout for the highlighted example path -->
+  <text x="500" y="470" font-size="10.5" font-style="italic" fill="#8a5a1a">example: CW·vc1 wins CCW-out's grant — held (wormhole-locked)</text>
+  <text x="500" y="483" font-size="10.5" font-style="italic" fill="#8a5a1a">until its packet's last flit fires io.release</text>
+
+  <!-- ================= LEGEND ================= -->
+  <text x="106" y="712" font-size="12" font-weight="600" fill="#1c2b40">Legend</text>
+
+  <rect x="106" y="722" width="16" height="16" rx="3" fill="#eef6ee" stroke="#4a8a55"/>
+  <text x="128" y="734" font-size="11" fill="#333">StreamFifo(depth=vcDepth) — per-VC buffering, one per lane</text>
+
+  <rect x="106" y="742" width="16" height="16" rx="3" fill="#f2f2f2" stroke="#888"/>
+  <text x="128" y="754" font-size="11" fill="#333">FlitRouter — holds resolved dest port until last flit (registered)</text>
+
+  <rect x="600" y="722" width="16" height="16" rx="3" fill="#f5eef7" stroke="#8a4a97"/>
+  <text x="622" y="734" font-size="11" fill="#333">VirtualIdAllocator — one GrantTableCrossbar per output port</text>
+
+  <rect x="600" y="742" width="16" height="16" rx="3" fill="#fdf3e3" stroke="#b8863b"/>
+  <text x="622" y="754" font-size="11" fill="#333">OutputPort — merges granted VC lanes onto one physical link</text>
+
+  <line x1="106" y1="774" x2="136" y2="774" stroke="#b8863b" stroke-width="3"/>
+  <text x="142" y="778" font-size="11" fill="#333">one example granted (wormhole-locked) path</text>
+
+  <text x="106" y="797" font-size="10.5" fill="#555">Candidate lines never target the source's own canonical port (no U-turns) — except Local, which may target Local (self-delivery).</text>
+</svg>
