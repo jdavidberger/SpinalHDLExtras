@@ -27,10 +27,14 @@ class GrantTableCrossbar[T <: Data](payloadType: HardType[T],
   }
 
   // RoutingMode.Register stages every source through a standard registered
-  // Stream pipe before the arbiter/router below ever see it, shortening the
-  // combinational path that feeds the grant register -- at the cost of an
-  // extra cycle of latency compared to Stall. Stall and Async both operate
-  // directly on io.sources.
+  // Stream pipe before router (below) ever sees it -- but the arbiter's own
+  // request/grant decision-making runs off the live io.sources (below),
+  // not this staged copy, so arbitration starts immediately rather than
+  // waiting an extra cycle for staging to finish first. The arbiter's own
+  // multi-cycle latency to actually decide a winner is unaffected either
+  // way; staging just means that decision no longer has to gate
+  // io.sources.ready while it's pending. Stall and Async both operate
+  // directly on io.sources for the data path too.
   val sources = routingMode match {
     case Register => Vec(io.sources.map(_.stage()))
     case Stall | Async => io.sources
@@ -40,7 +44,7 @@ class GrantTableCrossbar[T <: Data](payloadType: HardType[T],
   io.activity := arbiter.io.activity
 
   for (c <- 0 until candidateCount) {
-    arbiter.io.request(c) := sources(c).valid
+    arbiter.io.request(c) := io.sources(c).valid
   }
   for (v <- 0 until channelCount) {
     arbiter.io.release(v) := io.dests(v).lastFire
@@ -82,7 +86,7 @@ class GrantTableCrossbar[T <: Data](payloadType: HardType[T],
     for (i <- 0 until candidateCount; s <- 0 until channelCount) {
       when(arbiter.candidateSelector.io.chosen.valid &&
         arbiter.candidateSelector.io.chosen.payload === U(i, arbiter.candidateBits bits)) {
-        addFormalProperty(sources(i).valid,
+        addFormalProperty(io.sources(i).valid,
           s"a candidate held by a GrantTable's candidateSelector must still be valid on its backing stream")
       }
     }

@@ -46,8 +46,8 @@ class GrantTableArbiter(roundRobinArbitration: Boolean,
     // so freshGrant must not be latched into `grant`, or a lane already
     // fully vacated this cycle would stay wrongly held for whatever
     // candidate happens to use it next, skipping a real arbitration round.
-    val freshGrant = (routingMode == Async) generate out(new GrantTable(allowed))
-    val retiredBypass = (routingMode == Async) generate in Vec(Bool(), channelCount)
+    val freshGrant = (routingMode == Async).generate(out(new GrantTable(allowed)))
+    val retiredBypass = (routingMode == Async).generate(in(Vec(Bool(), channelCount)))
 
     val activity = out(Bool())
   }
@@ -123,14 +123,13 @@ class GrantTableArbiter(roundRobinArbitration: Boolean,
     for (v <- 0 until channelCount; c <- 0 until candidateCount) {
       when(laneSelector.io.chosen.payload === U(v, channelBits bits) &&
         candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
-        if (routingMode == Async) {
-          // Started and fully finished this same cycle via the crossbar's
-          // combinational fast path -- nothing left to hold, and latching
-          // it anyway would leave lane v wrongly occupied next cycle.
-          when(!io.retiredBypass(v)) {
-            grant.claim(v, c)
-          }
-        } else {
+        // Started and fully finished this same cycle via the crossbar's
+        // combinational fast path -- nothing left to hold, and latching it
+        // anyway would leave lane v wrongly occupied next cycle. Always
+        // False outside Async, so this always claims unconditionally
+        // there, same as before.
+        val retiring = if (routingMode == Async) io.retiredBypass(v) else False
+        when(!retiring) {
           grant.claim(v, c)
         }
       }

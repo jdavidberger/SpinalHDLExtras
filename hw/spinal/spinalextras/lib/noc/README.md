@@ -564,10 +564,26 @@ need to know about):
   cycle when it's set. Neither case bypasses `candidateSelector`/
   `laneSelector`'s own two-cycle latency to *decide* a winner in the first
   place (bubble 2 above) — only the final registered commit (bubble 3).
-- **`Register`**: keeps the same latency as `Stall` in both components, but
-  stages the input stream(s) through a standard registered Stream pipe
-  (`.stage()`) before the decision logic ever sees them, shortening the
-  combinational path that feeds the decision register.
+- **`Register`**: decides the route/grant off the *live* (pre-stage) input,
+  exactly like `Stall` does, but never gates the input stream on that
+  decision. In `FlitRouter`, `outputNode` is still written the same way
+  (held across a multi-beat packet, cleared on the last flit), but instead
+  of `continueWhen(outputNode.has_value)` blocking admission until it's
+  set, every flit is tagged with its already-resolved destination
+  (`DestTaggedFlit`) and handed to a single `input.stage()` — the decision
+  and the flit's data ride through that one register together, so a flit
+  pays exactly one cycle of latency (same as `Stall`) but the input is
+  never stalled waiting for the decision the way `Stall` stalls it. In
+  `GrantTableCrossbar`, `sources` are staged for the actual data path, but
+  `GrantTableArbiter`'s `request` is still driven from the live
+  `io.sources.valid` — arbitration starts immediately, in parallel with
+  staging, rather than waiting for staging to finish first; the arbiter's
+  own multi-cycle latency to decide a winner is unchanged either way, this
+  only stops that pending decision from gating `io.sources.ready`. A naive
+  version of this mode that simply staged the input first and *then* ran
+  the unchanged decision logic on the staged copy would stack the stage's
+  latency on top of the decision's own latency instead of overlapping them
+  — worth calling out since it's the easy way to get this mode wrong.
 
 None of the three modes ever change the decision itself, VC assignment, or
 arbitration outcome — only *when*/*how* an already-determined decision takes

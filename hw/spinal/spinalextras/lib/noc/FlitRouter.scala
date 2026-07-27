@@ -5,15 +5,27 @@ import spinal.core._
 import spinal.lib._
 import spinalextras.lib.logging._
 import spinalextras.lib.misc.Optional
+import spinalextras.lib.misc.StreamTools.CreateFragment
 import spinalextras.lib.misc.arbitration.{Async, Register, Stall}
 import spinalextras.lib.noc.topology.{Mesh, Ring}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 import scala.language.postfixOps
 
+// A flit tagged with its already-resolved destination port. RoutingMode.
+// Register uses this to carry the route decision through the exact same
+// register that stages the flit's data (input.stage()), rather than giving
+// the decision a second, separate register that would stack its own extra
+// cycle of latency on top of the stage.
+case class DestTaggedFlit(dataWidth: Int, destBits: Int) extends Bundle {
+  val datum = Bits(dataWidth bits)
+  val dest = UInt(destBits bits)
+}
+
 class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical_port) extends Component {
   val outputNodeIndices = cfg.topology.nodePortIndicesForCanonicalPorts(address, inputPort)
   val connectivityOut = outputNodeIndices.size
+  val destBits = log2Up(connectivityOut)
 
   val io = new Bundle {
     val input = slave(Stream(Fragment(Bits(cfg.dataWidth bits))))
@@ -26,34 +38,62 @@ class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical
   // Already expressed in the connectivityOut-sized, inputPort-excluded
   // numbering -- resolveDestPort guarantees this never points back through
   // inputPort, so no self-redirect or compaction is needed here.
-  val outputNode = RegInit(Optional.Empty(UInt(log2Up(connectivityOut) bits)))
-
-  // RoutingMode.Register stages the input through a standard registered
-  // Stream pipe before any of the route-decision logic below ever sees it,
-  // shortening the combinational path that feeds outputNode -- at the cost
-  // of an extra cycle of latency compared to Stall (outputNode still takes
-  // its own cycle on top of the stage). Stall and Async both operate
-  // directly on io.input.
-  val input = cfg.routingMode match {
-    case Register => io.input.stage()
-    case Stall | Async => io.input
-  }
+  val outputNode = RegInit(Optional.Empty(UInt(destBits bits)))
+  val input = io.input
 
   io.activity := False
 
-  if (cfg.routingMode == Async) {
-    val hdr = Header(cfg)
-    hdr.assignFromBits(input.payload.fragment)
-    val computedDest = cfg.topology.resolveDestPort(hdr.dest, address, inputPort)
+  val hdr = Header(cfg)
+  hdr.assignFromBits(input.payload.fragment)
+  // A pure, immediately-available function of the header already sitting
+  // on input this cycle -- computed unconditionally since every
+  // RoutingMode below needs it. outputNode holds the same value across the
+  // rest of a multi-beat packet, so a header only actually needs decoding
+  // on the packet's first flit; or_else picks whichever is live.
+  val computedDest = cfg.topology.resolveDestPort(hdr.dest, address, inputPort)
+  val dest = outputNode.or_else(computedDest)
 
-    // On the first flit of a new packet (outputNode not yet holding a
-    // value), admit it combinationally this same cycle using computedDest,
-    // instead of forcing it to wait for outputNode to register that exact
-    // same value one cycle later. dest/admit fall back to exactly
-    // outputNode.value/outputNode.has_value -- today's behavior -- the
-    // moment a decision is actually latched.
-    val bypassing = !outputNode.has_value && input.valid
-    val dest = outputNode.or_else(computedDest)
+  if (cfg.routingMode == Register) {
+    // Decide (and hold, across a multi-beat packet) the route exactly like
+    // Stall does -- outputNode/computedDest/dest above are identical -- but
+    // never gate `input` on it. Instead tag each flit with its already-
+    // resolved `dest` and let a single input.stage() register carry
+    // (payload, dest) through together. That's the only registered delay a
+    // flit pays here -- no second, separate register for the decision
+    // stacking an extra cycle on top of the stage -- and admission is never
+    // stalled waiting on outputNode, since its write below is bookkeeping
+    // that happens alongside the flit's own flow, not a gate on it.
+    when(outputNode.has_value) {
+      when(input.lastFire) {
+        outputNode.clear()
+      }
+    } elsewhen (input.valid) {
+      outputNode.set_value(computedDest)
+      io.activity := True
+    }
+
+    when(input.valid) {
+      if (dest.maxValue >= connectivityOut) {
+        assert(dest < connectivityOut)
+      }
+    }
+
+    val tagged = DestTaggedFlit(cfg.dataWidth, destBits)
+    tagged.datum := input.payload.fragment
+    tagged.dest := dest
+    val staged = input.translateWith(CreateFragment(tagged, input.payload.last)).stage()
+
+    val demuxed = StreamDemux(staged, staged.payload.fragment.dest, connectivityOut)
+    for ((out, dm) <- io.output.zip(demuxed)) {
+      out <> dm.translateWith(CreateFragment(dm.payload.fragment.datum, dm.payload.last))
+    }
+  } else {
+    // Stall and Async share this same admission logic -- the only
+    // difference is `bypassing`, which Async computes from outputNode/input
+    // and Stall pins to False. With bypassing always False, `admit`
+    // reduces to exactly `outputNode.has_value` and the outputNode write
+    // below is unconditional, i.e. exactly Stall's original behavior.
+    val bypassing = if (cfg.routingMode == Async) !outputNode.has_value && input.valid else False
     val admit = outputNode.has_value || bypassing
 
     when(outputNode.has_value) {
@@ -65,7 +105,8 @@ class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical
       // A single-beat packet fully admitted this same cycle via the bypass
       // never needs outputNode to hold anything -- latching it here would
       // wrongly stall the very next packet at this port behind a stale,
-      // already-finished decision.
+      // already-finished decision. bypassing is always False for Stall, so
+      // this always latches unconditionally there, same as before.
       when(!(bypassing && input.lastFire)) {
         outputNode.set_value(computedDest)
       }
@@ -78,32 +119,6 @@ class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical
     }
 
     StreamDemux(input.continueWhen(admit), dest, connectivityOut) <> io.output
-  } else {
-    // Stall and Register share this same register-gated route decision --
-    // Register's only difference is that `input` above is already staged,
-    // not raw io.input, so it doesn't need (and doesn't get) any special
-    // casing here.
-    when(outputNode.has_value) {
-      when(input.lastFire) {
-        //report(Seq("Finish Address: ", address, " ", cfg.topology.addressName(address), " vcid ", idx))
-        outputNode.clear()
-      }
-    } elsewhen (input.valid) {
-      val hdr = Header(cfg)
-      hdr.assignFromBits(input.payload.fragment)
-
-      outputNode.set_value(cfg.topology.resolveDestPort(hdr.dest, address, inputPort))
-      io.activity := True
-      //report(Seq("Start Address: ", address, " ", cfg.topology.addressName(address), " dst ", hdr.dest, " app ", hdr.application, " vcid ", idx, " output ", outputNode))
-    }
-
-    when(outputNode.has_value) {
-      if (outputNode.value.maxValue >= connectivityOut) {
-        assert(outputNode.value < connectivityOut)
-      }
-    }
-
-    StreamDemux(input.continueWhen(outputNode.has_value), outputNode.value, connectivityOut) <> io.output
   }
 }
 
