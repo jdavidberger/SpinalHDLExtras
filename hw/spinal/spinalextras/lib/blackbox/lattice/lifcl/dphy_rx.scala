@@ -352,7 +352,7 @@ class dphy_rx(cfg : MIPIConfig,
   }
 
   def MIPIPacketHeader = {
-    val bytes = new Flow(new MIPIPacketHeader(cfg))
+    val bytes = new Flow(new MIPIPacketHeader())
     bytes.virtual_channel_ext := io.packet_parser.vcx_o
     bytes.ecc := io.packet_parser.ecc_o
     bytes.checksum := io.packet_parser.payload_crc_o

@@ -33,7 +33,7 @@ case class byte2pixel(cfg : MIPIConfig,
     pixel_cd = ClockDomain.current
   }
   val io = new Bundle {
-    val mipi_header = slave Flow(MIPIPacketHeader(cfg))
+    val mipi_header = slave Flow(MIPIPacketHeader())
     val payload = slave Flow(Bits(cfg.GEARED_LANES bits))
 
     val pixelFlow = master(PixelFlow(cfg.DT_WIDTH))
