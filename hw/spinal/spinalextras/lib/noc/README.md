@@ -14,7 +14,6 @@ are verbatim from the source.
 
 ## Contents
 
-- [Top-level component](#top-level-component)
 - [Configuration](#configuration)
 - [Addressing &amp; topologies](#addressing--topologies)
 - [Flit and packet format](#flit-and-packet-format)
@@ -29,15 +28,6 @@ are verbatim from the source.
 - [Test harnesses](#test-harnesses)
 
 ---
-
-## Top-level component
-
-`NoC(cfg: NocConfig)` exposes one flit-level `Stream` port pair per node and
-builds the entire interconnect internally via `cfg.topology.createNodes(this)`.
-Port 0 of every node ("LOCAL") is always the one wired to the NoC's external
-boundary; every other port connects to a neighbor per the topology's routing
-tables. `sealUnusedPorts()` idles any external port nothing ever claimed
-(`io.inputs` set idle, `io.outputs` set free-running).
 
 ```mermaid
 flowchart LR
@@ -62,28 +52,6 @@ flowchart LR
     R2 <--> R3
   end
 ```
-
-Three construction paths sit on top of `NoC`:
-
-- **`NoC.apply(processors: Seq[NocProcessor], cfg)`** — resizes
-  `cfg.topology` to `processors.size` and connects each `NocProcessor` to one
-  node's `io.inputs(idx)` / `io.outputs(idx)`. Lowest-level path; the caller
-  supplies raw `Stream[Fragment[Bits]]` pairs directly.
-- **`configureInputNode` / `configureOutputNode`** — instance methods on a
-  built `NoC`, for packetizing a single raw `Stream(Fragment(Bits))` into
-  flits (and back) by hand. `configureOutputNode` is a plain connect.
-  `configureInputNode(node, input, busIf)` allocates one CSR (`<streamName>
-  exit_node`, a `destination: UInt(16 bits)` field only — the VC lane is no
-  longer software-settable) and packs a `Header` whose `application` bits are
-  left as all-ones filler, since this raw path carries no return-address
-  subheader; `configureInputNode(node, input, destination: UInt)` is the same
-  without the CSR, for a destination driven directly by other logic.
-- **`NoCBuilder` + `ProtocolSpecification`** — the builder pattern for
-  assembling a higher-level fabric (multiple named sources/sinks, or whole
-  PMB/AXI4 crossbars) out of one or more protocol adapters sharing node
-  addressing; see [Protocol adapters](#protocol-adapters) and
-  [Building a NoC](#building-a-noc). This supersedes the old `NoCDesign`
-  builder.
 
 ## Configuration
 

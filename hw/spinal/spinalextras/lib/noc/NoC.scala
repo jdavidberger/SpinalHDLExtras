@@ -23,64 +23,8 @@ class NoC(val cfg: NocConfig) extends ComponentWithFormalProperties {
     io.outputs.filter(_.ready.dlcIsEmpty).foreach(_.freeRun())
   }
 
-  def configureOutputNode(node : Int, output: Stream[Fragment[Bits]]) = {
-    output <> io.outputs(node)
-  }
-
-  def configureInputNode(node : Int, input : Stream[Fragment[Bits]], busIf : BusIf) {
-    val reg = busIf.newReg(f"${input.name} exit_node")
-    val destination = reg.field(UInt(16 bits), RW) init(0)
-    configureInputNode(node, input, destination)
-  }
-
-  def configureInputNode(node : Int, input: Stream[Fragment[Bits]], destination : UInt): Unit = {
-    val header = Header(cfg)
-    header.dest := destination.resized
-    header.application.setAll()
-
-    input.insertHeader(header.asBits.resized).map(x => {
-      val flit = Fragment(cfg.datatype)
-      flit.fragment := x.fragment
-      flit.last := x.last
-      flit
-    }) <> io.inputs(node)
-  }
-
   val nodes = cfg.topology.createNodes(this)
 }
-
-trait NocProcessor {
-  def connect(input: Stream[Fragment[Bits]], output: Stream[Fragment[Bits]])
-}
-
-case class TupleProcessor(input : Stream[Fragment[Bits]], output : Stream[Fragment[Bits]]) extends NocProcessor {
-  override def connect(input: Stream[Fragment[Bits]], output: Stream[Fragment[Bits]]): Unit = {
-    if(this.input != null) {
-      this.input <> input
-    } else {
-      input.setBlocked()
-    }
-
-    if(this.output != null) {
-      this.output <> output
-    } else {
-      output.setBlocked()
-    }
-  }
-}
-
-object NoC {
-  def apply(processors: Seq[NocProcessor], cfg: NocConfig): NoC = {
-    val _cfg = cfg.copy(topology = cfg.topology.sizeFor(processors.size))
-    val noc = new NoC(_cfg)
-    processors.zipWithIndex.foreach { case (p, idx) =>
-      p.connect(noc.io.inputs(idx), noc.io.outputs(idx))
-    }
-
-    noc
-  }
-}
-
 
 class NocFormalTester extends AnyFunSuite with FormalTestSuite {
 
