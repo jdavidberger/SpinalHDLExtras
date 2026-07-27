@@ -6,7 +6,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinalextras.lib.noc._
 import spinalextras.lib.noc.protocols.DataStreamSpecification
-import spinalextras.lib.noc.topology.Torus
+import spinalextras.lib.noc.topology.{Mesh, Ring, Torus}
 
 import scala.collection.mutable
 import scala.language.postfixOps
@@ -222,5 +222,29 @@ class NocPathingSpec extends AnyFunSuite {
   test("pathing is correct (sampled) on a larger mesh: Torus(6x6)") {
     val cfg = NocConfig(topology = new Torus((6, 6)))
     NocPathingTester.test(cfg, packets = NocPathingTester.randomPairs(cfg, count = 200))
+  }
+}
+
+/**
+ * NocConfig.pipelineBypass regression: FlitRouter's same-cycle admission
+ * fast path only changes *when* an already-determined route decision takes
+ * effect, never what it decides -- so end-to-end pathing (every source to
+ * every destination, payload intact) should be identical to the
+ * pipelineBypass=false case covered by `NocPathingSpec` above. One acyclic
+ * topology (Mesh) and one with a physical wraparound (Ring/Torus) is enough
+ * to exercise both single-flit and multi-hop routes through the bypass.
+ */
+class NocPipelineBypassPathingSpec extends AnyFunSuite {
+
+  def topologies: Seq[(String, NocConfig)] = Seq(
+    "Mesh_3x3_vc2" -> NocConfig(topology = new Mesh((3, 3)), virtualChannels = 2),
+    "Ring_6_vc2" -> NocConfig(topology = new Ring(6), virtualChannels = 2),
+    "Torus_3x2_vc2" -> NocConfig(topology = new Torus((3, 2)), virtualChannels = 2),
+  ).map { case (name, cfg) => name -> cfg.copy(pipelineBypass = true) }
+
+  for ((name, cfg) <- topologies) {
+    test(s"pathing is correct with pipelineBypass=true: $name") {
+      NocPathingTester.test(cfg)
+    }
   }
 }

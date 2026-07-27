@@ -91,8 +91,14 @@ class NocRouterFormalTester extends AnyFunSuite with FormalTestSuite {
   })
 
   override def generateRtl() = {
-    for((name, cfg) <- NocConfig.testConfigurations()) yield
-      (name, () => GeneralFormalDut(() => new RouterNode(cfg, 0)))
+    // pipelineBypass restructures FlitRouter's admission logic (see
+    // FlitRouter.scala), so it needs its own formal coverage alongside the
+    // existing (default-off) sweep rather than trusting the two branches
+    // are equivalent by inspection alone.
+    for((name, cfg) <- NocConfig.testConfigurations();
+        pipelineBypass <- Seq(false, true)) yield
+      (s"${name}_pipelineBypass${pipelineBypass}",
+        () => GeneralFormalDut(() => new RouterNode(cfg.copy(pipelineBypass = pipelineBypass), 0)))
   }
 }
 

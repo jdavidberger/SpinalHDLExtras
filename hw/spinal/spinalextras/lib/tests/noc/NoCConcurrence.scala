@@ -313,6 +313,37 @@ class RingOneWayRegressionSpec extends AnyFunSuite {
   }
 }
 
+/**
+ * NocConfig.pipelineBypass regression: confirms the same-cycle admission
+ * fast path in FlitRouter doesn't introduce deadlock/starvation under the
+ * same concurrent-flood conditions `NocConcurrencySpec` already uses to
+ * cover VC-isolation/deadlock-freedom for the non-bypass path. The bypass
+ * only touches when a route decision (not a VC grant) takes effect, so it
+ * shouldn't interact with the VC-class deadlock-avoidance machinery at
+ * all -- this exists to confirm that empirically, on both an acyclic and a
+ * cyclic (wraparound) topology, rather than just by inspection.
+ */
+class NocPipelineBypassConcurrencySpec extends AnyFunSuite {
+
+  def topologies: Seq[(String, NocConfig)] = Seq(
+    "Mesh_3x3_vc2_vcmDynamic" -> NocConfig(
+      topology = new spinalextras.lib.noc.topology.Mesh((3, 3)), virtualChannels = 2, virtualChannelMode = Dynamic),
+    "Ring_6_vc2_vcmStatic" -> NocConfig(
+      topology = new spinalextras.lib.noc.topology.Ring(6), virtualChannels = 2),
+    "Torus_3x2_vc2_vcmDynamic" -> NocConfig(
+      topology = new spinalextras.lib.noc.topology.Torus((3, 2)), virtualChannels = 2, virtualChannelMode = Dynamic),
+  ).map { case (name, cfg) => name -> cfg.copy(pipelineBypass = true) }
+
+  for ((name, cfg) <- topologies) {
+    test(s"multiple streams run through the NoC concurrently with pipelineBypass=true: $name") {
+      val packetsPerSrc = 4 * cfg.virtualChannels * cfg.vcDepth
+      val timeoutCycles = 40000 * cfg.virtualChannels * cfg.vcDepth
+      NocConcurrentTester.test(cfg, NocConcurrentTester.floodPackets(cfg, packetsPerSrc = packetsPerSrc),
+        timeoutCycles = timeoutCycles)
+    }
+  }
+}
+
 class NocVCIDSpec extends AnyFunSuite {
   def topologies: Seq[(String, NocConfig)] = NocConfig.testConfigurations()
 

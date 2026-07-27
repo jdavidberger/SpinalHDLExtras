@@ -23,6 +23,22 @@ case class NocConfig(
                       vcDepth            : Int = 2,
                       virtualChannelMode : VirtualChannelMode = Static,
                       virtualChannelArbitrationPolicy : VirtualChannelArbitrationPolicy = RoundRobin,
+                      // FlitRouter's route decision is a register (outputNode)
+                      // that only latches the destination port one cycle after
+                      // a new packet's header is actually available -- so
+                      // every packet pays an unconditional 1-cycle bubble at
+                      // every hop before its first flit can move, even though
+                      // the destination is a pure, immediately-computable
+                      // function of the header already sitting on the input
+                      // this same cycle. Setting this to true lets that first
+                      // flit admit combinationally in the same cycle instead
+                      // of waiting for the register, at the cost of a longer
+                      // combinational path through the router. Off by default
+                      // to preserve today's timing characteristics exactly;
+                      // does not change routing decisions, VC allocation, or
+                      // any deadlock-avoidance behavior -- only when an
+                      // already-determined decision is allowed to take effect.
+                      pipelineBypass     : Boolean = false,
                     ) {
   def headerApplicationBits = dataWidth - topology.addressSize
   def virtualChannelBits = log2Up(virtualChannels)

@@ -21,6 +21,7 @@ are verbatim from the source.
 - [Virtual-channel allocation](#virtual-channel-allocation)
 - [Deadlock avoidance: escape-VC datelines](#deadlock-avoidance-escape-vc-datelines)
 - [Wormhole routing across hops](#wormhole-routing-across-hops)
+- [Forced-stall points](#forced-stall-points)
 - [Protocol adapters](#protocol-adapters)
 - [Component relationships](#component-relationships)
 - [Building a NoC](#building-a-noc)
@@ -44,6 +45,7 @@ All behavior is parameterized by a single `NocConfig`:
 | `vcDepth` | 2 | Depth (in flits) of each per-VC input FIFO |
 | `virtualChannelMode` | `Static` | `Static` (dest VC = source VC, subject to the dateline exception below) or `Dynamic` (VC reassigned to any free lane, same exception) |
 | `virtualChannelArbitrationPolicy` | `RoundRobin` | `RoundRobin` or `LowestFirst` — candidate-selection policy inside `GrantTableArbiter` |
+| `pipelineBypass` | `false` | Let a new packet's first flit admit through `FlitRouter` the same cycle its header arrives, instead of paying the usual unconditional 1-cycle route-decision bubble at that hop. Same routing/VC/deadlock-avoidance behavior either way — only *when* the already-determined decision takes effect changes. See [Forced-stall points](#forced-stall-points) |
 
 Derived: `headerApplicationBits = dataWidth − topology.addressSize`,
 `virtualChannelBits = log2Up(virtualChannels)`, `datatype = Bits(dataWidth
@@ -504,6 +506,58 @@ Because each VC lane is buffered and arbitrated independently, one packet
 stalled on a shared physical link does not head-of-line-block a different
 packet occupying another VC — checked directly by the `manyToOne` /
 `floodPackets` scenarios in `lib/tests/noc/NoCConcurrence.scala`.
+
+## Forced-stall points
+
+Independent of congestion, admitting a new packet at a hop goes through a
+chain of "latch, then present" registers, each of which unconditionally
+costs a cycle even when the outcome is already fully determined the moment
+the packet arrives:
+
+1. **`FlitRouter`'s route decision** (`outputNode`) — the destination port
+   is a pure function of the header already sitting on `input` this cycle,
+   but `outputNode` only exposes it (`outputNode.has_value`) one cycle after
+   being set, so a new packet's first flit always pays an unconditional
+   1-cycle bubble at every hop before it can move.
+2. **`GrantTableArbiter`'s `candidateSelector`/`laneSelector`** (two chained
+   `ChannelSelector`s, see [Virtual-channel allocation](#virtual-channel-allocation))
+   — each only presents a winner (`io.chosen.valid`) one cycle after it was
+   picked, and the picks are sequential (lane selection only starts once
+   candidate selection's winner is already presented), so a fresh VC grant
+   costs at least two more such cycles even with a single, uncontended
+   requester and a completely free lane.
+3. On top of that, the crossbar's actual data-path switch
+   (`GrantTableStreamRouter`, driven by `grant = io.grant.asReg()`) only
+   steers `io.sources(c) <> io.dests(v)` once `grant` itself has been
+   *registered* — one more cycle after `candidateSelector`/`laneSelector`
+   agree, since the commit in `GrantTableArbiter` happens through `grant`,
+   not through the selectors' own combinational outputs.
+
+`pipelineBypass` (see [Configuration](#configuration)) removes bubble 1: when
+`outputNode` isn't already holding a decision, `FlitRouter` admits the flit
+combinationally using the freshly computed destination instead of waiting
+for `outputNode` to register it, falling back to exactly today's registered
+path from the second flit of a multi-beat packet onward (and immediately,
+with nothing latched, for a single-beat packet fully admitted via the
+bypass same-cycle). It only ever changes *when* an already-determined
+decision takes effect — never the decision itself, VC assignment, or
+arbitration — so it's covered by dedicated formal (`FlitRouterFormalTester`,
+proving both branches of the bypass on an acyclic and a cyclic topology) and
+simulation (`NocPipelineBypassPathingSpec`, `NocPipelineBypassConcurrencySpec`)
+regressions, on top of `NocRouterFormalTester`'s existing sweep gaining a
+`pipelineBypass` axis.
+
+Bubbles 2 and 3 are deliberately *not* bypassed here: unlike the route
+decision, they sit directly on the VC-class/dateline deadlock-avoidance
+state (`GrantTable`'s mutual-exclusion invariants — see
+[Deadlock avoidance](#deadlock-avoidance-escape-vc-datelines)) that this NoC
+has a history of subtle, only-caught-by-simulation bugs around. Collapsing
+them safely would mean teaching `GrantTableStreamRouter` to route on a
+same-cycle "about to be granted" signal in addition to the registered
+`grant` matrix, without ever letting that combinational fast path violate
+`GrantTable`'s exclusivity properties — a materially larger, allocator-level
+change than this one, left for separate, dedicated work rather than folded
+in under the same flag speculatively.
 
 ## Protocol adapters
 
