@@ -1,35 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 1308" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 1326" font-family="Segoe UI, Helvetica, Arial, sans-serif">
 <defs>
 <marker id="arrowGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
-<marker id="arrowC0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a7f87"/></marker>
-<marker id="arrowB0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a7f87"/></marker>
-<marker id="arrowC1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4b6fa8"/></marker>
-<marker id="arrowB1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4b6fa8"/></marker>
-<marker id="arrowC2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a8a55"/></marker>
-<marker id="arrowB2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a8a55"/></marker>
-<marker id="arrowC3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a5673f"/></marker>
-<marker id="arrowB3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a5673f"/></marker>
-<marker id="arrowC4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6a4c93"/></marker>
-<marker id="arrowB4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6a4c93"/></marker>
+<marker id="arrowC0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e63946"/></marker>
+<marker id="arrowB0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e63946"/></marker>
+<marker id="arrowC1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f6feb"/></marker>
+<marker id="arrowB1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f6feb"/></marker>
+<marker id="arrowC2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1ea672"/></marker>
+<marker id="arrowB2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1ea672"/></marker>
+<marker id="arrowC3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f2790a"/></marker>
+<marker id="arrowB3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f2790a"/></marker>
+<marker id="arrowC4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9d4edd"/></marker>
+<marker id="arrowB4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9d4edd"/></marker>
 </defs>
-<rect x="0" y="0" width="1220" height="1308" fill="#ffffff"/>
+<rect x="0" y="0" width="1220" height="1326" fill="#ffffff"/>
 <text x="610.0" y="26" text-anchor="middle" font-size="18" font-weight="600" fill="#1c2b40">RouterNode internals — Mesh interior node</text>
 <text x="610.0" y="46" text-anchor="middle" font-size="12.5" fill="#555">Illustrative 5-port node (connectivityIn = connectivityOut = 5) — canonical ports Local · West · East · North · South;</text>
 <text x="610.0" y="62" text-anchor="middle" font-size="12.5" fill="#555">a corner/edge Mesh node simply omits the ports it doesn't have. virtualChannels = 2. See the companion 3-port (Ring) diagram for the same structure at smaller scale.</text>
-<text x="610.0" y="80" text-anchor="middle" font-size="11" font-style="italic" fill="#8a5a1a">bold colored paths = 5 example concurrently-granted wormhole-locked routes: West·vc0→Local, Local·vc0→East, East·vc1→South, South·vc0→North, North·vc1→West</text>
+<text x="610.0" y="80" text-anchor="middle" font-size="11" font-style="italic" fill="#8a5a1a">bold colored paths = 6 example concurrently-granted wormhole-locked routes: West·vc0→Local, West·vc1→East, Local·vc0→East, East·vc1→South, South·vc0→North, North·vc1→West</text>
 <rect x="90" y="112" width="1025" height="1020" rx="18" fill="none" stroke="#9aa0a8" stroke-width="1.5" stroke-dasharray="7,5"/>
 <text x="106" y="134" font-size="13" font-weight="600" fill="#555">RouterNode(cfg, address)</text>
 <!-- ===== PORT Local (row center=198) ===== -->
-<text x="8" y="188" font-size="12" font-weight="600" fill="#7a7f87">Local</text>
-<line x1="0" y1="198" x2="192" y2="198" stroke="#7a7f87" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="8" y="188" font-size="12" font-weight="600" fill="#e63946">Local</text>
+<line x1="0" y1="198" x2="192" y2="198" stroke="#e63946" stroke-width="3" marker-end="url(#arrowGray)"/>
 <text x="112" y="148" font-size="11" font-style="italic" fill="#777">InputPort</text>
 <rect x="106" y="154" width="194" height="88" rx="10" fill="none" stroke="#9aa0a8" stroke-width="1.2" stroke-dasharray="4,3"/>
 <text x="196" y="176" font-size="10" font-weight="600" fill="#555">vc0 (only lane)</text>
-<rect x="196" y="180" width="88" height="50" rx="8" fill="#eef6ee" stroke="#7a7f87" stroke-width="2.4"/>
+<rect x="196" y="180" width="88" height="50" rx="8" fill="#eef6ee" stroke="#e63946" stroke-width="2.4"/>
 <text x="240" y="201" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
 <text x="240" y="215" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
-<line x1="284" y1="205" x2="303" y2="205" stroke="#7a7f87" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="305" y="180" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#7a7f87" stroke-width="2.4"/>
+<line x1="284" y1="205" x2="303" y2="205" stroke="#e63946" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="305" y="180" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#e63946" stroke-width="2.4"/>
 <text x="350" y="198" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
 <text x="350" y="210" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
 <text x="350" y="221" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
@@ -39,13 +39,13 @@
 <text x="775" y="197" text-anchor="middle" font-size="10" font-style="italic" fill="#2f1834">GrantTableCrossbar</text>
 <text x="775" y="215" text-anchor="middle" font-size="9.5" fill="#6a4570">9 candidates — every port's every</text>
 <text x="775" y="228" text-anchor="middle" font-size="9.5" fill="#6a4570">VC (Local included)</text>
-<line x1="870" y1="190" x2="898" y2="190" stroke="#4b6fa8" stroke-width="2.6" marker-end="url(#arrowGray)"/>
+<line x1="870" y1="190" x2="898" y2="190" stroke="#1f6feb" stroke-width="2.6" marker-end="url(#arrowGray)"/>
 <line x1="870" y1="206" x2="898" y2="206" stroke="#8a4a97" stroke-width="1.4" marker-end="url(#arrowGray)"/>
 <rect x="900" y="168" width="140" height="60" rx="10" fill="#fdf3e3" stroke="#b8863b" stroke-width="1.3"/>
 <text x="970" y="194" text-anchor="middle" font-size="12" font-weight="600" fill="#3a2c10">OutputPort</text>
 <text x="970" y="211" text-anchor="middle" font-size="9.5" fill="#3a2c10">StreamArbiter</text>
-<line x1="1042" y1="198" x2="1206" y2="198" stroke="#4b6fa8" stroke-width="3" marker-end="url(#arrowGray)"/>
-<text x="1206" y="158" text-anchor="end" font-size="12" font-weight="600" fill="#4b6fa8">Local</text>
+<line x1="1042" y1="198" x2="1206" y2="198" stroke="#1f6feb" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="1206" y="158" text-anchor="end" font-size="12" font-weight="600" fill="#1f6feb">Local</text>
 <rect x="900" y="252" width="260" height="58" rx="8" fill="none" stroke="#b8863b" stroke-width="1" stroke-dasharray="3,3"/>
 <line x1="970" y1="228" x2="970" y2="252" stroke="#b8863b" stroke-width="1" stroke-dasharray="3,3"/>
 <text x="910" y="268" font-size="9" fill="#7a5a20">Local port only: Topology.createNodes wraps</text>
@@ -53,30 +53,30 @@
 <text x="910" y="292" font-size="9" fill="#7a5a20">lowerFirst.fragmentLock merge, stripping the</text>
 <text x="910" y="304" font-size="9" fill="#7a5a20">vc tag — this step is outside RouterNode itself.</text>
 <!-- ===== PORT West (row center=465) ===== -->
-<text x="8" y="455" font-size="12" font-weight="600" fill="#4b6fa8">West</text>
-<line x1="0" y1="465" x2="114" y2="465" stroke="#4b6fa8" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="8" y="455" font-size="12" font-weight="600" fill="#1f6feb">West</text>
+<line x1="0" y1="465" x2="114" y2="465" stroke="#1f6feb" stroke-width="3" marker-end="url(#arrowGray)"/>
 <rect x="118" y="443" width="56" height="44" rx="7" fill="#eef2f8" stroke="#4a6a97" stroke-width="1.2"/>
 <text x="146" y="461" text-anchor="middle" font-size="8" font-weight="600" fill="#4a6a97">Stream</text>
 <text x="146" y="472" text-anchor="middle" font-size="8" font-weight="600" fill="#4a6a97">Demux</text>
 <text x="112" y="378" font-size="11" font-style="italic" fill="#777">InputPort</text>
 <rect x="106" y="384" width="194" height="162" rx="10" fill="none" stroke="#9aa0a8" stroke-width="1.2" stroke-dasharray="4,3"/>
 <text x="196" y="406" font-size="10" font-weight="600" fill="#555">vc0</text>
-<path d="M174,465 C 180,465 180,435 194,435" fill="none" stroke="#4b6fa8" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="196" y="410" width="88" height="50" rx="8" fill="#eef6ee" stroke="#4b6fa8" stroke-width="2.4"/>
+<path d="M174,465 C 180,465 180,435 194,435" fill="none" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="196" y="410" width="88" height="50" rx="8" fill="#eef6ee" stroke="#1f6feb" stroke-width="2.4"/>
 <text x="240" y="431" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
 <text x="240" y="445" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
-<line x1="284" y1="435" x2="303" y2="435" stroke="#4b6fa8" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="305" y="410" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#4b6fa8" stroke-width="2.4"/>
+<line x1="284" y1="435" x2="303" y2="435" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="305" y="410" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#1f6feb" stroke-width="2.4"/>
 <text x="350" y="428" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
 <text x="350" y="440" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
 <text x="350" y="451" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
 <text x="196" y="480" font-size="10" font-weight="600" fill="#555">vc1</text>
-<path d="M174,465 C 180,465 180,509 194,509" fill="none" stroke="#9aa0a8" stroke-width="1.1" marker-end="url(#arrowGray)"/>
-<rect x="196" y="484" width="88" height="50" rx="8" fill="#eef6ee" stroke="#4a8a55" stroke-width="1.3"/>
+<path d="M174,465 C 180,465 180,509 194,509" fill="none" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="196" y="484" width="88" height="50" rx="8" fill="#eef6ee" stroke="#1f6feb" stroke-width="2.4"/>
 <text x="240" y="505" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
 <text x="240" y="519" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
-<line x1="284" y1="509" x2="303" y2="509" stroke="#555" stroke-width="1.4" marker-end="url(#arrowGray)"/>
-<rect x="305" y="484" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#888" stroke-width="1.3"/>
+<line x1="284" y1="509" x2="303" y2="509" stroke="#1f6feb" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="305" y="484" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#1f6feb" stroke-width="2.4"/>
 <text x="350" y="502" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
 <text x="350" y="514" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
 <text x="350" y="525" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
@@ -86,16 +86,16 @@
 <text x="775" y="464" text-anchor="middle" font-size="10" font-style="italic" fill="#2f1834">GrantTableCrossbar</text>
 <text x="775" y="482" text-anchor="middle" font-size="9.5" fill="#6a4570">7 candidates — every port except</text>
 <text x="775" y="495" text-anchor="middle" font-size="9.5" fill="#6a4570">West's own vc0/vc1</text>
-<line x1="870" y1="457" x2="898" y2="457" stroke="#8a4a97" stroke-width="1.4" marker-end="url(#arrowGray)"/>
-<line x1="870" y1="473" x2="898" y2="473" stroke="#a5673f" stroke-width="2.6" marker-end="url(#arrowGray)"/>
+<line x1="870" y1="457" x2="898" y2="457" stroke="#f2790a" stroke-width="2.6" marker-end="url(#arrowGray)"/>
+<line x1="870" y1="473" x2="898" y2="473" stroke="#8a4a97" stroke-width="1.4" marker-end="url(#arrowGray)"/>
 <rect x="900" y="435" width="140" height="60" rx="10" fill="#fdf3e3" stroke="#b8863b" stroke-width="1.3"/>
 <text x="970" y="461" text-anchor="middle" font-size="12" font-weight="600" fill="#3a2c10">OutputPort</text>
 <text x="970" y="478" text-anchor="middle" font-size="9.5" fill="#3a2c10">StreamArbiter</text>
-<line x1="1042" y1="465" x2="1206" y2="465" stroke="#a5673f" stroke-width="3" marker-end="url(#arrowGray)"/>
-<text x="1206" y="425" text-anchor="end" font-size="12" font-weight="600" fill="#a5673f">West</text>
+<line x1="1042" y1="465" x2="1206" y2="465" stroke="#f2790a" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="1206" y="425" text-anchor="end" font-size="12" font-weight="600" fill="#f2790a">West</text>
 <!-- ===== PORT East (row center=657) ===== -->
-<text x="8" y="647" font-size="12" font-weight="600" fill="#4a8a55">East</text>
-<line x1="0" y1="657" x2="114" y2="657" stroke="#4a8a55" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="8" y="647" font-size="12" font-weight="600" fill="#1ea672">East</text>
+<line x1="0" y1="657" x2="114" y2="657" stroke="#1ea672" stroke-width="3" marker-end="url(#arrowGray)"/>
 <rect x="118" y="635" width="56" height="44" rx="7" fill="#eef2f8" stroke="#4a6a97" stroke-width="1.2"/>
 <text x="146" y="653" text-anchor="middle" font-size="8" font-weight="600" fill="#4a6a97">Stream</text>
 <text x="146" y="664" text-anchor="middle" font-size="8" font-weight="600" fill="#4a6a97">Demux</text>
@@ -112,12 +112,12 @@
 <text x="350" y="632" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
 <text x="350" y="643" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
 <text x="196" y="672" font-size="10" font-weight="600" fill="#555">vc1</text>
-<path d="M174,657 C 180,657 180,701 194,701" fill="none" stroke="#4a8a55" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="196" y="676" width="88" height="50" rx="8" fill="#eef6ee" stroke="#4a8a55" stroke-width="2.4"/>
+<path d="M174,657 C 180,657 180,701 194,701" fill="none" stroke="#1ea672" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="196" y="676" width="88" height="50" rx="8" fill="#eef6ee" stroke="#1ea672" stroke-width="2.4"/>
 <text x="240" y="697" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
 <text x="240" y="711" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
-<line x1="284" y1="701" x2="303" y2="701" stroke="#4a8a55" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="305" y="676" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#4a8a55" stroke-width="2.4"/>
+<line x1="284" y1="701" x2="303" y2="701" stroke="#1ea672" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="305" y="676" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#1ea672" stroke-width="2.4"/>
 <text x="350" y="694" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
 <text x="350" y="706" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
 <text x="350" y="717" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
@@ -127,16 +127,17 @@
 <text x="775" y="656" text-anchor="middle" font-size="10" font-style="italic" fill="#2f1834">GrantTableCrossbar</text>
 <text x="775" y="674" text-anchor="middle" font-size="9.5" fill="#6a4570">7 candidates — every port except</text>
 <text x="775" y="687" text-anchor="middle" font-size="9.5" fill="#6a4570">East's own vc0/vc1</text>
-<line x1="870" y1="649" x2="898" y2="649" stroke="#7a7f87" stroke-width="2.6" marker-end="url(#arrowGray)"/>
-<line x1="870" y1="665" x2="898" y2="665" stroke="#8a4a97" stroke-width="1.4" marker-end="url(#arrowGray)"/>
+<line x1="870" y1="649" x2="898" y2="649" stroke="#1f6feb" stroke-width="2.6" marker-end="url(#arrowGray)"/>
+<line x1="870" y1="665" x2="898" y2="665" stroke="#e63946" stroke-width="2.6" marker-end="url(#arrowGray)"/>
 <rect x="900" y="627" width="140" height="60" rx="10" fill="#fdf3e3" stroke="#b8863b" stroke-width="1.3"/>
 <text x="970" y="653" text-anchor="middle" font-size="12" font-weight="600" fill="#3a2c10">OutputPort</text>
 <text x="970" y="670" text-anchor="middle" font-size="9.5" fill="#3a2c10">StreamArbiter</text>
-<line x1="1042" y1="657" x2="1206" y2="657" stroke="#7a7f87" stroke-width="3" marker-end="url(#arrowGray)"/>
-<text x="1206" y="617" text-anchor="end" font-size="12" font-weight="600" fill="#7a7f87">East</text>
+<line x1="1042" y1="657" x2="1206" y2="657" stroke="#4b6fa8" stroke-width="2" marker-end="url(#arrowGray)"/>
+<text x="1206" y="617" text-anchor="end" font-size="12" font-weight="600" fill="#4b6fa8">East</text>
+<text x="1206" y="703" text-anchor="end" font-size="8.5" font-style="italic" fill="#6b6f76">2 concurrent grants time-multiplexed here</text>
 <!-- ===== PORT North (row center=849) ===== -->
-<text x="8" y="839" font-size="12" font-weight="600" fill="#a5673f">North</text>
-<line x1="0" y1="849" x2="114" y2="849" stroke="#a5673f" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="8" y="839" font-size="12" font-weight="600" fill="#f2790a">North</text>
+<line x1="0" y1="849" x2="114" y2="849" stroke="#f2790a" stroke-width="3" marker-end="url(#arrowGray)"/>
 <rect x="118" y="827" width="56" height="44" rx="7" fill="#eef2f8" stroke="#4a6a97" stroke-width="1.2"/>
 <text x="146" y="845" text-anchor="middle" font-size="8" font-weight="600" fill="#4a6a97">Stream</text>
 <text x="146" y="856" text-anchor="middle" font-size="8" font-weight="600" fill="#4a6a97">Demux</text>
@@ -153,12 +154,12 @@
 <text x="350" y="824" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
 <text x="350" y="835" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
 <text x="196" y="864" font-size="10" font-weight="600" fill="#555">vc1</text>
-<path d="M174,849 C 180,849 180,893 194,893" fill="none" stroke="#a5673f" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="196" y="868" width="88" height="50" rx="8" fill="#eef6ee" stroke="#a5673f" stroke-width="2.4"/>
+<path d="M174,849 C 180,849 180,893 194,893" fill="none" stroke="#f2790a" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="196" y="868" width="88" height="50" rx="8" fill="#eef6ee" stroke="#f2790a" stroke-width="2.4"/>
 <text x="240" y="889" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
 <text x="240" y="903" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
-<line x1="284" y1="893" x2="303" y2="893" stroke="#a5673f" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="305" y="868" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#a5673f" stroke-width="2.4"/>
+<line x1="284" y1="893" x2="303" y2="893" stroke="#f2790a" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="305" y="868" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#f2790a" stroke-width="2.4"/>
 <text x="350" y="886" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
 <text x="350" y="898" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
 <text x="350" y="909" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
@@ -168,28 +169,28 @@
 <text x="775" y="848" text-anchor="middle" font-size="10" font-style="italic" fill="#2f1834">GrantTableCrossbar</text>
 <text x="775" y="866" text-anchor="middle" font-size="9.5" fill="#6a4570">7 candidates — every port except</text>
 <text x="775" y="879" text-anchor="middle" font-size="9.5" fill="#6a4570">North's own vc0/vc1</text>
-<line x1="870" y1="841" x2="898" y2="841" stroke="#6a4c93" stroke-width="2.6" marker-end="url(#arrowGray)"/>
+<line x1="870" y1="841" x2="898" y2="841" stroke="#9d4edd" stroke-width="2.6" marker-end="url(#arrowGray)"/>
 <line x1="870" y1="857" x2="898" y2="857" stroke="#8a4a97" stroke-width="1.4" marker-end="url(#arrowGray)"/>
 <rect x="900" y="819" width="140" height="60" rx="10" fill="#fdf3e3" stroke="#b8863b" stroke-width="1.3"/>
 <text x="970" y="845" text-anchor="middle" font-size="12" font-weight="600" fill="#3a2c10">OutputPort</text>
 <text x="970" y="862" text-anchor="middle" font-size="9.5" fill="#3a2c10">StreamArbiter</text>
-<line x1="1042" y1="849" x2="1206" y2="849" stroke="#6a4c93" stroke-width="3" marker-end="url(#arrowGray)"/>
-<text x="1206" y="809" text-anchor="end" font-size="12" font-weight="600" fill="#6a4c93">North</text>
+<line x1="1042" y1="849" x2="1206" y2="849" stroke="#9d4edd" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="1206" y="809" text-anchor="end" font-size="12" font-weight="600" fill="#9d4edd">North</text>
 <!-- ===== PORT South (row center=1041) ===== -->
-<text x="8" y="1031" font-size="12" font-weight="600" fill="#6a4c93">South</text>
-<line x1="0" y1="1041" x2="114" y2="1041" stroke="#6a4c93" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="8" y="1031" font-size="12" font-weight="600" fill="#9d4edd">South</text>
+<line x1="0" y1="1041" x2="114" y2="1041" stroke="#9d4edd" stroke-width="3" marker-end="url(#arrowGray)"/>
 <rect x="118" y="1019" width="56" height="44" rx="7" fill="#eef2f8" stroke="#4a6a97" stroke-width="1.2"/>
 <text x="146" y="1037" text-anchor="middle" font-size="8" font-weight="600" fill="#4a6a97">Stream</text>
 <text x="146" y="1048" text-anchor="middle" font-size="8" font-weight="600" fill="#4a6a97">Demux</text>
 <text x="112" y="954" font-size="11" font-style="italic" fill="#777">InputPort</text>
 <rect x="106" y="960" width="194" height="162" rx="10" fill="none" stroke="#9aa0a8" stroke-width="1.2" stroke-dasharray="4,3"/>
 <text x="196" y="982" font-size="10" font-weight="600" fill="#555">vc0</text>
-<path d="M174,1041 C 180,1041 180,1011 194,1011" fill="none" stroke="#6a4c93" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="196" y="986" width="88" height="50" rx="8" fill="#eef6ee" stroke="#6a4c93" stroke-width="2.4"/>
+<path d="M174,1041 C 180,1041 180,1011 194,1011" fill="none" stroke="#9d4edd" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="196" y="986" width="88" height="50" rx="8" fill="#eef6ee" stroke="#9d4edd" stroke-width="2.4"/>
 <text x="240" y="1007" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1a3320">StreamFifo</text>
 <text x="240" y="1021" text-anchor="middle" font-size="8" fill="#1a3320">(depth=vcDepth)</text>
-<line x1="284" y1="1011" x2="303" y2="1011" stroke="#6a4c93" stroke-width="2.2" marker-end="url(#arrowGray)"/>
-<rect x="305" y="986" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#6a4c93" stroke-width="2.4"/>
+<line x1="284" y1="1011" x2="303" y2="1011" stroke="#9d4edd" stroke-width="2.2" marker-end="url(#arrowGray)"/>
+<rect x="305" y="986" width="90" height="50" rx="8" fill="#f2f2f2" stroke="#9d4edd" stroke-width="2.4"/>
 <text x="350" y="1004" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2a2a2a">FlitRouter</text>
 <text x="350" y="1016" text-anchor="middle" font-size="8" font-style="italic" fill="#2a2a2a">resolveDestPort</text>
 <text x="350" y="1027" text-anchor="middle" font-size="7" fill="#666">reg: held to last flit</text>
@@ -209,53 +210,53 @@
 <text x="775" y="1040" text-anchor="middle" font-size="10" font-style="italic" fill="#2f1834">GrantTableCrossbar</text>
 <text x="775" y="1058" text-anchor="middle" font-size="9.5" fill="#6a4570">7 candidates — every port except</text>
 <text x="775" y="1071" text-anchor="middle" font-size="9.5" fill="#6a4570">South's own vc0/vc1</text>
-<line x1="870" y1="1033" x2="898" y2="1033" stroke="#8a4a97" stroke-width="1.4" marker-end="url(#arrowGray)"/>
-<line x1="870" y1="1049" x2="898" y2="1049" stroke="#4a8a55" stroke-width="2.6" marker-end="url(#arrowGray)"/>
+<line x1="870" y1="1033" x2="898" y2="1033" stroke="#1ea672" stroke-width="2.6" marker-end="url(#arrowGray)"/>
+<line x1="870" y1="1049" x2="898" y2="1049" stroke="#8a4a97" stroke-width="1.4" marker-end="url(#arrowGray)"/>
 <rect x="900" y="1011" width="140" height="60" rx="10" fill="#fdf3e3" stroke="#b8863b" stroke-width="1.3"/>
 <text x="970" y="1037" text-anchor="middle" font-size="12" font-weight="600" fill="#3a2c10">OutputPort</text>
 <text x="970" y="1054" text-anchor="middle" font-size="9.5" fill="#3a2c10">StreamArbiter</text>
-<line x1="1042" y1="1041" x2="1206" y2="1041" stroke="#4a8a55" stroke-width="3" marker-end="url(#arrowGray)"/>
-<text x="1206" y="1001" text-anchor="end" font-size="12" font-weight="600" fill="#4a8a55">South</text>
+<line x1="1042" y1="1041" x2="1206" y2="1041" stroke="#1ea672" stroke-width="3" marker-end="url(#arrowGray)"/>
+<text x="1206" y="1001" text-anchor="end" font-size="12" font-weight="600" fill="#1ea672">South</text>
 <!-- ===== CROSSBAR CANDIDATE LINES ===== -->
 <!-- generic rule: a port may target any output except its own canonical port, UNLESS that port is Local (canonical port 0), which is exempt and may target itself. -->
-<path d="M395,205 C 495,275 580,275 680,198" fill="none" stroke="#7a7f87" stroke-width="1.6" stroke-opacity="0.5" marker-end="url(#arrowC0)"/>
+<path d="M395,205 C 495,275 580,275 680,198" fill="none" stroke="#e63946" stroke-width="1.6" stroke-opacity="0.5" marker-end="url(#arrowC0)"/>
 <text x="538" y="291" text-anchor="middle" font-size="9" font-style="italic" fill="#6b6f76">Local·vc0 → Local-out: a locally-addressed packet loops back to local delivery</text>
-<path d="M395,205 C 538,205 538,465 680,465" fill="none" stroke="#7a7f87" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC0)"/>
-<path d="M395,205 C 538,205 538,657 680,657" fill="none" stroke="#7a7f87" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB0)"/>
-<path d="M395,205 C 538,205 538,849 680,849" fill="none" stroke="#7a7f87" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC0)"/>
-<path d="M395,205 C 538,205 538,1041 680,1041" fill="none" stroke="#7a7f87" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC0)"/>
-<path d="M395,435 C 538,435 538,198 680,198" fill="none" stroke="#4b6fa8" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB1)"/>
-<path d="M395,435 C 538,435 538,657 680,657" fill="none" stroke="#4b6fa8" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
-<path d="M395,435 C 538,435 538,849 680,849" fill="none" stroke="#4b6fa8" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
-<path d="M395,435 C 538,435 538,1041 680,1041" fill="none" stroke="#4b6fa8" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
-<path d="M395,509 C 538,509 538,198 680,198" fill="none" stroke="#4b6fa8" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
-<path d="M395,509 C 538,509 538,657 680,657" fill="none" stroke="#4b6fa8" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
-<path d="M395,509 C 538,509 538,849 680,849" fill="none" stroke="#4b6fa8" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
-<path d="M395,509 C 538,509 538,1041 680,1041" fill="none" stroke="#4b6fa8" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
-<path d="M395,627 C 538,627 538,198 680,198" fill="none" stroke="#4a8a55" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
-<path d="M395,627 C 538,627 538,465 680,465" fill="none" stroke="#4a8a55" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
-<path d="M395,627 C 538,627 538,849 680,849" fill="none" stroke="#4a8a55" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
-<path d="M395,627 C 538,627 538,1041 680,1041" fill="none" stroke="#4a8a55" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
-<path d="M395,701 C 538,701 538,198 680,198" fill="none" stroke="#4a8a55" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
-<path d="M395,701 C 538,701 538,465 680,465" fill="none" stroke="#4a8a55" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
-<path d="M395,701 C 538,701 538,849 680,849" fill="none" stroke="#4a8a55" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
-<path d="M395,701 C 538,701 538,1041 680,1041" fill="none" stroke="#4a8a55" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB2)"/>
-<path d="M395,819 C 538,819 538,198 680,198" fill="none" stroke="#a5673f" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
-<path d="M395,819 C 538,819 538,465 680,465" fill="none" stroke="#a5673f" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
-<path d="M395,819 C 538,819 538,657 680,657" fill="none" stroke="#a5673f" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
-<path d="M395,819 C 538,819 538,1041 680,1041" fill="none" stroke="#a5673f" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
-<path d="M395,893 C 538,893 538,198 680,198" fill="none" stroke="#a5673f" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
-<path d="M395,893 C 538,893 538,465 680,465" fill="none" stroke="#a5673f" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB3)"/>
-<path d="M395,893 C 538,893 538,657 680,657" fill="none" stroke="#a5673f" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
-<path d="M395,893 C 538,893 538,1041 680,1041" fill="none" stroke="#a5673f" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
-<path d="M395,1011 C 538,1011 538,198 680,198" fill="none" stroke="#6a4c93" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
-<path d="M395,1011 C 538,1011 538,465 680,465" fill="none" stroke="#6a4c93" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
-<path d="M395,1011 C 538,1011 538,657 680,657" fill="none" stroke="#6a4c93" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
-<path d="M395,1011 C 538,1011 538,849 680,849" fill="none" stroke="#6a4c93" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB4)"/>
-<path d="M395,1085 C 538,1085 538,198 680,198" fill="none" stroke="#6a4c93" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
-<path d="M395,1085 C 538,1085 538,465 680,465" fill="none" stroke="#6a4c93" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
-<path d="M395,1085 C 538,1085 538,657 680,657" fill="none" stroke="#6a4c93" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
-<path d="M395,1085 C 538,1085 538,849 680,849" fill="none" stroke="#6a4c93" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
+<path d="M395,205 C 538,205 538,465 680,465" fill="none" stroke="#e63946" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC0)"/>
+<path d="M395,205 C 538,205 538,657 680,657" fill="none" stroke="#e63946" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB0)"/>
+<path d="M395,205 C 538,205 538,849 680,849" fill="none" stroke="#e63946" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC0)"/>
+<path d="M395,205 C 538,205 538,1041 680,1041" fill="none" stroke="#e63946" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC0)"/>
+<path d="M395,435 C 538,435 538,198 680,198" fill="none" stroke="#1f6feb" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB1)"/>
+<path d="M395,435 C 538,435 538,657 680,657" fill="none" stroke="#1f6feb" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
+<path d="M395,435 C 538,435 538,849 680,849" fill="none" stroke="#1f6feb" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
+<path d="M395,435 C 538,435 538,1041 680,1041" fill="none" stroke="#1f6feb" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
+<path d="M395,509 C 538,509 538,198 680,198" fill="none" stroke="#1f6feb" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
+<path d="M395,509 C 538,509 538,657 680,657" fill="none" stroke="#1f6feb" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB1)"/>
+<path d="M395,509 C 538,509 538,849 680,849" fill="none" stroke="#1f6feb" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
+<path d="M395,509 C 538,509 538,1041 680,1041" fill="none" stroke="#1f6feb" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC1)"/>
+<path d="M395,627 C 538,627 538,198 680,198" fill="none" stroke="#1ea672" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
+<path d="M395,627 C 538,627 538,465 680,465" fill="none" stroke="#1ea672" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
+<path d="M395,627 C 538,627 538,849 680,849" fill="none" stroke="#1ea672" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
+<path d="M395,627 C 538,627 538,1041 680,1041" fill="none" stroke="#1ea672" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
+<path d="M395,701 C 538,701 538,198 680,198" fill="none" stroke="#1ea672" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
+<path d="M395,701 C 538,701 538,465 680,465" fill="none" stroke="#1ea672" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
+<path d="M395,701 C 538,701 538,849 680,849" fill="none" stroke="#1ea672" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC2)"/>
+<path d="M395,701 C 538,701 538,1041 680,1041" fill="none" stroke="#1ea672" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB2)"/>
+<path d="M395,819 C 538,819 538,198 680,198" fill="none" stroke="#f2790a" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
+<path d="M395,819 C 538,819 538,465 680,465" fill="none" stroke="#f2790a" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
+<path d="M395,819 C 538,819 538,657 680,657" fill="none" stroke="#f2790a" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
+<path d="M395,819 C 538,819 538,1041 680,1041" fill="none" stroke="#f2790a" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
+<path d="M395,893 C 538,893 538,198 680,198" fill="none" stroke="#f2790a" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
+<path d="M395,893 C 538,893 538,465 680,465" fill="none" stroke="#f2790a" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB3)"/>
+<path d="M395,893 C 538,893 538,657 680,657" fill="none" stroke="#f2790a" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
+<path d="M395,893 C 538,893 538,1041 680,1041" fill="none" stroke="#f2790a" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC3)"/>
+<path d="M395,1011 C 538,1011 538,198 680,198" fill="none" stroke="#9d4edd" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
+<path d="M395,1011 C 538,1011 538,465 680,465" fill="none" stroke="#9d4edd" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
+<path d="M395,1011 C 538,1011 538,657 680,657" fill="none" stroke="#9d4edd" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
+<path d="M395,1011 C 538,1011 538,849 680,849" fill="none" stroke="#9d4edd" stroke-width="3" stroke-opacity="0.95" marker-end="url(#arrowB4)"/>
+<path d="M395,1085 C 538,1085 538,198 680,198" fill="none" stroke="#9d4edd" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
+<path d="M395,1085 C 538,1085 538,465 680,465" fill="none" stroke="#9d4edd" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
+<path d="M395,1085 C 538,1085 538,657 680,657" fill="none" stroke="#9d4edd" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
+<path d="M395,1085 C 538,1085 538,849 680,849" fill="none" stroke="#9d4edd" stroke-width="1.3" stroke-opacity="0.3" marker-end="url(#arrowC4)"/>
 <!-- ===== LEGEND ===== -->
 <text x="106" y="1178" font-size="12" font-weight="600" fill="#1c2b40">Legend</text>
 <rect x="106" y="1188" width="16" height="16" rx="3" fill="#eef2f8" stroke="#4a6a97"/>
@@ -268,7 +269,8 @@
 <text x="662" y="1200" font-size="11" fill="#333">VirtualIdAllocator — one GrantTableCrossbar per output port</text>
 <rect x="640" y="1208" width="16" height="16" rx="3" fill="#fdf3e3" stroke="#b8863b"/>
 <text x="662" y="1220" font-size="11" fill="#333">OutputPort — StreamArbiter merges 2 granted VC streams onto one physical link</text>
-<line x1="640" y1="1236" x2="670" y2="1236" stroke="#7a7f87" stroke-width="3"/>
+<line x1="640" y1="1236" x2="670" y2="1236" stroke="#e63946" stroke-width="3"/>
 <text x="676" y="1240" font-size="11" fill="#333">bold = a granted path (this example set); faint = other reachable candidates, not currently granted</text>
-<text x="106" y="1254" font-size="10.5" fill="#555">Line/label color identifies the origin port, carried through every stage of that port's granted path. Candidate lines never target their own canonical port (no U-turns) — except Local, which may target Local (self-delivery).</text>
+<text x="106" y="1254" font-size="10.5" fill="#555">Line/label color identifies the origin port, carried through every stage of that port's granted path — note one input below with two granted lanes, and one output with two concurrent grants sharing its VCs.</text>
+<text x="106" y="1270" font-size="10.5" fill="#555">Candidate lines never target their own canonical port (no U-turns) — except Local, which may target Local (self-delivery).</text>
 </svg>
