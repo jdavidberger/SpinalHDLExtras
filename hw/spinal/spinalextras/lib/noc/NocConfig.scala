@@ -6,6 +6,7 @@ import spinal.lib.StreamArbiter.{FragmentLock, LowerFirst}
 import spinal.lib._
 import spinalextras.lib.logging.GlobalLogger
 import spinalextras.lib.misc.Optional
+import spinalextras.lib.misc.arbitration.{Async, Register, RoutingMode, Stall}
 import spinalextras.lib.noc.topology.Mesh
 import spinalextras.lib.noc.virtualchannels._
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
@@ -23,22 +24,23 @@ case class NocConfig(
                       vcDepth            : Int = 2,
                       virtualChannelMode : VirtualChannelMode = Static,
                       virtualChannelArbitrationPolicy : VirtualChannelArbitrationPolicy = RoundRobin,
-                      // FlitRouter's route decision is a register (outputNode)
-                      // that only latches the destination port one cycle after
-                      // a new packet's header is actually available -- so
-                      // every packet pays an unconditional 1-cycle bubble at
-                      // every hop before its first flit can move, even though
-                      // the destination is a pure, immediately-computable
-                      // function of the header already sitting on the input
-                      // this same cycle. Setting this to true lets that first
-                      // flit admit combinationally in the same cycle instead
-                      // of waiting for the register, at the cost of a longer
-                      // combinational path through the router. Off by default
-                      // to preserve today's timing characteristics exactly;
-                      // does not change routing decisions, VC allocation, or
-                      // any deadlock-avoidance behavior -- only when an
-                      // already-determined decision is allowed to take effect.
-                      pipelineBypass     : Boolean = false,
+                      // Both FlitRouter's route decision (outputNode) and
+                      // GrantTableCrossbar's VC grant are a register that
+                      // only exposes its decision one cycle after being set,
+                      // so admission at every hop pays an unconditional
+                      // 1-cycle bubble even though the decision is already
+                      // fully determined the same cycle it's needed. Stall
+                      // (default) is today's behavior, unchanged. Async
+                      // admits combinationally the same cycle the decision
+                      // is made, removing the bubble at the cost of a longer
+                      // combinational path. Register keeps the same latency
+                      // as Stall but stages the input stream(s) through a
+                      // registered Stream pipe first, shortening the
+                      // combinational path feeding the decision register.
+                      // None of the three change routing decisions, VC
+                      // assignment, or deadlock-avoidance behavior -- only
+                      // when/how an already-determined decision takes effect.
+                      routingMode        : RoutingMode = Stall,
                     ) {
   def headerApplicationBits = dataWidth - topology.addressSize
   def virtualChannelBits = log2Up(virtualChannels)

@@ -5,6 +5,7 @@ import spinal.core._
 import spinal.lib._
 import spinalextras.lib.logging._
 import spinalextras.lib.misc.Optional
+import spinalextras.lib.misc.arbitration.{Async, Register, Stall}
 import spinalextras.lib.noc.topology.{Mesh, Ring}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
@@ -26,39 +27,21 @@ class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical
   // numbering -- resolveDestPort guarantees this never points back through
   // inputPort, so no self-redirect or compaction is needed here.
   val outputNode = RegInit(Optional.Empty(UInt(log2Up(connectivityOut) bits)))
-  val input = io.input
+
+  // RoutingMode.Register stages the input through a standard registered
+  // Stream pipe before any of the route-decision logic below ever sees it,
+  // shortening the combinational path that feeds outputNode -- at the cost
+  // of an extra cycle of latency compared to Stall (outputNode still takes
+  // its own cycle on top of the stage). Stall and Async both operate
+  // directly on io.input.
+  val input = cfg.routingMode match {
+    case Register => io.input.stage()
+    case Stall | Async => io.input
+  }
 
   io.activity := False
 
-  if (!cfg.pipelineBypass) {
-    // Unchanged from before pipelineBypass existed: outputNode only ever
-    // takes effect one cycle after it's set, so a new packet's first flit
-    // always pays an unconditional 1-cycle bubble at this hop before it can
-    // move, even though the destination is already fully determined by the
-    // header sitting on input this same cycle. See the pipelineBypass
-    // branch below for the same-cycle fast path around that bubble.
-    when(outputNode.has_value) {
-      when(input.lastFire) {
-        //report(Seq("Finish Address: ", address, " ", cfg.topology.addressName(address), " vcid ", idx))
-        outputNode.clear()
-      }
-    } elsewhen (input.valid) {
-      val hdr = Header(cfg)
-      hdr.assignFromBits(input.payload.fragment)
-
-      outputNode.set_value(cfg.topology.resolveDestPort(hdr.dest, address, inputPort))
-      io.activity := True
-      //report(Seq("Start Address: ", address, " ", cfg.topology.addressName(address), " dst ", hdr.dest, " app ", hdr.application, " vcid ", idx, " output ", outputNode))
-    }
-
-    when(outputNode.has_value) {
-      if (outputNode.value.maxValue >= connectivityOut) {
-        assert(outputNode.value < connectivityOut)
-      }
-    }
-
-    StreamDemux(input.continueWhen(outputNode.has_value), outputNode.value, connectivityOut) <> io.output
-  } else {
+  if (cfg.routingMode == Async) {
     val hdr = Header(cfg)
     hdr.assignFromBits(input.payload.fragment)
     val computedDest = cfg.topology.resolveDestPort(hdr.dest, address, inputPort)
@@ -95,6 +78,32 @@ class FlitRouter(val cfg: NocConfig, address: Int, inputPort: Topology.canonical
     }
 
     StreamDemux(input.continueWhen(admit), dest, connectivityOut) <> io.output
+  } else {
+    // Stall and Register share this same register-gated route decision --
+    // Register's only difference is that `input` above is already staged,
+    // not raw io.input, so it doesn't need (and doesn't get) any special
+    // casing here.
+    when(outputNode.has_value) {
+      when(input.lastFire) {
+        //report(Seq("Finish Address: ", address, " ", cfg.topology.addressName(address), " vcid ", idx))
+        outputNode.clear()
+      }
+    } elsewhen (input.valid) {
+      val hdr = Header(cfg)
+      hdr.assignFromBits(input.payload.fragment)
+
+      outputNode.set_value(cfg.topology.resolveDestPort(hdr.dest, address, inputPort))
+      io.activity := True
+      //report(Seq("Start Address: ", address, " ", cfg.topology.addressName(address), " dst ", hdr.dest, " app ", hdr.application, " vcid ", idx, " output ", outputNode))
+    }
+
+    when(outputNode.has_value) {
+      if (outputNode.value.maxValue >= connectivityOut) {
+        assert(outputNode.value < connectivityOut)
+      }
+    }
+
+    StreamDemux(input.continueWhen(outputNode.has_value), outputNode.value, connectivityOut) <> io.output
   }
 }
 
@@ -107,14 +116,13 @@ object FlitRouter {
   }
 }
 
-// Covers both branches of the pipelineBypass if/else directly (rather than
-// only relying on it being exercised incidentally by the larger NoC/
-// RouterNode formal suites), across one acyclic (Mesh) and one cyclic
-// (Ring) topology -- the generic Stream contract asserted for free on every
-// Stream port (see docs/formal.md) is exactly what would catch a bypass
-// that violates "valid must not be dropped before ready" or "payload must
-// stay stable while stalled", which is the specific hazard the bypass's
-// same-cycle admission has to avoid.
+// Covers all three RoutingMode branches directly (rather than only relying
+// on them being exercised incidentally by the larger NoC/RouterNode formal
+// suites), across one acyclic (Mesh) and one cyclic (Ring) topology -- the
+// generic Stream contract asserted for free on every Stream port (see
+// docs/formal.md) is exactly what would catch an Async/Register admission
+// path that violates "valid must not be dropped before ready" or "payload
+// must stay stable while stalled".
 class FlitRouterFormalTester extends AnyFunSuite with FormalTestSuite {
 
   override def defaultDepth() = 10
@@ -124,11 +132,11 @@ class FlitRouterFormalTester extends AnyFunSuite with FormalTestSuite {
   })
 
   override def generateRtl() = {
-    for (pipelineBypass <- Seq(false, true);
+    for (routingMode <- Seq(Stall, Async, Register);
          (name, topology) <- Seq("Mesh" -> new Mesh((3, 3)), "Ring" -> new Ring(4))) yield
-      (s"${name}_bypass${pipelineBypass}", () =>
+      (s"${name}_${NocConfig.objectName(routingMode)}", () =>
         GeneralFormalDut(() => new FlitRouter(
-          NocConfig(topology = topology, pipelineBypass = pipelineBypass), address = 0, inputPort = 0
+          NocConfig(topology = topology, routingMode = routingMode), address = 0, inputPort = 0
         ))
       )
   }

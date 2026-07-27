@@ -68,7 +68,7 @@ class VirtualIdAllocator(val cfg: NocConfig,
 
   val allowed = cfg.topology.allowedTransitionTable(cfg, (address, canonicalPort), candidateCount, vcCount)
 
-  val crossbar = new GrantTableCrossbar(Bits(cfg.dataWidth bits), allowed, roundRobinArbitration)
+  val crossbar = new GrantTableCrossbar(Bits(cfg.dataWidth bits), allowed, roundRobinArbitration, cfg.routingMode)
   when(crossbar.io.activity) {
     io.activity := True
   }

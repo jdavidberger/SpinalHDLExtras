@@ -1,8 +1,8 @@
 package spinalextras.lib.misc.arbitration
 
 import org.scalatest.funsuite.AnyFunSuite
+import spinal.core._
 import spinal.core.sim.SimDataPimper
-import spinal.core.{Bool, Bundle, False, IntToBuilder, U, UInt, Vec, in, log2Up, out, when}
 import spinal.lib.misc.aia.APlicGenParam.test
 import spinalextras.lib.formal.{ComponentWithFormalProperties, FormalProperties, FormalProperty}
 import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
@@ -22,7 +22,8 @@ import scala.language.postfixOps
 // alone (rows = channels, columns = candidates) determines candidateCount
 // and channelCount, so this is the only thing callers need to provide.
 class GrantTableArbiter(roundRobinArbitration: Boolean,
-                        allowed: Seq[Seq[Boolean]]) extends ComponentWithFormalProperties {
+                        allowed: Seq[Seq[Boolean]],
+                        routingMode: RoutingMode = Stall) extends ComponentWithFormalProperties {
   val channelCount = allowed.length
   val candidateCount = allowed.headOption.map(_.length).getOrElse(0)
   require(allowed.forall(_.length == candidateCount),
@@ -35,6 +36,18 @@ class GrantTableArbiter(roundRobinArbitration: Boolean,
     val request = in Vec(Bool(), candidateCount) // request(c): candidate c wants a lane
     val release = in Vec(Bool(), channelCount) // release(v): lane v's current occupant is done
     val grant = out(new GrantTable(allowed)) // grant(v)(c): lane v is currently serving candidate c
+
+    // RoutingMode.Async only. freshGrant(v)(c): this cycle's newly-decided
+    // (lane, candidate) pairing, if any -- combinationally available a full
+    // cycle before `grant` would register it. retiredBypass(v): the caller
+    // (GrantTableCrossbar) routed freshGrant's pairing on lane v through
+    // combinationally this same cycle *and* its stream's last fragment
+    // fired -- i.e. the whole transfer started and finished in one cycle,
+    // so freshGrant must not be latched into `grant`, or a lane already
+    // fully vacated this cycle would stay wrongly held for whatever
+    // candidate happens to use it next, skipping a real arbitration round.
+    val freshGrant = (routingMode == Async) generate out(new GrantTable(allowed))
+    val retiredBypass = (routingMode == Async) generate in Vec(Bool(), channelCount)
 
     val activity = out(Bool())
   }
@@ -94,11 +107,32 @@ class GrantTableArbiter(roundRobinArbitration: Boolean,
   laneSelector.io.chosen.ready := bothValid
   candidateSelector.io.chosen.ready := bothValid
 
+  if (routingMode == Async) {
+    io.freshGrant.grant.foreach(_ := False)
+    when(bothValid) {
+      for ((v, c) <- io.freshGrant.allowedPairs) {
+        when(laneSelector.io.chosen.payload === U(v, channelBits bits) &&
+          candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
+          io.freshGrant(v, c) := True
+        }
+      }
+    }
+  }
+
   when(bothValid) {
     for (v <- 0 until channelCount; c <- 0 until candidateCount) {
       when(laneSelector.io.chosen.payload === U(v, channelBits bits) &&
         candidateSelector.io.chosen.payload === U(c, candidateBits bits)) {
-        grant.claim(v, c)
+        if (routingMode == Async) {
+          // Started and fully finished this same cycle via the crossbar's
+          // combinational fast path -- nothing left to hold, and latching
+          // it anyway would leave lane v wrongly occupied next cycle.
+          when(!io.retiredBypass(v)) {
+            grant.claim(v, c)
+          }
+        } else {
+          grant.claim(v, c)
+        }
       }
     }
   }
@@ -137,6 +171,10 @@ class GrantTableFormalTester extends AnyFunSuite with FormalTestSuite {
   })
 
   override def generateRtl() = {
+    // GrantTableArbiter's own RoutingMode.Async ports (freshGrant/
+    // retiredBypass) are only meaningful wired up to a real GrantTableCrossbar
+    // (retiredBypass depends on the actual data streams) -- Async is
+    // exercised there (GrantTableCrossbarFormalTester) instead of here.
     (for (rr <- Seq(true, false); candidates <- Seq(1, 2, 5); channels <- Seq(1, 2, 3)) yield
       (s"AllowAll_rr${rr}_c${candidates}_vc${channels}", () =>
         GeneralFormalDut(() => new GrantTableArbiter(rr, GrantTable.allowAll(candidates, channels)))

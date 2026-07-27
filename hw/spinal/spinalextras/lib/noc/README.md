@@ -45,7 +45,7 @@ All behavior is parameterized by a single `NocConfig`:
 | `vcDepth` | 2 | Depth (in flits) of each per-VC input FIFO |
 | `virtualChannelMode` | `Static` | `Static` (dest VC = source VC, subject to the dateline exception below) or `Dynamic` (VC reassigned to any free lane, same exception) |
 | `virtualChannelArbitrationPolicy` | `RoundRobin` | `RoundRobin` or `LowestFirst` — candidate-selection policy inside `GrantTableArbiter` |
-| `pipelineBypass` | `false` | Let a new packet's first flit admit through `FlitRouter` the same cycle its header arrives, instead of paying the usual unconditional 1-cycle route-decision bubble at that hop. Same routing/VC/deadlock-avoidance behavior either way — only *when* the already-determined decision takes effect changes. See [Forced-stall points](#forced-stall-points) |
+| `routingMode` | `Stall` | `Stall` (today's behavior), `Async`, or `Register` — controls how `FlitRouter`'s route decision and `GrantTableCrossbar`'s VC grant expose an already-determined decision to whatever's waiting on it. Same routing/VC/deadlock-avoidance decisions in every mode — only *when*/*how* an already-determined decision takes effect changes. See [Forced-stall points](#forced-stall-points) |
 
 Derived: `headerApplicationBits = dataWidth − topology.addressSize`,
 `virtualChannelBits = log2Up(virtualChannels)`, `datatype = Bits(dataWidth
@@ -533,31 +533,49 @@ the packet arrives:
    agree, since the commit in `GrantTableArbiter` happens through `grant`,
    not through the selectors' own combinational outputs.
 
-`pipelineBypass` (see [Configuration](#configuration)) removes bubble 1: when
-`outputNode` isn't already holding a decision, `FlitRouter` admits the flit
-combinationally using the freshly computed destination instead of waiting
-for `outputNode` to register it, falling back to exactly today's registered
-path from the second flit of a multi-beat packet onward (and immediately,
-with nothing latched, for a single-beat packet fully admitted via the
-bypass same-cycle). It only ever changes *when* an already-determined
-decision takes effect — never the decision itself, VC assignment, or
-arbitration — so it's covered by dedicated formal (`FlitRouterFormalTester`,
-proving both branches of the bypass on an acyclic and a cyclic topology) and
-simulation (`NocPipelineBypassPathingSpec`, `NocPipelineBypassConcurrencySpec`)
-regressions, on top of `NocRouterFormalTester`'s existing sweep gaining a
-`pipelineBypass` axis.
+`routingMode` (see [Configuration](#configuration)) controls all three bubbles
+at once, in the two components that actually own a "latch, then present"
+register — `FlitRouter` (bubble 1) and `GrantTableCrossbar`/`GrantTableArbiter`
+(bubbles 2 and 3 together, since `GrantTableArbiter`'s own two-selector chain
+is an internal implementation detail the crossbar's `Async` handling doesn't
+need to know about):
 
-Bubbles 2 and 3 are deliberately *not* bypassed here: unlike the route
-decision, they sit directly on the VC-class/dateline deadlock-avoidance
-state (`GrantTable`'s mutual-exclusion invariants — see
-[Deadlock avoidance](#deadlock-avoidance-escape-vc-datelines)) that this NoC
-has a history of subtle, only-caught-by-simulation bugs around. Collapsing
-them safely would mean teaching `GrantTableStreamRouter` to route on a
-same-cycle "about to be granted" signal in addition to the registered
-`grant` matrix, without ever letting that combinational fast path violate
-`GrantTable`'s exclusivity properties — a materially larger, allocator-level
-change than this one, left for separate, dedicated work rather than folded
-in under the same flag speculatively.
+- **`Stall`** (default): today's behavior, unchanged, in both components.
+- **`Async`**: admits combinationally the same cycle the decision is made.
+  In `FlitRouter`, when `outputNode` isn't already holding a decision, the
+  flit is admitted using the freshly computed destination instead of waiting
+  for `outputNode` to register it, falling back to exactly the registered
+  path from the second flit of a multi-beat packet onward (and immediately,
+  with nothing latched, for a single-beat packet fully admitted via the
+  bypass same-cycle). In `GrantTableCrossbar`, `GrantTableArbiter` exposes
+  the (lane, candidate) pairing `candidateSelector`/`laneSelector` agree on
+  *this* cycle as `freshGrant` — combinationally available a full cycle
+  before `grant` would register it — and the crossbar routes through
+  `grant OR freshGrant` instead of `grant` alone. `grant` and `freshGrant`
+  can never both be set for the same pairing (`freshGrant` only fires for a
+  pairing that's still free in `grant` this same cycle), so ORing them can't
+  create a double grant. The one edge case this has to account for: if the
+  freshly granted pairing's transfer *also* fully completes (last fragment
+  fires) this same bypass cycle, `grant` must not latch it afterward, or a
+  lane already vacated this cycle would stay wrongly held for whatever
+  candidate happens to use it next, skipping a real arbitration round and
+  corrupting round-robin fairness — the crossbar tells the arbiter this per
+  lane (`retiredBypass`), and the arbiter skips the `grant.claim` for that
+  cycle when it's set. Neither case bypasses `candidateSelector`/
+  `laneSelector`'s own two-cycle latency to *decide* a winner in the first
+  place (bubble 2 above) — only the final registered commit (bubble 3).
+- **`Register`**: keeps the same latency as `Stall` in both components, but
+  stages the input stream(s) through a standard registered Stream pipe
+  (`.stage()`) before the decision logic ever sees them, shortening the
+  combinational path that feeds the decision register.
+
+None of the three modes ever change the decision itself, VC assignment, or
+arbitration outcome — only *when*/*how* an already-determined decision takes
+effect. Covered by dedicated formal coverage (`FlitRouterFormalTester`,
+`GrantTableCrossbarFormalTester`, all three modes) and simulation
+(`NocPipelineBypassPathingSpec`, `NocPipelineBypassConcurrencySpec`)
+regressions, on top of `NocRouterFormalTester`'s existing sweep gaining a
+`routingMode` axis.
 
 ## Protocol adapters
 
