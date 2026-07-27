@@ -48,12 +48,30 @@ class NocConcurrentHarness(cfg: NocConfig) extends Component {
     val outputs    = Vec(master(Stream(Fragment(cfg.datatype))), n)
   }
 
-  val noc = new NoC(cfg)
+  val builder = new NoCBuilder(cfg)
 
   for (i <- 0 until n) {
-    noc.configureInputNode(i, io.rawInputs(i), io.destInputs(i))
-    io.outputs(i) <> noc.io.outputs(i)
+    // NoCBuilder.addOutput bakes the port's current `.name` into the RTL signal name it creates,
+    // and unnamed Vec elements default to their bare numeric index -- an invalid leading character
+    // in Verilog/VHDL -- so give each port an explicit name before registering it.
+    io.rawInputs(i).setName(s"rawInput_$i")
+    io.outputs(i).setName(s"output_$i")
+
+    val header = Header(cfg)
+    header.dest := io.destInputs(i).resized
+    header.application.setAll()
+
+    builder.addInput(io.rawInputs(i).insertHeader(header.asBits.resized).map(x => {
+      val flit = Fragment(cfg.datatype)
+      flit.fragment := x.fragment
+      flit.last := x.last
+      flit
+    }), i)
+
+    builder.addOutput(io.outputs(i), i)
   }
+
+  val noc = builder.build()
 
   //val simLog = GlobalLogger.create_simulation_logger(tags = Set("noc-grant-table"))
 }

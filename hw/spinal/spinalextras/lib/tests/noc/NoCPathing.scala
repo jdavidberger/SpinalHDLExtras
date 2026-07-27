@@ -16,13 +16,13 @@ import scala.util.Random
  * Generic pathing test harness for arbitrary NoC topologies
  * ============================================================================
  *
- * `NocPathingHarness` wraps a plain `NoC(cfg)` and, using the
- * `configureInputNode` / `configureOutputNode` helpers `NoC` already exposes,
- * gives every node a plain `Stream(Fragment(Bits))` in/out port plus a
- * `dest`/`vc` control signal. This means the testbench never has to know how
- * `Header` gets bit-packed onto a `Flit` -- it lets the hardware build the
- * header exactly the way any real integration would (via `insertHeader`),
- * and only has to supply the destination node and a payload.
+ * `NocPathingHarness` wraps a `NoCBuilder(cfg)` and, using its plain
+ * `addInput`/`addOutput` node-registration calls, gives every node a plain
+ * `Stream(Fragment(Bits))` in/out port plus a `dest`/`vc` control signal.
+ * This means the testbench never has to know how `Header` gets bit-packed
+ * onto a `Flit` -- it lets the hardware build the header exactly the way any
+ * real integration would (via `insertHeader`), and only has to supply the
+ * destination node and a payload.
  *
  * Because `headerApplicationBits` is defined as `dataWidth - addressSize`,
  * `Header.asBits` is always exactly `dataWidth` bits wide, so `insertHeader`
@@ -40,12 +40,30 @@ class NocPathingHarness(cfg: NocConfig) extends Component {
     val rawOutputs = Vec(master(Stream(Fragment(Bits(cfg.dataWidth bits)))), n)
   }
 
-  val noc = new NoC(cfg)
+  val builder = new NoCBuilder(cfg)
 
   for (i <- 0 until n) {
-    noc.configureInputNode(i, io.rawInputs(i), io.destInputs(i))
-    noc.configureOutputNode(i, io.rawOutputs(i))
+    // NoCBuilder.addOutput bakes the port's current `.name` into the RTL signal name it creates,
+    // and unnamed Vec elements default to their bare numeric index -- an invalid leading character
+    // in Verilog/VHDL -- so give each port an explicit name before registering it.
+    io.rawInputs(i).setName(s"rawInput_$i")
+    io.rawOutputs(i).setName(s"rawOutput_$i")
+
+    val header = Header(cfg)
+    header.dest := io.destInputs(i).resized
+    header.application.setAll()
+
+    builder.addInput(io.rawInputs(i).insertHeader(header.asBits.resized).map(x => {
+      val flit = Fragment(cfg.datatype)
+      flit.fragment := x.fragment
+      flit.last := x.last
+      flit
+    }), i)
+
+    builder.addOutput(io.rawOutputs(i), i)
   }
+
+  val noc = builder.build()
 }
 
 /**
