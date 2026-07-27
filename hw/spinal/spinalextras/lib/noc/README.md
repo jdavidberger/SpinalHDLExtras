@@ -7,8 +7,10 @@ of `RouterNode`s wired together according to a pluggable `Topology`
 local port and address each other by node number.
 
 This document describes the architecture as implemented in
-[`lib/noc/`](.) and its `topology`/`virtualchannels` sub-packages. Class and
-field names below are verbatim from the source.
+[`lib/noc/`](.) and its `topology`/`virtualchannels`/`protocols` sub-packages,
+plus the generic arbitration primitives in
+[`lib/misc/arbitration/`](../misc/arbitration). Class and field names below
+are verbatim from the source.
 
 ## Contents
 
@@ -18,9 +20,13 @@ field names below are verbatim from the source.
 - [Flit and packet format](#flit-and-packet-format)
 - [Router node internals](#router-node-internals)
 - [Virtual-channel allocation](#virtual-channel-allocation)
+- [Deadlock avoidance: escape-VC datelines](#deadlock-avoidance-escape-vc-datelines)
 - [Wormhole routing across hops](#wormhole-routing-across-hops)
+- [Protocol adapters](#protocol-adapters)
 - [Component relationships](#component-relationships)
 - [Building a NoC](#building-a-noc)
+- [Gate count / resource usage](#gate-count--resource-usage)
+- [Test harnesses](#test-harnesses)
 
 ---
 
@@ -30,7 +36,8 @@ field names below are verbatim from the source.
 builds the entire interconnect internally via `cfg.topology.createNodes(this)`.
 Port 0 of every node ("LOCAL") is always the one wired to the NoC's external
 boundary; every other port connects to a neighbor per the topology's routing
-tables.
+tables. `sealUnusedPorts()` idles any external port nothing ever claimed
+(`io.inputs` set idle, `io.outputs` set free-running).
 
 ```mermaid
 flowchart LR
@@ -56,19 +63,27 @@ flowchart LR
   end
 ```
 
-Two construction paths sit on top of `NoC`:
+Three construction paths sit on top of `NoC`:
 
 - **`NoC.apply(processors: Seq[NocProcessor], cfg)`** — resizes
   `cfg.topology` to `processors.size` and connects each `NocProcessor` to one
-  node's `io.inputs(idx)` / `io.outputs(idx)`.
-- **`NoCDesign`** — a builder: `addInput` / `addBitsInput` /
-  `addOutput` / `addBitsOutput` accumulate endpoints, `.create()` sizes the
-  topology and assembles the `NoC` (see [Building a NoC](#building-a-noc)).
-
-`configureInputNode` / `configureOutputNode` handle packetizing raw
-`Stream(Fragment(Bits))` traffic into flits and back — either directly, or via
-a register-mapped CSR (`exit_node` register: `destination` + `vcid` fields)
-for firmware-driven routing.
+  node's `io.inputs(idx)` / `io.outputs(idx)`. Lowest-level path; the caller
+  supplies raw `Stream[Fragment[Bits]]` pairs directly.
+- **`configureInputNode` / `configureOutputNode`** — instance methods on a
+  built `NoC`, for packetizing a single raw `Stream(Fragment(Bits))` into
+  flits (and back) by hand. `configureOutputNode` is a plain connect.
+  `configureInputNode(node, input, busIf)` allocates one CSR (`<streamName>
+  exit_node`, a `destination: UInt(16 bits)` field only — the VC lane is no
+  longer software-settable) and packs a `Header` whose `application` bits are
+  left as all-ones filler, since this raw path carries no return-address
+  subheader; `configureInputNode(node, input, destination: UInt)` is the same
+  without the CSR, for a destination driven directly by other logic.
+- **`NoCBuilder` + `ProtocolSpecification`** — the builder pattern for
+  assembling a higher-level fabric (multiple named sources/sinks, or whole
+  PMB/AXI4 crossbars) out of one or more protocol adapters sharing node
+  addressing; see [Protocol adapters](#protocol-adapters) and
+  [Building a NoC](#building-a-noc). This supersedes the old `NoCDesign`
+  builder.
 
 ## Configuration
 
@@ -80,36 +95,69 @@ All behavior is parameterized by a single `NocConfig`:
 | `dataWidth` | 32 | Bits per flit's `datum` field |
 | `virtualChannels` | 2 | VC lanes multiplexed onto each physical link |
 | `vcDepth` | 2 | Depth (in flits) of each per-VC input FIFO |
-| `virtualChannelMode` | `Static` | `Static` (dest VC = source VC) or `Dynamic` (VC reassigned to any free lane) |
-| `virtualChannelArbitrationPolicy` | `RoundRobin` | `RoundRobin` or `LowestFirst` — candidate arbitration inside `GrantTable` |
+| `virtualChannelMode` | `Static` | `Static` (dest VC = source VC, subject to the dateline exception below) or `Dynamic` (VC reassigned to any free lane, same exception) |
+| `virtualChannelArbitrationPolicy` | `RoundRobin` | `RoundRobin` or `LowestFirst` — candidate-selection policy inside `GrantTableArbiter` |
 
 Derived: `headerApplicationBits = dataWidth − topology.addressSize`,
-`virtualChannelBits = log2Up(virtualChannels)`.
+`virtualChannelBits = log2Up(virtualChannels)`, `datatype = Bits(dataWidth
+bits)` (the external flit payload type). `NocConfig.packHeader(dest,
+subheader)` builds a `Header` with `dest` plus a subheader value packed into
+the low bits of `application` — the mechanism the protocol adapters
+(below) use to carry a return address alongside the routing destination.
+
+Each `Topology` also declares a `minimumVirtualChannels` (1 for Mesh/Tree/Star,
+2 for Ring/Torus — the escape-VC mechanism needs a spare lane; see
+[Deadlock avoidance](#deadlock-avoidance-escape-vc-datelines)).
+`NocConfig.testConfigurations()` sweeps every topology × `virtualChannels ∈
+{1,2,4}` × VC mode × arbitration policy, filtered to combinations that meet
+the topology's own minimum.
 
 ## Addressing &amp; topologies
 
-Every `Topology` provides `nodes`, `addressSize`, a routing function
-`resolveDestPort(dest, curr)`, and `resolveNeighborAddress(address, port)` used
-once at elaboration time to wire every link. Per-node port *count* varies with
-position — a mesh corner has fewer ports than an interior node — via
-`nodePortIndicesForCanonicalPorts(address)`.
+Every `Topology` provides `nodes`, `addressSize`, `resolveNeighborAddress`
+(used once at elaboration time to wire every link), and two per-topology
+override points a subclass actually implements:
+
+- **`resolveCanonicalDestPort(dest, curr, setResult)`** — the routing
+  decision, expressed in stable **canonical port** numbers (e.g. Mesh's
+  `Local=0, West=1, East=2, North=3, South=4` — fixed regardless of which
+  ports a given node happens to have wired up).
+- **`allowedTransitionTable(cfg, port, candidateCount, vcCount)`** — the
+  VC-transition restriction matrix for one output port (see
+  [Virtual-channel allocation](#virtual-channel-allocation) and
+  [Deadlock avoidance](#deadlock-avoidance-escape-vc-datelines)). The default
+  implementation just switches on `cfg.virtualChannelMode`
+  (`GrantTable.diagonal` for Static, `GrantTable.allowAll` for Dynamic); Ring
+  and Torus override it.
+
+The public `resolveDestPort(dest, curr, inputPort)` wraps
+`resolveCanonicalDestPort` and compacts its result into the *port-index*
+space a specific node/input actually has — importantly, **excluding
+`inputPort`'s own canonical port**, so a flit can never be routed back out the
+port it arrived on (no U-turns, and no self-redirect for a locally-injected
+packet either). Per-node port *count* varies with position — a mesh corner
+has fewer ports than an interior node — via
+`nodePortIndicesForCanonicalPorts(address)`; the same function with an
+`inputPort` argument gives the output-side numbering used by
+`resolveDestPort`.
 
 ```mermaid
 flowchart TB
   classDef trait fill:#f2f2f2,stroke:#888,color:#222
-  T["Topology (trait)<br/>resolveDestPort · resolveNeighborAddress · createNodes"]:::trait
+  T["Topology (trait)<br/>resolveCanonicalDestPort · resolveNeighborAddress ·<br/>allowedTransitionTable · createNodes"]:::trait
   T --> Mesh["Mesh(x, y)<br/>dimension-order (X→Y) routing"]
-  Mesh --> Torus["Torus(x, y)<br/>wraps X and Y;<br/>shortest-direction-around-ring per axis"]
-  T --> Ring["Ring(n)<br/>shortest direction around one cycle"]
+  Mesh --> Torus["Torus(x, y)<br/>wraps X and Y;<br/>shortest-direction-around-ring per axis;<br/>shared escape-VC dateline"]
+  T --> Ring["Ring(n, routeing)<br/>shortest direction around one cycle<br/>(or ClockwiseAlways); escape-VC dateline"]
   T --> Tree["Tree(n, maxChildren)<br/>preorder DFS numbering,<br/>range-membership routing"]
   Tree -. "Star(n) = Tree(n, n)" .-> Star["Star(n)<br/>single hub, n−1 direct leaves"]
 ```
 
 ### Mesh — dimension-order (X-then-Y) routing
 
-`Mesh(3, 2)`: address = `x * gridSize._2 + y`. `resolveDestPort` compares `x`
-first (WEST/EAST), then `y` (NORTH/SOUTH); corner and edge nodes simply omit
-the ports they don't need.
+`Mesh(3, 2)`: address = `x * gridSize._2 + y`. `resolveCanonicalDestPort`
+compares `x` first (WEST/EAST), then `y` (NORTH/SOUTH); corner and edge nodes
+simply omit the ports they don't need. No physical cycle, so
+`minimumVirtualChannels = 1` and no escape-VC handling is needed.
 
 ```mermaid
 block-beta
@@ -137,9 +185,13 @@ class N5 node
 ### Torus — mesh with wraparound, ring routing per axis
 
 Same grid as Mesh, but `createAddress` wraps modulo the grid size and every
-node keeps all 5 ports (no edges). `resolveDestPort` calls the shared
-`Ring.apply(delta, curr, size)` primitive independently per axis, picking
-whichever direction is shorter around that axis's wraparound.
+node keeps all 5 ports (no edges). `resolveCanonicalDestPort` calls the
+shared `Ring.apply(delta, curr, size)` primitive independently per axis,
+picking whichever direction is shorter around that axis's wraparound. Because
+this introduces two physical cycles (an X-ring and a Y-ring),
+`minimumVirtualChannels = 2` and `Torus` overrides `allowedTransitionTable`
+with a single shared escape VC covering both axes — see
+[Deadlock avoidance](#deadlock-avoidance-escape-vc-datelines).
 
 ```mermaid
 block-beta
@@ -172,9 +224,17 @@ rows)*
 
 ### Ring — shortest direction around one cycle
 
-`Ring(6)`: every node has exactly 3 ports — LOCAL, `ClockWise`,
-`CounterClockWise`. `Ring.apply` compares `dest − curr` against `size/2` to
-pick the shorter direction; this primitive is reused per-axis by `Torus`.
+`Ring(size, routeing)`: every node has exactly 3 canonical ports — `Local`,
+`ClockWise`, `CounterClockWise`. With the default `routeing = Closest`,
+`Ring.apply` compares `dest − curr` against `size/2` to pick the shorter
+direction; this primitive is reused per-axis by `Torus`. The alternate
+`routeing = ClockwiseAlways` routes every non-local packet clockwise only,
+regardless of distance — used by a concurrency regression test (see
+[Test harnesses](#test-harnesses)) to isolate a starvation bug that had
+nothing to do with direction-vs-direction contention.
+`minimumVirtualChannels = 2`: a ring is one physical cycle, so `Ring`
+overrides `allowedTransitionTable` with an escape-VC dateline at the one
+wraparound edge.
 
 ```mermaid
 flowchart LR
@@ -185,11 +245,13 @@ flowchart LR
 ### Tree / Star — preorder DFS addressing, range-membership routing
 
 `Tree(totalNodes, maxChildren)` numbers nodes by preorder DFS, so each
-subtree occupies a contiguous `[lo, hi]` address range and `resolveDestPort`
-is a constant range compare per child (no divide/mod in hardware). Ports:
-`LOCAL = 0`, `UP = 1` (absent at the root), `DOWN(i) = 2 + i` (one per actual
-child). `Star(n)` is simply `Tree(n, n)` — a single hub whose "maxChildren"
-covers every remaining node, so it collapses to one level.
+subtree occupies a contiguous `[lo, hi]` address range and
+`resolveCanonicalDestPort` is a constant range compare per child (no
+divide/mod in hardware). Ports: `LOCAL = 0`, `UP = 1` (absent at the root),
+`DOWN(i) = 2 + i` (one per actual child). `Star(n)` is simply `Tree(n, n)` —
+a single hub whose "maxChildren" covers every remaining node, so it collapses
+to one level. A tree has no cycles, so `minimumVirtualChannels = 1` and no
+escape-VC handling applies here either.
 
 ```mermaid
 flowchart TB
@@ -264,9 +326,16 @@ flowchart LR
   F0["flit 0<br/>datum = Header{dest, application}<br/>last = 0"]:::hdr --> F1["flit 1<br/>datum = payload<br/>last = 0"]:::pay --> F2["flit 2<br/>datum = payload<br/>last = 0"]:::pay --> FN["flit N<br/>datum = payload<br/>last = 1"]:::pay
 ```
 
-Internally, once a packet's output port has been resolved, `RouterNode`
-tags subsequent flits with a `RoutedFlit { flit: Flit, routedNode: UInt }`
-so the destination port doesn't need to be recomputed per flit.
+`Flit` mixes in `FormalData`: its `formalIsStateValid()` asserts `vc <
+virtualChannels` whenever `virtualChannels` isn't a power of 2 (so the extra
+encoding space above the count can't be asserted/assumed as reachable in
+formal properties elsewhere).
+
+Internally, `FlitRouter` resolves a packet's destination *canonical* port
+once, then demuxes every subsequent flit of that packet straight into the
+correspondingly-indexed slot of its own `connectivityOut`-sized output
+vector — the destination is the vector index itself, so no separate
+`routedNode` tag needs to ride along with the flit downstream.
 
 ## Router node internals
 
@@ -274,11 +343,15 @@ so the destination port doesn't need to be recomputed per flit.
 the number of canonical ports this node actually has. Each physical input
 port owns one `StreamFifo` per VC (`InputPort`, depth `cfg.vcDepth`) — this
 is the actual flow-control boundary (ordinary `Stream` ready/valid
-backpressure, not an explicit credit protocol). A header-decode stage per
-`(input port, vc)` resolves the destination port once per packet and hands
-off to a shared `VirtualIdAllocator`, which arbitrates all contending
-packets for output ports and destination VC lanes. Each physical output
-port then merges its VC lanes with a priority arbiter (`OutputPort`).
+backpressure, not an explicit credit protocol); the **local (injection)
+port always gets exactly one VC lane** regardless of `cfg.virtualChannels`,
+since traffic entering the fabric hasn't been assigned a real VC class yet.
+A `FlitRouter` per `(input port, vc)` resolves the destination port once per
+packet and hands off to a `VirtualIdAllocator` — **one instance per
+`(router, output port)`**, not one shared instance per router — which
+arbitrates all contending packets for that one output port's destination VC
+lanes. Each physical output port then merges its VC lanes back down to one
+physical link (`OutputPort`).
 
 ```mermaid
 flowchart TB
@@ -287,60 +360,169 @@ flowchart TB
   classDef alloc fill:#f5eef7,stroke:#8a4a97,color:#2f1834
 
   ExtIn["io.inputs(port)"]:::ext --> IP["InputPort<br/>StreamDemux by vc →<br/>per-vc StreamFifo(depth = vcDepth)"]:::stage
-  IP --> HD["Header decode (per input × vc)<br/>idle: decode Header, resolveDestPort(dest, address)<br/>routed: tag flits as RoutedFlit{flit, routedNode}"]:::stage
-  HD -->|"routedFlits(port)(vc)"| VIA["VirtualIdAllocator<br/>GrantTable + VcSelector + VcRouter<br/>Static or Dynamic mode"]:::alloc
-  VIA -->|"allocatedFlits(port)(vc)"| OP["OutputPort<br/>StreamArbiter(lowerFirst, transactionLock)<br/>merges VC lanes onto one link"]:::stage
+  IP --> HD["FlitRouter (per input × vc)<br/>idle: decode Header, resolveDestPort(dest, address, inputPort)<br/>routed: demux flits straight to the resolved output slot"]:::stage
+  HD -->|"routedFlits(inputPort)(vc)"| VIA["VirtualIdAllocator (per output port)<br/>GrantTableCrossbar: GrantTableArbiter + GrantTableStreamRouter"]:::alloc
+  VIA -->|"allocatedFlits(vc)"| OP["OutputPort<br/>vcCount==1: direct connect<br/>vcCount>1: StreamArbiter(roundRobin, noLock)"]:::stage
   OP --> ExtOut["io.outputs(port)"]:::ext
 ```
 
+`OutputPort`'s link-merge arbiter deliberately uses `roundRobin.noLock`
+rather than the packet-atomic `lowerFirst`/`transactionLock` policy used
+elsewhere in the fabric: `noLock` re-arbitrates every single beat instead of
+holding a lane for a whole packet — safe here because each flit already
+carries its own `vc` tag and gets re-demuxed by the downstream `InputPort`,
+so interleaving beats from different VCs on the wire causes no confusion.
+That per-beat fairness is what stops a continuously-ready "pool" VC from
+starving a bursty escape VC of physical link bandwidth (see
+[Deadlock avoidance](#deadlock-avoidance-escape-vc-datelines)). The one
+exception is the NoC's own external boundary, wired by
+`Topology.createNodes`: the merge from a node's local-port VC lanes out to
+`io.outputs(x)` still uses `lowerFirst.fragmentLock`, since flits leaving the
+NoC entirely no longer carry a `vc` tag downstream and so must not
+interleave packets on that final link.
+
+Each `RouterNode` input also feeds a `GlobalLogger` flow trace
+(`noc-router`, `router-input-<address>`, `router-input-<port>-<vc>` tags) of
+every packet's first flit — a simulation/debug hook, not part of the routing
+logic itself.
+
 ## Virtual-channel allocation
 
-`VirtualIdAllocator` picks the mechanism per `cfg.virtualChannelMode`:
-
-- **Static** — a packet's destination VC lane always equals its source VC
-  id. Per `(output port, vc)`, a `GrantTable(connectivityIn, 1)` arbitrates
-  only among the input ports contending for that one fixed lane.
-- **Dynamic** — any `(input port, source vc)` may be granted *any* free
-  destination VC lane on an output. Per output port, one
-  `GrantTable(connectivityIn × virtualChannels, virtualChannels)` arbitrates
-  the full candidate set; `retag` rewrites the winning flit's `vc` field.
-
-```mermaid
-flowchart LR
-  classDef box fill:#f5eef7,stroke:#8a4a97,color:#2f1834
-  subgraph Static["Static — per (output port, vc lane)"]
-    direction LR
-    S_in["contending input ports"] --> S_gt["GrantTable(connectivityIn, 1)"]:::box --> S_vr["VcRouter"]:::box --> S_out["allocatedFlits(out, vc)"]
-  end
-  subgraph Dynamic["Dynamic — per output port"]
-    direction LR
-    D_in["(input port × source vc)<br/>candidates = connectivityIn × vcCount"] --> D_gt["GrantTable(candidateCount, vcCount)"]:::box --> D_vr["VcRouter"]:::box --> D_out["allocatedFlits(out, any free vc)"]
-  end
-```
-
-Inside `GrantTable`, a `candidateSelector` (`VcSelector`, policy =
-`RoundRobin` or `LowestFirst`) picks a requester and a `laneSelector`
-(always plain priority — lanes are interchangeable) picks a free lane;
-when both agree, the grant is latched and held until the granted stream's
-`last` fires (`io.release`), which is what makes this **wormhole routing**:
-once granted, a packet's whole path is locked and later flits skip
-re-arbitration.
+VC allocation is built on a **generic, NoC-independent N:M crossbar**,
+`spinalextras.lib.misc.arbitration.GrantTableCrossbar`, rather than
+NoC-specific plumbing. `VirtualIdAllocator` (one per output port) is a thin
+wrapper: it derives one `allowed(v)(c)` matrix from
+`cfg.topology.allowedTransitionTable(...)` — where `v` ranges over
+destination VC lanes and `c` ranges over every `(input port, source vc)`
+candidate contending for this output — and hands it to one
+`GrantTableCrossbar`.
 
 ```mermaid
 flowchart TB
   classDef box fill:#f5eef7,stroke:#8a4a97,color:#2f1834
-  Req["io.request(candidate)"] --> CS["candidateSelector: VcSelector<br/>(RoundRobin / LowestFirst)"]:::box
-  Free["free lanes"] --> LS["laneSelector: VcSelector<br/>(priority, lanes are interchangeable)"]:::box
-  CS --> M{"both chosen &amp; valid?"}
-  LS --> M
-  M -->|yes| G["grant(lane)(candidate) := True<br/>held until packet's last flit"]:::box
-  Rel["io.release(vc) = allocatedFlits.lastFire"] --> Clr["clear grant row"]
+  VIA["VirtualIdAllocator(cfg, address, canonicalPort)"]:::box --> AT["allowed = topology.allowedTransitionTable(...)"]:::box
+  AT --> GTC["GrantTableCrossbar(payloadType, allowed, roundRobin)"]:::box
+  GTC --> ARB["GrantTableArbiter<br/>decides (lane, candidate) pairings"]:::box
+  GTC --> ROUTER["GrantTableStreamRouter<br/>pure stream mux driven by the arbiter's grant"]:::box
+  ARB --> CS["candidateSelector: ChannelSelector<br/>(RoundRobin / LowestFirst), masked to<br/>candidates with ≥1 free allowed lane"]:::box
+  ARB --> LS["laneSelector: ChannelSelector<br/>(plain priority — lanes interchangeable)"]:::box
 ```
 
-At the physical output link, `OutputPort` merges the granted VC lanes with
-`StreamArbiterFactory().lowerFirst.transactionLock` — lower-VC-id priority,
-whole-packet locking, so flits from different packets never interleave on
-the wire even though several VCs share one physical link.
+`GrantTable.diagonal(candidateCount, vcCount)` (candidate `c` may only ever
+be granted lane `c % vcCount` — Static's dest-VC-pinned-to-source-VC
+behavior) and `GrantTable.allowAll(candidateCount, vcCount)` (any candidate,
+any lane — Dynamic) are the two generic building blocks `Topology`'s default
+`allowedTransitionTable` picks between; `Ring` and `Torus` instead build a
+custom `allowed` matrix per call to carve out the escape-VC exception (next
+section). Because `GrantTable` only allocates a real `grant` wire for pairs
+`allowed(v)(c)` actually marks true, a heavily-restricted matrix (like
+Static's diagonal) costs less hardware than an unrestricted one, not more.
+
+Inside `GrantTableArbiter`, `candidateSelector` (a `ChannelSelector`, policy =
+`RoundRobin` or `LowestFirst`) picks a requesting candidate — but only among
+candidates that currently have at least one free, allowed lane, so it can
+never latch onto a candidate that can't presently be served and stall an
+otherwise-servable one behind it — and `laneSelector` (always plain priority;
+any allowed free lane is as good as any other) picks a lane for it. Both are
+"hold until taken" `Stream`-shaped selectors: once a winner is latched, it's
+held stable and ignores further changes in `requests` until the consumer
+takes it. When both have a valid, mutually-allowed pick, the pairing is
+committed into `GrantTable`'s `grant` bits and held until `io.release(v)`
+fires — i.e. that lane's occupant's `last` flit fired — which is what makes
+this **wormhole routing**: once granted, a packet's whole path is locked and
+later flits skip re-arbitration. `GrantTableStreamRouter` is then just a pure
+mux driven by the committed `grant` bundle, with formally-stated invariants
+(a held pairing can't be silently reassigned except across a release) rather
+than any decision logic of its own.
+
+## Deadlock avoidance: escape-VC datelines
+
+Ring and Torus each contain at least one genuine physical cycle. Without
+some restriction on how a packet may change VC lanes as it travels, packets
+can form a cyclic dependency across those lanes' buffers: once every VC
+buffer all the way around the cycle is simultaneously full and each is
+waiting on the next, nothing can ever drain — a **permanent** deadlock, not a
+transient slowdown a longer timeout would ride out. (This is also why the
+concurrency tests deliberately flood far more traffic than the network's
+total per-link buffering, `~vcCount * vcDepth` flits — see
+[Test harnesses](#test-harnesses) — rather than picking a packet count that
+merely happens to work today.)
+
+Both topologies override `Topology.allowedTransitionTable` to reserve the
+top VC index (`escapeVc = vcCount - 1`) as a dedicated **escape/dateline**
+class, and designate one specific physical edge as the **dateline**:
+
+- **Ring**: the one wraparound edge — `address == size-1` going `ClockWise`,
+  or `address == 0` going `CounterClockWise` (the same physical edge, seen
+  from each side).
+- **Torus**: any of the four wraparound edges (X or Y). Because routing is
+  strictly dimension-order (X fully resolves before Y starts), a packet
+  needs **at most one** class bump ever, whichever dateline it happens to
+  cross first — so **one shared escape class covers both axes**. Giving X
+  and Y separate escape classes wouldn't just waste a lane: a packet needing
+  both crossings would be forced `escapeX → escapeY` at the Y dateline, a
+  class *decrease* that breaks the scheme's monotonic-progress invariant —
+  and at `vcCount == 2` it would leave zero pool lanes at all.
+
+The two VC modes differ in how ordinary (non-dateline) hops behave, but both
+force the same one-time class bump at the dateline:
+
+- **Dynamic** (Duato's adaptive-escape protocol): ordinary hops are fully
+  adaptive among the non-escape "pool" lanes (any candidate, any pool lane).
+  Crossing the dateline forces a bump onto the escape lane; once on it, a
+  packet stays **sticky** on the escape class for the rest of its trip. The
+  escape class alone forms a strict, deterministically-routed sub-network
+  with monotonically decreasing "distance to dateline" — the classic
+  ingredient that makes an escape-VC scheme provably deadlock-free.
+- **Static** (Dally's dimension-order dateline scheme): dest VC is normally
+  pinned to source VC for a packet's entire trip — which, left alone, is
+  exactly the same cyclic-dependency risk as Dynamic without an escape lane,
+  just duplicated per VC class instead of network-wide. The fix mirrors
+  Dynamic: pin `destVc = sourceVc` on ordinary hops, but force the one-time
+  bump onto the escape class at the dateline.
+
+Both implementations share one subtlety: a candidate's *incoming* `vc` tag
+only means "this packet already escaped" if some upstream router's own
+`allowedTransitionTable` actually put it there by force. On the `Local`
+(injection) port, the incoming tag is just whatever the injecting source
+happened to pick — not evidence of a real dateline crossing — so it must
+**not** be honored as sticky there; otherwise a packet could inject straight
+onto the escape lane and later treat the dateline as an ordinary continuing
+hop, reopening the same deadlock. Both `Ring.allowedTransitionTable` and
+`Torus.allowedTransitionTable` special-case `inputPort == Local` to prevent
+this.
+
+```mermaid
+flowchart LR
+  classDef pool fill:#e8eef7,stroke:#4b6fa8,color:#1c2b40
+  classDef escape fill:#fdf3e3,stroke:#b8863b,color:#3a2c10
+  classDef dl fill:#f5eef7,stroke:#8a4a97,color:#2f1834
+
+  subgraph Ring["Ring — one dateline edge"]
+    direction LR
+    P0["node_0"] --> P1["node_1"] --> P2["node_2"]:::pool
+    P2 -->|"dateline:<br/>forced bump to escapeVc"|:::dl P0
+  end
+```
+
+This escape mechanism only exists because `minimumVirtualChannels = 2` for
+Ring/Torus — with a single VC there's no spare lane to reserve, so a
+one-VC Ring/Torus configuration isn't offered by
+`NocConfig.testConfigurations()` at all. (A related, unrelated-to-VC-mode
+issue: `vcDepth = 1` doesn't even elaborate on Ring/Torus, since
+`spinal.lib.StreamFifo`'s depth-1 case bypasses to a purely combinational
+ready path, and chaining that all the way around a physical cycle with no
+register anywhere is a genuine RTL combinational loop — see the comment on
+`NocConfig.testConfigurations()`.)
+
+`OutputPort`'s `roundRobin.noLock` link-merge policy (see
+[Router node internals](#router-node-internals)) is part of the same
+deadlock-avoidance story: a fixed regression,
+`RingOneWayRegressionSpec` (all traffic forced clockwise-only, so no
+direction-vs-direction interaction is even possible), reproduced a deadlock
+that traced back to a continuously-ready pool VC starving the escape VC of
+physical link bandwidth under the old `lowerFirst`/`transactionLock` policy —
+fixed by switching to per-beat round-robin arbitration on the physical link.
 
 ## Wormhole routing across hops
 
@@ -354,25 +536,101 @@ sequenceDiagram
   Note over Src,C: packet destined for node C, vc = v
   Src->>A: header flit, dest=C vc=v, last=false
   A->>A: decode header, resolveDestPort towards B
-  A->>A: allocator grants input to output-B, vc2
+  A->>A: output-B's allocator grants this candidate a dest vc<br/>(possibly a forced escape-class bump, see dateline rules)
   A->>B: header flit forwarded
   B->>B: decode header, resolveDestPort towards C
-  B->>B: allocator grants input to output-C, vc3
+  B->>B: output-C's allocator grants this candidate a dest vc
   B->>C: header flit forwarded
-  Note over A,C: vc register latched at each hop, later flits reuse the same granted path with no re-arbitration
+  Note over A,C: grant held at each hop, later flits reuse the same path with no re-arbitration
   Src->>A: payload flit 1
   A->>B: payload flit 1
   B->>C: payload flit 1
   Src->>A: payload flit N, last=true
   A->>B: payload flit N, last=true
   B->>C: payload flit N, last=true
-  Note over A,C: last flit fires GrantTable release at every hop, path torn down and lanes freed
+  Note over A,C: last flit fires io.release at every hop, path torn down and lanes freed
 ```
 
 Because each VC lane is buffered and arbitrated independently, one packet
 stalled on a shared physical link does not head-of-line-block a different
-packet occupying another VC — verified directly by the `manyToOne` /
-`floodPackets` scenarios in `lib/tests/NoCConcurrence.scala`.
+packet occupying another VC — checked directly by the `manyToOne` /
+`floodPackets` scenarios in `lib/tests/noc/NoCConcurrence.scala`.
+
+## Protocol adapters
+
+Below the raw flit fabric sits a `protocols` package for building
+higher-level, addressable buses on top of a NoC without hand-rolling
+packetizing/de-packetizing logic per use site. Every adapter is a
+`ProtocolSpecification` sharing one `NoCBuilder`:
+
+```mermaid
+classDiagram
+  class ProtocolSpecification {
+    registerRoutes()
+    build()
+  }
+  class DataStreamSpecification~T~ {
+    addSource(hdr, address) Stream~Fragment~T~~
+    addSink(address) Stream~Fragment~T~~
+  }
+  class DataStreamSpecificationWithRegisters~T~ {
+    addSource(name, address)
+    addSourceWithInit(name, dst, address)
+    setInitRoute(src, dst)
+  }
+  class PipelinedMemoryBusSpecification {
+    addMaster(bus, inputAddress, outputAddress)
+    addSlave(bus, mapping, inputAddress, outputAddress)
+  }
+  class Axi4Specification {
+    addMaster(bus, inputAddress, rOutputAddress, bOutputAddress)
+    addSlave(bus, mapping, inputAddress, outputAddress)
+  }
+  ProtocolSpecification <|-- DataStreamSpecification
+  DataStreamSpecification <|-- DataStreamSpecificationWithRegisters
+  ProtocolSpecification <|-- PipelinedMemoryBusSpecification
+  ProtocolSpecification <|-- Axi4Specification
+```
+
+- **`ProtocolSpecification`** is the shared contract: it registers itself
+  with the builder on construction, and exposes two hooks the builder calls
+  at fixed points — `registerRoutes()` (declare which `(input, output)` slot
+  pairs must actually be routable, *before* any address is auto-assigned) and
+  `build()` (wire the real adapters, once every address is resolved).
+- **`DataStreamSpecification[T]`** is the generic case: `addSource(hdr,
+  address)` takes a caller-supplied header `Bits` (the caller fully owns
+  routing/subheader encoding) and returns a driveable `Stream[Fragment[T]]`;
+  `addSink(address)` returns a readable stream with the routing header flit
+  already stripped off by the fabric. Defaults to full source×sink
+  connectivity. `DataStreamSpecificationWithRegisters` layers a `BusIf` CSR
+  (`<name>_hdr`) per source so firmware can retarget a source's destination
+  at runtime, an optional compile-time default destination
+  (`addSourceWithInit`/`setInitRoute`), and a device-tree fragment describing
+  every sink's name and address.
+- **`PipelinedMemoryBusSpecification`** exposes a PMB master/slave fabric:
+  `PipelinedMemoryNocMaster`/`PipelinedMemoryNocSlave` gateways packetize one
+  PMB transaction as one NoC packet (a `Header` flit, then one payload flit).
+  Because `PipelinedMemoryBusRsp` is an untagged `Flow` with no
+  per-transaction tag, each master gateway allows only **one outstanding
+  read at a time** (`haltWhen`), and the slave gateway keeps a receive-order
+  `PendingRsp` FIFO to route each response back to the master that asked for
+  it.
+- **`Axi4Specification`** is the AXI4 analogue, over `Axi4Shared` (merged
+  address+data `arw` channel, so one transaction is still one packet per
+  direction). Unlike PMB, AXI4's `id` field lets many transactions stay
+  outstanding at once — no single-outstanding-read restriction — the only
+  requirement is the usual AXI4 rule (never reuse an `id` while it's still
+  outstanding, checked by an `assert` in `Axi4NocSlave`). A master needs
+  *two* independent delivery addresses (`rOutput` for read data, `bOutput`
+  for write acknowledgements), since a slave can't multiplex both response
+  kinds onto one stream.
+
+Every adapter's master/slave (or source/sink) needs **two independent node
+addresses** — an *input* slot (where it injects packets) and an *output*
+slot (where the fabric delivers packets addressed to it) — since a producer
+and consumer role need not sit at the same physical node. `NoCBuilder`
+tracks and auto-assigns these two address spaces independently (see
+[Building a NoC](#building-a-noc)).
 
 ## Component relationships
 
@@ -380,10 +638,11 @@ packet occupying another VC — verified directly by the `manyToOne` /
 classDiagram
   class NoC {
     cfg : NocConfig
-    io.inputs : Stream~Fragment~Flit~~[]
-    io.outputs : Stream~Fragment~Flit~~[]
+    io.inputs : Stream~Fragment~Bits~~[]
+    io.outputs : Stream~Fragment~Bits~~[]
     configureInputNode()
     configureOutputNode()
+    sealUnusedPorts()
   }
   class NocConfig {
     topology : Topology
@@ -392,12 +651,15 @@ classDiagram
     vcDepth : Int
     virtualChannelMode
     virtualChannelArbitrationPolicy
+    packHeader(dest, subheader)
   }
   class Topology {
     <<trait>>
     nodes : Int
-    resolveDestPort()
+    minimumVirtualChannels : Int
+    resolveCanonicalDestPort()
     resolveNeighborAddress()
+    allowedTransitionTable()
     createNodes()
   }
   Topology <|-- Mesh
@@ -409,55 +671,149 @@ classDiagram
   class RouterNode {
     io.inputs[]
     io.outputs[]
+    allocators : Seq~VirtualIdAllocator~
   }
   class InputPort {
     per-vc StreamFifo(depth=vcDepth)
   }
   class OutputPort {
-    StreamArbiter(lowerFirst, transactionLock)
+    vcCount==1: direct connect
+    vcCount>1: StreamArbiter(roundRobin, noLock)
   }
-  class VirtualIdAllocator
+  class VirtualIdAllocator {
+    one per (router, output port)
+  }
+  class GrantTableCrossbar
+  class GrantTableArbiter
+  class GrantTableStreamRouter
   class GrantTable
-  class VcSelector
-  class VcRouter
+  class ChannelSelector
 
   NoC --> NocConfig
   NoC --> Topology : uses
   NoC "1" --> "N" RouterNode : createNodes()
   RouterNode --> InputPort
   RouterNode --> OutputPort
-  RouterNode --> VirtualIdAllocator
-  VirtualIdAllocator --> GrantTable
-  VirtualIdAllocator --> VcRouter
-  GrantTable --> VcSelector
+  RouterNode "1" --> "N" VirtualIdAllocator
+  VirtualIdAllocator --> GrantTableCrossbar
+  GrantTableCrossbar --> GrantTableArbiter
+  GrantTableCrossbar --> GrantTableStreamRouter
+  GrantTableArbiter --> GrantTable
+  GrantTableArbiter --> ChannelSelector
+  GrantTableStreamRouter --> GrantTable
 ```
+
+`GrantTableCrossbar`/`GrantTableArbiter`/`GrantTableStreamRouter`/
+`GrantTable`/`ChannelSelector` live in `spinalextras.lib.misc.arbitration` —
+they know nothing about flits, headers, or topologies, and are exercised by
+their own formal test suites independently of the NoC.
 
 ## Building a NoC
 
 ```mermaid
 flowchart LR
   classDef step fill:#e8eef7,stroke:#4b6fa8,color:#1c2b40
-  A["NoCDesign(cfg)"]:::step --> B["addInput / addBitsInput<br/>(per producer)"]:::step
-  A --> C["addOutput / addBitsOutput<br/>(per consumer)"]:::step
-  B --> D[".create()"]:::step
-  C --> D
-  D --> E["sizes topology to<br/>max(inputs.size, outputs.size)"]:::step
-  E --> F["zips into TupleProcessor list<br/>(nulls pad unused sides)"]:::step
-  F --> G["NoC.apply(processors, cfg)"]:::step
+  A["new NoCBuilder(cfg)"]:::step --> B["one or more ProtocolSpecifications<br/>share the builder<br/>(DataStreamSpecification, PipelinedMemoryBusSpecification, Axi4Specification, ...)"]:::step
+  B --> C["builder.build()"]:::step
+  C --> D["every spec's registerRoutes()<br/>(declares required input→output slot pairs)"]:::step
+  D --> E["output slots resolved first,<br/>then input slots<br/>(steered away from required partners' addresses)"]:::step
+  E --> F["every spec's build()<br/>(wires adapters using resolved addresses)"]:::step
+  F --> G["new NoC(cfg); wire every<br/>registered input/output; sealUnusedPorts()"]:::step
   G --> H["fully-wired NoC component"]:::step
 ```
 
-For manually-built endpoints, `NoC.apply(processors: Seq[NocProcessor], cfg)`
-skips the builder and connects a pre-existing list of
-`Stream[Fragment[Flit]]` pairs directly.
+Output slots are resolved before input slots specifically so that, by the
+time an input slot's forbidden-address set is computed, every route partner
+it needs to avoid colliding with already has a concrete address —
+`NoCBuilder.requireRoute(input, output)` (called from a spec's
+`registerRoutes()`) is what flags that a given `(input, output)` pair must
+stay routable, steering auto-addressing away from assigning them the same
+node (a NoC can never route a packet back out the very port it was injected
+from, so an input and its required output partner colliding would silently
+produce an unroutable pair).
 
-### Test harnesses
+For manually-built endpoints below the builder layer,
+`NoC.apply(processors: Seq[NocProcessor], cfg)` connects a pre-existing list
+of `Stream[Fragment[Bits]]` pairs directly, with no builder or protocol
+adapter involved.
 
-- `lib/tests/NoCPathing.scala` — single-packet delivery correctness across
-  every entry in `NocConfig.testConfigurations()` (all five topologies ×
-  VC count × VC mode × arbitration policy).
-- `lib/tests/NoCConcurrence.scala` — forks one sender per source node,
-  reconstructs packets per `(node, vc)` on receive, and asserts both
-  correctness *and* genuine overlap-in-flight (`overlapExists`) — including
-  a `manyToOne` scenario that deliberately contends multiple senders on one
-  destination's inbound link across distinct VCs to stress VC isolation.
+## Gate count / resource usage
+
+`NocGateCount` (`lib/noc/NocGateCount.scala`) elaborates a `NoC` for a given
+`NocConfig` to Verilog and runs it through yosys (`read_verilog` →
+`hierarchy -top` → `proc` → `flatten` → `opt -full` → `stat`), parsing the
+resulting cell/wire/memory counts. This deliberately stops at a generic
+`opt` pass rather than a full technology-mapped `synth`, so the numbers below
+are a rough, *relative* size comparison across configurations — not real
+ASIC/FPGA gate counts. `NocGateCount.report()` prints a plain
+sorted-by-cell-count summary for `NocConfig.testConfigurations()` (or any
+configuration list); `NocGateCountMarkdownApp.main` runs the same thing over
+a fixed set of representative configurations and renders it as the Markdown
+table below (optionally writing it to a file path given as the first CLI
+argument) — this is how [`profile.md`](profile.md)'s table is produced and
+can be regenerated.
+
+| Topology | Nodes | Data Width | VCs | VC Depth | VC Mode | VC Policy | wire bits | memories | memory bits | cells |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Ring | 4 | 64 | 2 | 2 | Static | LowestFirst | 83.33 kb | 20 | 2.60 kb | 2097 |
+| Mesh (2,2) | 4 | 64 | 1 | 2 | Static | LowestFirst | 47.04 kb | 12 | 1.56 kb | 996 |
+| Mesh (4,4) | 16 | 16 | 1 | 2 | Static | LowestFirst | 89.00 kb | 64 | 2.18 kb | 6824 |
+| Mesh (4,4) | 16 | 16 | 1 | 2 | Static | LowestFirst | 89.00 kb | 64 | 2.18 kb | 6824 |
+| Mesh (4,4) | 16 | 64 | 1 | 2 | Static | LowestFirst | 284.84 kb | 64 | 8.32 kb | 6824 |
+| Mesh (4,4) | 16 | 16 | 1 | 2 | Static | RoundRobin | 90.79 kb | 64 | 2.18 kb | 8152 |
+| Ring | 16 | 16 | 2 | 2 | Static | LowestFirst | 106.95 kb | 80 | 2.72 kb | 8601 |
+| Mesh (4,4) | 16 | 16 | 2 | 2 | Static | LowestFirst | 166.72 kb | 116 | 3.94 kb | 14120 |
+| Torus (4,4) | 16 | 16 | 2 | 2 | Static | LowestFirst | 237.90 kb | 160 | 5.41 kb | 22120 |
+| Mesh (4,4) | 16 | 16 | 2 | 2 | Static | LowestFirst | 166.72 kb | 116 | 3.94 kb | 14120 |
+| Mesh (4,4) | 16 | 16 | 4 | 2 | Static | LowestFirst | 312.79 kb | 264 | 10.91 kb | 26240 |
+| Mesh (4,4) | 16 | 16 | 4 | 2 | Dynamic | LowestFirst | 381.73 kb | 264 | 10.91 kb | 52760 |
+
+(The two identical `Mesh (4,4)` / dataWidth-16 / 1-VC / LowestFirst rows are
+reproduced verbatim from the generated table, not a copy-paste error in this
+document — `NocGateCountMarkdownApp`'s configuration list happens to include
+that combination twice.)
+
+## Test harnesses
+
+- `lib/tests/noc/NoCPathing.scala` — single-packet delivery correctness
+  across every entry in `NocConfig.testConfigurations()` (all five
+  topologies × VC count × VC mode × arbitration policy, filtered by each
+  topology's `minimumVirtualChannels`).
+- `lib/tests/noc/NoCConcurrence.scala`:
+  - `NocConcurrencySpec` forks one sender per source node and floods
+    `packetsPerSrc = 4 * virtualChannels * vcDepth` packets per topology —
+    deliberately far more than the network's total per-link buffering, since
+    (per [Deadlock avoidance](#deadlock-avoidance-escape-vc-datelines)) a
+    cyclic dependency is a permanent deadlock, not something a light load
+    would happen to avoid by luck. Reconstructs packets per `(node, vc)` on
+    receive and asserts both correctness and genuine overlap-in-flight
+    (`overlapExists`), i.e. that VC isolation actually lets multiple packets
+    make progress concurrently rather than merely not corrupting each other.
+  - `RingOneWayRegressionSpec` — fixed regression for the
+    `OutputPort`-starvation deadlock described in
+    [Deadlock avoidance](#deadlock-avoidance-escape-vc-datelines), reproduced
+    under `Ring(3, ClockwiseAlways)` traffic.
+  - `NocVCIDSpec`'s `manyToOne` scenario deliberately contends multiple
+    senders on one destination's inbound link across distinct VCs, to stress
+    VC isolation under real contention.
+- `NocDebug.dumpStalledState(noc)` — a simulation-only helper, callable from
+  a testbench right before a timeout assertion fires, that prints exactly
+  which `(node, output port, vc lane)` resources are currently held, by which
+  candidate, and which candidates are still requesting but blocked — enough
+  to find a genuine cyclic buffer dependency without baking `report()` calls
+  into the RTL and recompiling.
+- `lib/tests/noc/DataStreamSpecificationTest.scala`,
+  `PipelinedMemoryBusSpecificationTest.scala`, `Axi4SpecificationTest.scala`
+  — end-to-end tests of the `NoCBuilder` + `ProtocolSpecification` path for
+  each protocol adapter.
+- Structural invariants below the NoC-specific tests are covered by formal
+  (SymbiYosys) test suites scattered through the source —
+  `ChannelSelectorFormalTester`, `GrantTableFormalTester`,
+  `GrantTableCrossbarFormalTester`, `GrantTableStreamRouterFormalTester`,
+  `VirtualIdAllocatorFormalTester`, `InputPortFormalTester`,
+  `VCStaticMapFormalTester`/`VCDynamicMapFormalTester`,
+  `NocRouterFormalTester`, `NocFormalTester` — proving properties like grant
+  mutual-exclusion and a valid `vc` field range. These are per-component
+  invariants, not a system-wide deadlock-freedom proof; deadlock avoidance at
+  the whole-network level is validated by the heavy-load simulation scenarios
+  above, not a formal property.
