@@ -5,7 +5,7 @@ import spinal.lib._
 
 import scala.language.postfixOps
 
-case class MIPIPacketHeader(cfg : MIPIConfig) extends Bundle with IMasterSlave {
+case class MIPIPacketHeader() extends Bundle with IMasterSlave {
   val datatype = UInt(6 bits)
   val word_count = UInt(16 bits)
   val virtual_channel = UInt((2 bits))
@@ -18,6 +18,10 @@ case class MIPIPacketHeader(cfg : MIPIConfig) extends Bundle with IMasterSlave {
   val is_long_av_packet = Bool()
 
   def is_short_packet = !is_long_packet
+
+  def sof = is_short_packet && datatype === 0
+  def eof = is_short_packet && datatype === 1
+  def line = is_long_av_packet
 
   override def asMaster(): Unit = {
     out(datatype, word_count, virtual_channel,

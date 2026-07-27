@@ -28,7 +28,7 @@ case class MIPIToPixel(cfg : MIPIConfig,
      * Header events in pixel_cd.
      * sof/eof: short packet dt 0/1; line: long AV with CSI-2 payload byte count.
      */
-    val stats = master Flow(MipiCameraStatsEvent())
+    val mipi_header = master Flow(MIPIPacketHeader())
   }
   val byte_freq = cfg.dphyByteFreq
 
@@ -58,28 +58,7 @@ case class MIPIToPixel(cfg : MIPIConfig,
   bytes_to_pixels.assignMIPIHeader(mipiHdr)
   bytes_to_pixels.assignMIPIBytes(mipi_to_bytes.MIPIBytes)
 
-  // Header sideband: byte_cd -> pixel_cd. Prefer handshaking StreamCC; FlowCCByToggle
-  // is unsafe if events arrive faster than the destination can sample.
-  val byteCd = mipi_to_bytes.byte_cd()
-  val statsByte = new ClockingArea(byteCd) {
-    val flow = Flow(MipiCameraStatsEvent())
-    val sof = mipiHdr.fire && mipiHdr.is_short_packet && mipiHdr.datatype === 0
-    val eof = mipiHdr.fire && mipiHdr.is_short_packet && mipiHdr.datatype === 1
-    val line = mipiHdr.fire && mipiHdr.is_long_av_packet
-    flow.valid := sof || eof || line
-    flow.sof := sof
-    flow.eof := eof
-    flow.line := line
-    flow.word_count := Mux(line, mipiHdr.word_count, U(0, 16 bits))
-    flow
-  }.flow
-
-  if (ClockDomain.areSynchronous(byteCd, pixel_cd)) {
-    io.stats << statsByte
-  } else {
-    val overflow = Bool()
-    io.stats << statsByte.toStream(overflow).ccToggle(byteCd, pixel_cd).toFlow
-  }
+  io.mipi_header << mipiHdr
 
   io.pixelFlow <> PixelFlow2Fragment(bytes_to_pixels.io.pixelFlow).map(f => {
     val outFlow = Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.outputLanes))
