@@ -24,6 +24,7 @@ are verbatim from the source.
 - [Protocol adapters](#protocol-adapters)
 - [Component relationships](#component-relationships)
 - [Building a NoC](#building-a-noc)
+- [NoCBuilder usage](#nocbuilder-usage)
 - [Gate count / resource usage](#gate-count--resource-usage)
 - [Test harnesses](#test-harnesses)
 
@@ -463,13 +464,11 @@ this.
 ```mermaid
 flowchart LR
   classDef pool fill:#e8eef7,stroke:#4b6fa8,color:#1c2b40
-  classDef escape fill:#fdf3e3,stroke:#b8863b,color:#3a2c10
-  classDef dl fill:#f5eef7,stroke:#8a4a97,color:#2f1834
 
   subgraph Ring["Ring — one dateline edge"]
     direction LR
-    P0["node_0"] --> P1["node_1"] --> P2["node_2"]:::pool
-    P2 -->|"dateline:<br/>forced bump to escapeVc"|:::dl P0
+    P0["node_0"]:::pool --> P1["node_1"]:::pool --> P2["node_2"]:::pool
+    P2 -->|"dateline: forced bump to escapeVc"| P0
   end
 ```
 
@@ -690,20 +689,79 @@ flowchart LR
   G --> H["fully-wired NoC component"]:::step
 ```
 
-Output slots are resolved before input slots specifically so that, by the
-time an input slot's forbidden-address set is computed, every route partner
-it needs to avoid colliding with already has a concrete address —
-`NoCBuilder.requireRoute(input, output)` (called from a spec's
-`registerRoutes()`) is what flags that a given `(input, output)` pair must
-stay routable, steering auto-addressing away from assigning them the same
-node (a NoC can never route a packet back out the very port it was injected
-from, so an input and its required output partner colliding would silently
-produce an unroutable pair).
+## NoCBuilder usage
 
-For manually-built endpoints below the builder layer,
-`NoC.apply(processors: Seq[NocProcessor], cfg)` connects a pre-existing list
-of `Stream[Fragment[Bits]]` pairs directly, with no builder or protocol
-adapter involved.
+A `NoCBuilder` wraps one `NocConfig`/`Topology` and lets any number of
+[protocol adapters](#protocol-adapters) share it, each claiming its own input
+and/or output node slot(s). A minimal single-adapter fabric
+(`DataStreamSpecificationTest.scala`'s harness, trimmed):
+
+```scala
+val nocCfg = NocConfig(topology = new Mesh(2, 2), dataWidth = 32)
+val builder = new NoCBuilder(nocCfg)
+
+// Every ProtocolSpecification subclass takes the shared builder as a constructor arg,
+// and registers its own routes/slots with it as soon as it's constructed.
+val spec = new DataStreamSpecification(HardType(Bits(32 bits)), builder)
+
+// addSource/addSink each claim one NodeSlot; pass an explicit address to pin it,
+// or omit it (default -1) to let NoCBuilder auto-assign the lowest free node.
+val src  = spec.addSource(headerBits)   // auto-addressed input slot
+val sink = spec.addSink()               // auto-addressed output slot
+
+// builder.build() resolves every auto-assigned slot, calls each spec's build() to wire
+// its adapters, then constructs and fully wires the underlying NoC.
+val noc = builder.build()
+```
+
+Multiple adapters can share one builder — and therefore one physical
+fabric — as long as the topology has enough nodes for every slot they
+collectively claim; each adapter only needs to know about `builder`, not
+about any other adapter sharing it. `Axi4SpecificationTest.scala`'s harness
+shows this for a single master/slave pair:
+
+```scala
+val builder = new NoCBuilder(nocCfg)
+val spec = new Axi4Specification(axiConfig, builder)
+
+// AXI4 needs two independent output addresses per master (see Protocol adapters):
+// one for read data, one for write acknowledgements.
+spec.addMaster(masterBus, masterInputAddress, masterROutputAddress, masterBOutputAddress)
+spec.addSlave(slaveBus, SizeMapping(0, BigInt(1) << axiConfig.addressWidth),
+              slaveInputAddress, slaveOutputAddress)
+
+val noc = builder.build()
+```
+
+`PipelinedMemoryBusSpecification` follows the same `addMaster`/`addSlave`
+shape (one output address per master, since PMB responses carry no
+per-transaction tag — see [Protocol adapters](#protocol-adapters)):
+
+```scala
+val builder = new NoCBuilder(nocCfg)
+val spec = new PipelinedMemoryBusSpecification(pmbConfig, builder)
+
+spec.addMaster(masterBus, masterInputAddress, masterOutputAddress)
+spec.addSlave(slaveBus, SizeMapping(0, BigInt(1) << pmbConfig.addressWidth),
+              slaveInputAddress, slaveOutputAddress)
+
+val noc = builder.build()
+```
+
+A slot's resolved address (`NodeSlot.resolvedAddress`) is only legal to read
+**after** `builder.build()` returns — auto-assignment happens inside it, once
+every specification sharing the builder has had a chance to register its
+claims. `DataStreamSpecificationHarness` needs a resolved sink address to
+bake into a source's header, so it defers that until after `build()`:
+
+```scala
+val noc = builder.build()
+
+val destSlot = spec.sinkSlot(sinkStream).get
+val destRouteable = nocCfg.topology.addressToRouteableAddress(destSlot.resolvedAddress)
+headerBits := nocCfg.packHeader(U(destRouteable, nocCfg.topology.addressSize bits),
+                                 U(0, nocCfg.topology.addressSize bits))
+```
 
 ## Gate count / resource usage
 
@@ -726,7 +784,6 @@ can be regenerated.
 | Ring | 4 | 64 | 2 | 2 | Static | LowestFirst | 83.33 kb | 20 | 2.60 kb | 2097 |
 | Mesh (2,2) | 4 | 64 | 1 | 2 | Static | LowestFirst | 47.04 kb | 12 | 1.56 kb | 996 |
 | Mesh (4,4) | 16 | 16 | 1 | 2 | Static | LowestFirst | 89.00 kb | 64 | 2.18 kb | 6824 |
-| Mesh (4,4) | 16 | 16 | 1 | 2 | Static | LowestFirst | 89.00 kb | 64 | 2.18 kb | 6824 |
 | Mesh (4,4) | 16 | 64 | 1 | 2 | Static | LowestFirst | 284.84 kb | 64 | 8.32 kb | 6824 |
 | Mesh (4,4) | 16 | 16 | 1 | 2 | Static | RoundRobin | 90.79 kb | 64 | 2.18 kb | 8152 |
 | Ring | 16 | 16 | 2 | 2 | Static | LowestFirst | 106.95 kb | 80 | 2.72 kb | 8601 |
@@ -735,11 +792,6 @@ can be regenerated.
 | Mesh (4,4) | 16 | 16 | 2 | 2 | Static | LowestFirst | 166.72 kb | 116 | 3.94 kb | 14120 |
 | Mesh (4,4) | 16 | 16 | 4 | 2 | Static | LowestFirst | 312.79 kb | 264 | 10.91 kb | 26240 |
 | Mesh (4,4) | 16 | 16 | 4 | 2 | Dynamic | LowestFirst | 381.73 kb | 264 | 10.91 kb | 52760 |
-
-(The two identical `Mesh (4,4)` / dataWidth-16 / 1-VC / LowestFirst rows are
-reproduced verbatim from the generated table, not a copy-paste error in this
-document — `NocGateCountMarkdownApp`'s configuration list happens to include
-that combination twice.)
 
 ## Test harnesses
 

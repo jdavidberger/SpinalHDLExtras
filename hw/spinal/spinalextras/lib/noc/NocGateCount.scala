@@ -177,7 +177,6 @@ object NocGateCountMarkdownApp {
       NocConfig(new Ring(4), dataWidth = 64, virtualChannels = 2, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
       NocConfig(new Mesh(2, 2), dataWidth = 64, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
       NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
-      NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
       NocConfig(new Mesh(4, 4), dataWidth = 64, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
       NocConfig(new Mesh(4, 4), dataWidth = 16, virtualChannels = 1, virtualChannelMode = Static, virtualChannelArbitrationPolicy = RoundRobin),
       NocConfig(new Ring(16), dataWidth = 16, virtualChannels = 2, virtualChannelMode = Static, virtualChannelArbitrationPolicy = LowestFirst),
