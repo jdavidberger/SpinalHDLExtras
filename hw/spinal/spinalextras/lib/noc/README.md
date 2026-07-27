@@ -32,6 +32,13 @@ are verbatim from the source.
 
 ![RouterNode internals: per-VC StreamFifo lanes, FlitRouter's registered routing decision, and the per-output-port VirtualIdAllocator crossbar](router-node.svg)
 
+The same structure holds at any port count — a Mesh interior node has 5
+canonical ports (Local, West, East, North, South) instead of Ring's 3, so
+every output's `VirtualIdAllocator` fans in from correspondingly more
+candidates:
+
+![RouterNode internals for a 5-port Mesh interior node: the same StreamFifo/FlitRouter/VirtualIdAllocator/OutputPort structure as the Ring example, at larger port count](mesh-router-node.svg)
+
 ## Configuration
 
 All behavior is parameterized by a single `NocConfig`:
