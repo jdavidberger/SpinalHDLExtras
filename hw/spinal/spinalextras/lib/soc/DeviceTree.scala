@@ -1,8 +1,9 @@
 package spinalextras.lib.soc
 
 import spinal.core.{Component, SpinalReport, SpinalTag}
-import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.misc.{BusSlaveFactory, BusSlaveFactoryDelayed, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryWrite, SizeMapping}
 import spinal.lib.bus.regif.BusIf
+import spinalextras.lib.bus.general.BusSlaveProvider
 
 import java.io.{FileWriter, OutputStreamWriter}
 import scala.collection.mutable
@@ -167,6 +168,37 @@ class BusIfDeviceTreeProvider(busIf : BusIf) extends DeviceTreeProvider(
     }).seq
   }
 
+
+}
+
+class BusSlaveFactoryDeviceTreeProvider(busSlaveFactory : BusSlaveFactoryDelayed, base : BigInt) extends DeviceTreeProvider(
+  base,
+  (busSlaveFactory.elements.last.mapping.highestBound - busSlaveFactory.elements.head.mapping.lowerBound).toInt
+) {
+  private val busInterfaceName : String = busSlaveFactory.name
+
+  override def compatible : Seq[String] = Seq(s"spinex,reg-file")
+
+  override def entryName: String = busInterfaceName
+
+  override def appendDeviceTree(dt: DeviceTree): Unit = {
+    super.appendDeviceTree(dt)
+    //dt.addEntry(s"reg-docs = ${busSlaveFactory.elements.map(m => '"' + m. + '"').mkString(",\n            ")};", baseEntryPath:_*)
+  }
+
+  override def regs: Seq[(String, SizeMapping)] = {
+    val base = busSlaveFactory.elements.head.mapping.lowerBound
+
+    busSlaveFactory.elements.flatMap {
+      case w: BusSlaveFactoryWrite => {
+        Some((w.documentation, SizeMapping(base + w.address.lowerBound, w.address.highestBound - w.address.lowerBound + 1)))
+      }
+      case w: BusSlaveFactoryOnWriteAtAddress => {
+        //(w.documentation, SizeMapping(base + w.address.lowerBound, w.address.highestBound - w.address.lowerBound + 1))
+        None
+      }
+    } ++ super.regs
+  }
 
 }
 

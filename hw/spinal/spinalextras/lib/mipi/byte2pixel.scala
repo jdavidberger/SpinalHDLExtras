@@ -121,10 +121,8 @@ case class byte2pixel(cfg : MIPIConfig,
     )
   }
 
-  val byte_count = 2400
   val clock_ratio = (byte_phy_freq / pixel_cd.frequency.getValue).toDouble
   val delay_time_ratio = 8.0 * ((1.0 / cfg.GEARED_LANES) - clock_ratio / cfg.DT_WIDTH)
-  val delay_time = byte_count * delay_time_ratio
   // TODO -- if desired you can use delay_time above to keep line_valid solid for one full row
 
   val byte_clock_fifo = cfg.DT_WIDTH > cfg.GEARED_LANES

@@ -2,6 +2,7 @@ package spinalextras.lib.misc
 
 import spinal.core._
 import spinal.lib.StreamCCByToggle
+import spinal.lib.bus.misc.BusSlaveFactory
 import spinal.lib.bus.regif.AccessType.{RO, RW}
 import spinal.lib.bus.regif.{AccessType, BusIf, SymbolName}
 

@@ -37,13 +37,13 @@ class DataStreamSpecificationHarness(nocCfg: NocConfig, datatype: HardType[Bits]
   val sources = (0 until numSources).map(i => spec.addSource(hdrs(i), sourceAddresses(i)))
   val sinks = (0 until numSinks).map(i => spec.addSink(sinkAddresses(i)))
 
-  for ((s, i) <- sources.zipWithIndex) io.src(i) <> s._1
-  for ((k, i) <- sinks.zipWithIndex) io.sink(i) <> k._1
+  for ((s, i) <- sources.zipWithIndex) io.src(i) <> s
+  for ((k, i) <- sinks.zipWithIndex) io.sink(i) <> k
 
   val noc = builder.build()
 
   for ((s, i) <- sources.zipWithIndex) {
-    val destSlot = sinks(destSinkOf(i))._2
+    val destSlot = spec.sinkSlot(sinks(destSinkOf(i))).get
     val destRouteable = nocCfg.topology.addressToRouteableAddress(destSlot.resolvedAddress)
     hdrs(i) := nocCfg.packHeader(U(destRouteable, nocCfg.topology.addressSize bits), U(0, nocCfg.topology.addressSize bits))
   }

@@ -81,51 +81,6 @@ object NoC {
   }
 }
 
-class NoCDesign(cfg : NocConfig) {
-  val outputs = new mutable.ArrayBuffer[NocConfig => Stream[Fragment[Bits]]]()
-  val inputs = new mutable.ArrayBuffer[NocConfig => Stream[Fragment[Bits]]]()
-
-  def addInput(input: NocConfig => Stream[Fragment[Bits]]): Unit = {
-    inputs.append(input)
-  }
-
-  def addBitsInput(input: Stream[Fragment[Bits]], busIf : BusIf) {
-    val reg = busIf.newReg(f"${input.name} exit_node")
-    val dest = reg.field(UInt(16 bits), RW) init(0)
-    val vcid = reg.field(UInt(8 bits), RW) init(0)
-    addBitsInput(input, dest, vcid)
-  }
-
-  def addBitsInput(input: Stream[Fragment[Bits]], exit_node : UInt, vc : UInt = U(0)): Unit = {
-    inputs.append(cfg => {
-      val header = Header(cfg)
-      header.dest := exit_node.resized
-
-      input.insertHeader(header.asBits.resized)
-    })
-  }
-
-  def addOutput(output: NocConfig => Stream[Fragment[Bits]]) = {
-    outputs.append(output)
-  }
-
-  def addBitsOutput(output: Stream[Fragment[Bits]]) = {
-    outputs.append(cfg => {
-      output
-    })
-  }
-
-  def create() : NoC = {
-    val _cfg = cfg.copy(topology = cfg.topology.sizeFor(Math.max(inputs.size, outputs.size)))
-
-    val processors = inputs.zipAll(outputs, null, null).map(x => new TupleProcessor(
-      if (x._1 == null) null else x._1(_cfg),
-      if (x._2 == null) null else x._2(_cfg))
-    )
-
-    NoC(processors, _cfg)
-  }
-}
 
 class NocFormalTester extends AnyFunSuite with FormalTestSuite {
 

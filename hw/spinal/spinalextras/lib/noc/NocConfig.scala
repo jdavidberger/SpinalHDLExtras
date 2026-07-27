@@ -22,7 +22,7 @@ case class NocConfig(
                       virtualChannels    : Int = 2,
                       vcDepth            : Int = 2,
                       virtualChannelMode : VirtualChannelMode = Static,
-                      virtualChannelArbitrationPolicy : VirtualChannelArbitrationPolicy = RoundRobin
+                      virtualChannelArbitrationPolicy : VirtualChannelArbitrationPolicy = RoundRobin,
                     ) {
   def headerApplicationBits = dataWidth - topology.addressSize
   def virtualChannelBits = log2Up(virtualChannels)

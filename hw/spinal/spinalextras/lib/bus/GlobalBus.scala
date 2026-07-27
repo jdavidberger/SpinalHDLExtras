@@ -130,7 +130,7 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] extends BusSlavePro
   def master_direction: direction_function = x => master(x)
 
   def bus_interface(port : T, addressMapping: SizeMapping) : BusIf
-  def slave_factory(port : T) : BusSlaveFactory
+  def slave_factory(port : T) : BusSlaveFactoryDelayed
 
   var shared_bus_interfaces = new mutable.ArrayBuffer[(SizeMapping, BusIf)]
   def add_shared_bus_interface(name: String, mapping: SizeMapping, tags: String*): BusIf = {
@@ -160,12 +160,14 @@ trait GlobalBus[T <: IMasterSlave with Nameable with Bundle] extends BusSlavePro
     add_bus_interface(name, mapping, false, false, tags:_*)
   }
 
-  def add_slave_factory(name: String, mapping: SizeMapping, m2s_stage : Boolean, s2m_stage : Boolean, tags: String*): BusSlaveFactory = {
+  def add_slave_factory(name: String, mapping: SizeMapping, m2s_stage : Boolean, s2m_stage : Boolean, tags: String*): BusSlaveFactoryDelayed = {
     val port = apply_staging(add_slave(name, mapping, tags:_*), m2s_stage, s2m_stage)
-    slave_factory(port)
+    val factory = slave_factory(port)
+    factory.setName(name)
+    factory
   }
 
-  def add_slave_factory(name: String, mapping: SizeMapping, tags: String*): BusSlaveFactory = {
+  def add_slave_factory(name: String, mapping: SizeMapping, tags: String*): BusSlaveFactoryDelayed = {
     add_slave_factory(name, mapping = mapping, m2s_stage = false, s2m_stage = false, tags = tags:_*)
   }
 
@@ -369,7 +371,7 @@ case class PipelineMemoryGlobalBus(config : PipelinedMemoryBusConfig) extends Gl
 
   override def bus_interface(port: PipelinedMemoryBus, addressMapping: SizeMapping): BusIf = PipelinedMemoryBusInterface(port, addressMapping)
 
-  override def slave_factory(port: PipelinedMemoryBus): BusSlaveFactory = ???
+  override def slave_factory(port: PipelinedMemoryBus): BusSlaveFactoryDelayed = ???
 
   override def stage_bus(bus: PipelinedMemoryBus): PipelinedMemoryBus = {
     bus

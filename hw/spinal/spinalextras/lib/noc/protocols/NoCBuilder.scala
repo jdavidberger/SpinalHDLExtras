@@ -118,14 +118,7 @@ class NoCBuilder(val cfg: NocConfig) {
     // Outputs resolve first so that, by the time inputs resolve, every route an input slot needs
     // to avoid (its registered partners' node) is already a concrete address.
     outputSlots.resolveAutoClaims()
-    inputSlots.resolveAutoClaims(handle =>
-      requiredRoutes.collect { case (in, out) if in == handle => out.resolvedAddress }.toSet)
-
-    for ((input, output) <- requiredRoutes) {
-      require(input.resolvedAddress != output.resolvedAddress,
-        s"NoC route from node ${input.resolvedAddress} to node ${output.resolvedAddress} is not routeable: " +
-          "a packet can't be delivered back out the same local port it was injected from")
-    }
+    inputSlots.resolveAutoClaims()
 
     protocols.foreach(_.build())
 

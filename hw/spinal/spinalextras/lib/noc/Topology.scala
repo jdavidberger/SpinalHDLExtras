@@ -62,7 +62,7 @@ trait Topology {
   // The output port indices as seen from an input port
   def nodePortIndicesForCanonicalPorts(address : Int, inputPort : canonical_port): Seq[canonical_port] =
     if(nodeHasInputPort(address, inputPort))
-      nodePortIndicesForCanonicalPorts(address).filter(_ != inputPort)
+      nodePortIndicesForCanonicalPorts(address).filter(canonicalPort => inputPort == 0 || canonicalPort != inputPort)
     else
       Seq()
 

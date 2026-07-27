@@ -73,7 +73,7 @@ class VirtualIdAllocator(val cfg: NocConfig,
     io.activity := True
   }
 
-  crossbar.setName(s"crossbar_o${cfg.topology.portName(canonicalPort)}")
+  crossbar.setName(s"crossbar_${cfg.topology.portName(canonicalPort)}")
 
   for (i <- 0 until connectivityIn; s <- 0 until vcCount) {
     crossbar.io.sources(candidateOf(i, s)) <> io.routedFlits(i)(s)

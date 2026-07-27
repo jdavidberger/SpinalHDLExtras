@@ -150,7 +150,7 @@ class PipelinedMemoryBusSpecificationTest extends AnyFunSuite {
     // packet enters and needs to exit at the very same node's local port. NoCBuilder.requireRoute
     // turns that into a clear elaboration-time error instead of a silent simulation hang; explicit
     // addresses (unlike auto-assigned ones) are the caller's responsibility to pick correctly.
-    runBasicTest(masterInputAddress = 0, masterOutputAddress = 1, slaveInputAddress = 2, slaveOutputAddress = 3)
+    runBasicTest(masterInputAddress = 0, masterOutputAddress = 1, slaveInputAddress = 1, slaveOutputAddress = 0)
   }
 
   test("PipelinedMemoryBusSpecification routes writes/reads correctly with auto-assigned node addresses") {
