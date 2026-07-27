@@ -5,6 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinalextras.lib.noc._
+import spinalextras.lib.noc.protocols.DataStreamSpecification
 import spinalextras.lib.noc.topology.Torus
 
 import scala.collection.mutable
@@ -16,20 +17,15 @@ import scala.util.Random
  * Generic pathing test harness for arbitrary NoC topologies
  * ============================================================================
  *
- * `NocPathingHarness` wraps a `NoCBuilder(cfg)` and, using its plain
- * `addInput`/`addOutput` node-registration calls, gives every node a plain
- * `Stream(Fragment(Bits))` in/out port plus a `dest`/`vc` control signal.
- * This means the testbench never has to know how `Header` gets bit-packed
- * onto a `Flit` -- it lets the hardware build the header exactly the way any
- * real integration would (via `insertHeader`), and only has to supply the
- * destination node and a payload.
- *
- * Because `headerApplicationBits` is defined as `dataWidth - addressSize`,
- * `Header.asBits` is always exactly `dataWidth` bits wide, so `insertHeader`
- * always prepends exactly *one* header flit in front of whatever payload
- * flits the testbench sends. That invariant is what lets the receive side
- * below treat "the first flit after an idle gap" as the (opaque, ignorable)
- * header and everything else as payload, without decoding it.
+ * `NocPathingHarness` wraps a `NoCBuilder(cfg)` sharing a single
+ * `DataStreamSpecification`, registering every node as both a source and a
+ * sink at its own physical address. This means the testbench never has to
+ * know how `Header` gets bit-packed onto a `Flit` -- `DataStreamSpecification`
+ * builds the header exactly the way any real integration would (via
+ * `insertHeader`) and strips it back off on delivery (via `takeHead`), so
+ * each node's external port only ever carries payload beats, never the
+ * routing header. The testbench only has to supply the destination node and
+ * a payload.
  */
 class NocPathingHarness(cfg: NocConfig) extends Component {
   val n = cfg.topology.nodes
@@ -41,26 +37,15 @@ class NocPathingHarness(cfg: NocConfig) extends Component {
   }
 
   val builder = new NoCBuilder(cfg)
+  val spec = new DataStreamSpecification(HardType(cfg.datatype), builder)
 
   for (i <- 0 until n) {
-    // NoCBuilder.addOutput bakes the port's current `.name` into the RTL signal name it creates,
-    // and unnamed Vec elements default to their bare numeric index -- an invalid leading character
-    // in Verilog/VHDL -- so give each port an explicit name before registering it.
-    io.rawInputs(i).setName(s"rawInput_$i")
-    io.rawOutputs(i).setName(s"rawOutput_$i")
-
     val header = Header(cfg)
     header.dest := io.destInputs(i).resized
     header.application.setAll()
 
-    builder.addInput(io.rawInputs(i).insertHeader(header.asBits.resized).map(x => {
-      val flit = Fragment(cfg.datatype)
-      flit.fragment := x.fragment
-      flit.last := x.last
-      flit
-    }), i)
-
-    builder.addOutput(io.rawOutputs(i), i)
+    io.rawInputs(i) <> spec.addSource(header.asBits.resized, i)
+    spec.addSink(i) <> io.rawOutputs(i)
   }
 
   val noc = builder.build()
@@ -132,9 +117,9 @@ object NocPathingTester {
       dut.clockDomain.waitSampling(10)
 
       // Every output port is always ready to accept; every accepted beat is
-      // recorded here. First beat after an idle node is the (opaque) header,
-      // everything after that up to `last` is our own 3-beat payload
-      // (src, dst, id).
+      // recorded here. `DataStreamSpecification` strips the routing header
+      // before delivery, so every beat that arrives is our own 3-beat
+      // payload (src, dst, id) -- there's no header flit to skip.
       val arrivals = mutable.Queue[Arrival]()
       val malformed = mutable.ArrayBuffer[String]()
 
@@ -143,24 +128,18 @@ object NocPathingTester {
         port.ready #= true
 
         fork {
-          var expectHeader = true
           val buf = mutable.ArrayBuffer[BigInt]()
           while (true) {
             dut.clockDomain.waitSamplingWhere(port.valid.toBoolean && port.ready.toBoolean)
-            if (expectHeader) {
-              expectHeader = false
-            } else {
-              buf += port.payload.fragment.toBigInt
-              if (port.payload.last.toBoolean) {
-                if (buf.size == 3) {
-                  arrivals.enqueue(Arrival(node, buf(0).toInt, buf(1).toInt, buf(2).toInt))
-                  println(s"Buffer arrived ${arrivals.last}")
-                } else {
-                  malformed += s"node $node: packet ended with ${buf.size} payload beats (expected 3): $buf"
-                }
-                buf.clear()
-                expectHeader = true
+            buf += port.payload.fragment.toBigInt
+            if (port.payload.last.toBoolean) {
+              if (buf.size == 3) {
+                arrivals.enqueue(Arrival(node, buf(0).toInt, buf(1).toInt, buf(2).toInt))
+                println(s"Buffer arrived ${arrivals.last}")
+              } else {
+                malformed += s"node $node: packet ended with ${buf.size} payload beats (expected 3): $buf"
               }
+              buf.clear()
             }
           }
         }

@@ -7,6 +7,7 @@ import spinal.lib._
 import spinal.sim.SimManagerContext
 import spinalextras.lib.Config
 import spinalextras.lib.noc._
+import spinalextras.lib.noc.protocols.DataStreamSpecification
 import spinalextras.lib.noc.virtualchannels.Dynamic
 
 import scala.collection.mutable
@@ -27,11 +28,13 @@ import scala.util.Random
  *   2. That packets sharing an internal link on different VCs don't get
  *      their flits mixed up with each other.
  *
- * `NocConcurrentHarness` is otherwise identical to `NocPathingHarness`: like
- * every external NoC port, its output is a plain `Stream(Fragment(Bits))`
- * with no `vc` tag (see `NocConfig.datatype`). `Topology.createNodes`
- * arbitrates that final external link with `fragmentLock`, so a full packet
- * always finishes before the next one starts on it -- flits from different
+ * `NocConcurrentHarness` is otherwise identical to `NocPathingHarness`: it
+ * shares the same `DataStreamSpecification`-backed wiring, so every node's
+ * output is a plain `Stream(Fragment(Bits))` carrying only payload beats
+ * (the routing header is stripped before delivery), with no `vc` tag (see
+ * `NocConfig.datatype`). `Topology.createNodes` arbitrates that final
+ * external link with `fragmentLock`, so a full packet always finishes
+ * before the next one starts on it -- flits from different
  * packets can never interleave there. That's what lets `NocConcurrentTester`
  * get away with one reconstruction buffer per node instead of per VC: the
  * genuine concurrency under test happens deeper in the network, on the
@@ -49,26 +52,15 @@ class NocConcurrentHarness(cfg: NocConfig) extends Component {
   }
 
   val builder = new NoCBuilder(cfg)
+  val spec = new DataStreamSpecification(HardType(cfg.datatype), builder)
 
   for (i <- 0 until n) {
-    // NoCBuilder.addOutput bakes the port's current `.name` into the RTL signal name it creates,
-    // and unnamed Vec elements default to their bare numeric index -- an invalid leading character
-    // in Verilog/VHDL -- so give each port an explicit name before registering it.
-    io.rawInputs(i).setName(s"rawInput_$i")
-    io.outputs(i).setName(s"output_$i")
-
     val header = Header(cfg)
     header.dest := io.destInputs(i).resized
     header.application.setAll()
 
-    builder.addInput(io.rawInputs(i).insertHeader(header.asBits.resized).map(x => {
-      val flit = Fragment(cfg.datatype)
-      flit.fragment := x.fragment
-      flit.last := x.last
-      flit
-    }), i)
-
-    builder.addOutput(io.outputs(i), i)
+    io.rawInputs(i) <> spec.addSource(header.asBits.resized, i)
+    spec.addSink(i) <> io.outputs(i)
   }
 
   val noc = builder.build()
@@ -167,29 +159,25 @@ object NocConcurrentTester {
       //     fragmentLock, so a full packet always finishes before the next
       //     one starts on a given node's output -- flits from different
       //     packets can't interleave there, so no per-vc keying is needed;
-      //     packets are told apart by their `id` payload beat instead. ---
+      //     packets are told apart by their `id` payload beat instead.
+      //     `DataStreamSpecification` strips the routing header before
+      //     delivery, so every beat that arrives is payload. ---
       for (node <- 0 until n) {
         val port = dut.io.outputs(node)
         port.ready #= true
 
         fork {
           val buf = new mutable.ArrayBuffer[BigInt]()
-          var expectHeader = true
           while (true) {
             dut.clockDomain.waitSamplingWhere(port.valid.toBoolean && port.ready.toBoolean)
-            if (expectHeader) {
-              expectHeader = false // header flit for this vc's packet: opaque, ignored
-            } else {
-              buf += port.payload.fragment.toBigInt
-              if (port.payload.last.toBoolean) {
-                if (buf.size == 3) {
-                  arrivals.enqueue(Arrival(node, buf(0).toInt, buf(1).toInt, buf(2).toInt))
-                } else {
-                  malformed += s"node $node: packet ended with ${buf.size} payload beats (expected 3): $buf"
-                }
-                buf.clear()
-                expectHeader = true
+            buf += port.payload.fragment.toBigInt
+            if (port.payload.last.toBoolean) {
+              if (buf.size == 3) {
+                arrivals.enqueue(Arrival(node, buf(0).toInt, buf(1).toInt, buf(2).toInt))
+              } else {
+                malformed += s"node $node: packet ended with ${buf.size} payload beats (expected 3): $buf"
               }
+              buf.clear()
             }
           }
         }
