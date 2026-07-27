@@ -230,8 +230,8 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
         top.noIoPrefix()
         if (options.obfuscate) {
           Obfuscater(top)
-          Constraints.keep_key_heirarchy(top)
         }
+        Constraints.keep_key_heirarchy(top)
 
         top.getAllIo.foreach(w => {
           val dir = w.getDirection match {

@@ -144,6 +144,7 @@ object Constraints {
         keep_chain(c)
       }
       case c : Data => {
+        KeepAttribute(c)
         keep_chain(c.component)
       }
     })
@@ -160,7 +161,7 @@ object Constraints {
         fn(c)
       }
       case c: BufferCC[_] => {
-        fn(c)
+        fn(c.io.dataIn)
       }
       case c: StreamCCByToggle[_] => {
         fn(c)
@@ -168,7 +169,11 @@ object Constraints {
       case c: FlowCCUnsafeByToggle[_] => {
         fn(c)
       }
-      case c: Component => {}
+      case c: Component => {
+        if(c != d) {
+          walk_cc_components(c, fn)
+        }
+      }
     }
 
   }
@@ -198,6 +203,7 @@ object Constraints {
   }
   def set_max_skew(max_skew: TimeNumber, d: Data*) = {
     check()
+    d.foreach(KeepAttribute(_))
     constraints.max_skews.append((d, max_skew))
   }
   def add_clock_group(asynchronous: Boolean, clks: Data*): Unit = {
