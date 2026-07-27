@@ -43,8 +43,17 @@ class GrantTableCrossbar[T <: Data](payloadType: HardType[T],
   val arbiter = new GrantTableArbiter(roundRobinArbitration, allowed, routingMode)
   io.activity := arbiter.io.activity
 
+  // Live io.sources(c).valid alone isn't enough: once a flit fires into
+  // the RoutingMode.Register stage, the sender is free (per Stream
+  // discipline) to drop valid immediately, even though that flit is now
+  // sitting in the stage still waiting to be granted. Without also
+  // counting the staged copy's own valid here, that flit could be
+  // abandoned -- accepted into the stage, but never requested again --
+  // hanging forever once candidateBusy/laneBusy eventually clear and
+  // nothing re-asserts request(c) to let the arbiter notice. sources
+  // aliases io.sources for Stall/Async, so this is a no-op there.
   for (c <- 0 until candidateCount) {
-    arbiter.io.request(c) := io.sources(c).valid
+    arbiter.io.request(c) := io.sources(c).valid || sources(c).valid
   }
   for (v <- 0 until channelCount) {
     arbiter.io.release(v) := io.dests(v).lastFire
@@ -86,8 +95,8 @@ class GrantTableCrossbar[T <: Data](payloadType: HardType[T],
     for (i <- 0 until candidateCount; s <- 0 until channelCount) {
       when(arbiter.candidateSelector.io.chosen.valid &&
         arbiter.candidateSelector.io.chosen.payload === U(i, arbiter.candidateBits bits)) {
-        addFormalProperty(io.sources(i).valid,
-          s"a candidate held by a GrantTable's candidateSelector must still be valid on its backing stream")
+        addFormalProperty(io.sources(i).valid || sources(i).valid,
+          s"a candidate held by a GrantTable's candidateSelector must still be valid on its backing stream (live or staged)")
       }
     }
   }
