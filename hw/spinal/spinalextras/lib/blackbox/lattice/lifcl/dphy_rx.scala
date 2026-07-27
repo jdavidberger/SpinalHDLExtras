@@ -441,17 +441,17 @@ class dphy_rx(cfg : MIPIConfig,
     val clk_meas_short = ClockMeasure(clk_byte, 0x20000)
     val clk_meas_long = ClockMeasure(clk_byte, 0x4000000)
 
-    val sig_reg = busSlaveFactory.newRegAt(base + 0x00, "dphy sig")(SymbolName("dphy_sig"))
+    val sig_reg = busSlaveFactory.newRegAt(base + dphy_rx.OffSig, "dphy sig")(SymbolName("dphy_sig"))
     val signature = sig_reg.field(Bits(32 bit), ROV, BigInt("F000A802", 16), "ip sig")
 
     val lastWriteAddress = RegNext(busSlaveFactory.writeAddress() ## busSlaveFactory.doWrite)
 
-    val long_reg = busSlaveFactory.newRegAt(base + 0x04, "dphy long clk reg")(SymbolName("dphy_long_clk_meas"))
+    val long_reg = busSlaveFactory.newRegAt(base + dphy_rx.OffClkMeasLong, "dphy long clk reg")(SymbolName("dphy_long_clk_meas"))
     val long_status = long_reg.field(clk_meas_long.io.output_cnt.payload.clone(), RO, "long_CLK_cnt")
     long_status := clk_meas_long.io.output_cnt.payload
     clk_meas_long.io.flush := lastWriteAddress === (U(long_reg.addr) ## True).resized
 
-    val short_reg = busSlaveFactory.newRegAt(base + 0x08, "dphy short clk reg")(SymbolName("dphy_short_clk_meas"))
+    val short_reg = busSlaveFactory.newRegAt(base + dphy_rx.OffClkMeasShort, "dphy short clk reg")(SymbolName("dphy_short_clk_meas"))
     val short_status = short_reg.field(clk_meas_short.io.output_cnt.payload.clone(), RO, "short_CLK_cnt")
     short_status := clk_meas_short.io.output_cnt.payload
     clk_meas_short.io.flush := lastWriteAddress === (U(short_reg.addr) ## True).resized
@@ -468,7 +468,7 @@ class dphy_rx(cfg : MIPIConfig,
     }
 
     if (io.rxcsr_datsettlecyc_i != null) {
-      val dphy_data_ctrl = busSlaveFactory.newRegAt(base + 0x0c, "rxcsr_datsettlecyc")(SymbolName("rxcsr_datsettlecyc"))
+      val dphy_data_ctrl = busSlaveFactory.newRegAt(base + dphy_rx.OffDatSettle, "rxcsr_datsettlecyc")(SymbolName("rxcsr_datsettlecyc"))
       val dphy_data_settle =
         dphy_data_ctrl.field(io.rxcsr_datsettlecyc_i.clone(), RW,
           "Controls the tHS-SETTLE protocol timing parameter. Check the t-HSZERO parameter of the D-PHY transmitter to ensure the tHS-SETTLE setting can properly detect the Start-of-Transmit pattern.") init (default_datsettlecyc)
@@ -478,7 +478,7 @@ class dphy_rx(cfg : MIPIConfig,
 
     if (enable_packet_parser) {
       val default_ref_dt = cfg.refDt.id
-      val ref_dt_ctrl = busSlaveFactory.newRegAt(base + 0x10, "ref_dt")(SymbolName("ref_dt"))
+      val ref_dt_ctrl = busSlaveFactory.newRegAt(base + dphy_rx.OffRefDt, "ref_dt")(SymbolName("ref_dt"))
       val ref_dt = ref_dt_ctrl.field(UInt(io.packet_parser.ref_dt_i.getWidth bits), RW,
         "MIPI reference data type. Long packets whose data type matches this value assert lp_av_en_o. Resets to the refDt from the config.") init (default_ref_dt)
       GlobalSignals.externalize(io.packet_parser.ref_dt_i) :=
@@ -486,7 +486,7 @@ class dphy_rx(cfg : MIPIConfig,
     }
 
     if (io.rxcsr_rxfifo_pktdly_i != null) {
-      val pktdelay_ctrl = busSlaveFactory.newRegAt(base + 0x14, "rxcsr_rxfifo_pktdly")(SymbolName("rxcsr_rxfifo_pktdly"))
+      val pktdelay_ctrl = busSlaveFactory.newRegAt(base + dphy_rx.OffPktDly, "rxcsr_rxfifo_pktdly")(SymbolName("rxcsr_rxfifo_pktdly"))
       val pktdelay =
         pktdelay_ctrl.field(io.rxcsr_rxfifo_pktdly_i.clone(), RW, "Packet delay on fifo") init (1)
       GlobalSignals.externalize(io.rxcsr_rxfifo_pktdly_i) :=
@@ -502,28 +502,28 @@ class dphy_rx(cfg : MIPIConfig,
         }
       }
 
-      wcAt(0x18, BufferCC(io.hs_sync_o).rise(), "hs_sync_rise")
+      wcAt(dphy_rx.OffHsSyncRise, BufferCC(io.hs_sync_o).rise(), "hs_sync_rise")
       wcAt(0x1c, BufferCC(io.misc_signals.term_clk_en_o).rise(), "term_clk_en_rise")
       wcAt(0x20, BufferCC(io.misc_signals.term_d_en_o(0)).rise(), "term_d_en_o0")
       wcAt(0x24, io.misc_signals.hs_d_en_o, "hs_d_en_o")
       wcAt(0x28, io.misc_signals.cd_clk_o, "cd_clk_o")
       wcAt(0x2c, io.misc_signals.cd_d0_o, "cd_d0_o")
       wcAt(0x30, io.packet_parser.ecc_info.valid, "ecc_check_o")
-      wcAt(0x34, io.packet_parser.ecc_info.payload(0), "ecc_1bit_error_o")
-      wcAt(0x38, io.packet_parser.ecc_info.payload(1), "ecc_2bit_error_o")
-      wcAt(0x3c, io.packet_parser.ecc_info.payload(2), "ecc_byte_error_o")
-      wcAt(0x40, io.packet_parser.payload_en_o, "payload_en_o")
+      wcAt(dphy_rx.OffEcc1bit, io.packet_parser.ecc_info.payload(0), "ecc_1bit_error_o")
+      wcAt(dphy_rx.OffEcc2bit, io.packet_parser.ecc_info.payload(1), "ecc_2bit_error_o")
+      wcAt(dphy_rx.OffEccByte, io.packet_parser.ecc_info.payload(2), "ecc_byte_error_o")
+      wcAt(dphy_rx.OffPayloadEn, io.packet_parser.payload_en_o, "payload_en_o")
       wcAt(0x44, io.packet_parser.lp_en_o, "lp_en_o")
-      wcAt(0x48, io.packet_parser.lp_av_en_o, "lp_av_en_o")
+      wcAt(dphy_rx.OffLpAvEn, io.packet_parser.lp_av_en_o, "lp_av_en_o")
       wcAt(0x4c, io.packet_parser.sp_en_o, "sp_en_o")
-      wcAt(0x50, io.packet_parser.payload_crcvld_o, "payload_crcvld_o")
+      wcAt(dphy_rx.OffPayloadCrcVld, io.packet_parser.payload_crcvld_o, "payload_crcvld_o")
 
       // Always reserve FIFO counter slots for a stable map; idle when no FIFO.
       val fifoOvflw = if (io.fifo_misc_signals != null) io.fifo_misc_signals.fifo_ovflw_err_o else False
       val rxqueFull = if (io.fifo_misc_signals != null) io.fifo_misc_signals.rxque_full_o else False
       val rxfull0 = if (io.fifo_misc_signals != null) io.fifo_misc_signals.rxfullfr0_o else False
       val rxfull1 = if (io.fifo_misc_signals != null) io.fifo_misc_signals.rxfullfr1_o else False
-      wcAt(0x54, fifoOvflw, "fifo_ovflw_err_o")
+      wcAt(dphy_rx.OffFifoOvflw, fifoOvflw, "fifo_ovflw_err_o")
       wcAt(0x58, rxqueFull, "rxque_full_o")
       wcAt(0x5c, rxfull0, "rxfullfr0_o")
       wcAt(0x60, rxfull1, "rxfullfr1_o")
