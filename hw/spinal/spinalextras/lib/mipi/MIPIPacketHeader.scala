@@ -30,3 +30,11 @@ case class MIPIPacketHeader() extends Bundle with IMasterSlave {
       is_long_av_packet, is_long_packet)
   }
 }
+
+object MIPIPacketHeader {
+  implicit class MIPIPacketHeaderFlow(hdr : Flow[MIPIPacketHeader]) {
+    def frameStart(): Bool = {
+      hdr.valid && hdr.is_long_av_packet
+    }
+  }
+}
