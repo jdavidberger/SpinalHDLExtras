@@ -30,6 +30,9 @@ case class MIPIToPixel(cfg : MIPIConfig,
      * sof/eof: short packet dt 0/1; line: long AV with CSI-2 payload byte count.
      */
     val mipi_header = master Flow(MIPIPacketHeader())
+
+    /** Frame-valid in pixel_cd (for PTS latch via level CDC into the UVC clock). */
+    val frame_valid = out Bool()
   }
   val byte_freq = cfg.dphyByteFreq
 
@@ -68,6 +71,7 @@ case class MIPIToPixel(cfg : MIPIConfig,
   bytes_to_pixels.assignMIPIBytes(mipi_to_bytes.MIPIBytes)
 
   io.mipi_header << mipiHdr
+  io.frame_valid := bytes_to_pixels.io.pixelFlow.frame_valid
 
   io.pixelFlow <> PixelFlow2Fragment(bytes_to_pixels.io.pixelFlow).map(f => {
     val outFlow = Fragment(Vec(Bits(cfg.PIX_WIDTH bits), cfg.outputLanes))
