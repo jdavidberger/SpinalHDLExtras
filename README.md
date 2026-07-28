@@ -1,165 +1,175 @@
 # SpinalHDLExtras
 
-A collection of SpinalHDL components and SoC designs, featuring the SpineX RISC-V processor with advanced configuration and monitoring capabilities.
+A library of reusable [SpinalHDL](https://github.com/SpinalHDL/SpinalHDL) components, protocol
+adapters, and verification infrastructure, plus the SpineX RISC-V SoC built on top of it. The
+library source lives under `hw/spinal/spinalextras/lib`.
 
-## SpineX Processor
+## Bus Fabric & Interconnect (`lib/bus`)
 
-SpineX is a configurable RISC-V SoC built with SpinalHDL, featuring VexRiscv CPU core and a comprehensive set of peripherals.
+- **Protocol adapters** — `Wb2Axi4`, `Axi4ToPipelinedMemoryBus`, `PipelinedMemoryBusToWishbone`,
+  bridging between Wishbone, AXI4, and SpinalHDL's `PipelinedMemoryBus`.
+- **`GlobalBus`** — a trait for building up a bus (Wishbone/PMB/APB-style) by registering masters
+  and slaves incrementally across a design, then materializing the interconnect and address map
+  once elaboration is complete.
+- **`MultiInterconnect` / `MultiInterconnectBusses`** — connects several masters to several slaves
+  across differing bus types with a shared address decode, tagging support (`MultiInterconnectByTag`).
+- **`lib/bus/general`** — a bus-agnostic slave/arbiter/decoder abstraction (`GeneralBusInterface`,
+  `GeneralBusArbiter`, `GeneralBusDecoder`, `GeneralBusTimeout`) used to implement request/response
+  arbitration once and reuse it under different concrete bus protocols.
+- **`lib/bus/simple`** — lightweight `PipelinedMemoryBus` helpers: a slave factory, a width adapter,
+  and an AXI4-to-PMB bridge.
+- **`LMMI`** — Lattice Memory Master Interface support, including a peripheral mapper.
+- **`WishboneStage`**, **`DirectBus`**, **`AXIBusLogger`** — pipeline staging, direct point-to-point
+  buses, and AXI bus traffic logging.
 
-### Key Features
+## On-Chip Network / NoC (`lib/noc`)
 
-- **VexRiscv RISC-V CPU Core** with configurable cache and debug support
-- **Advanced Configuration & Control Block** with system monitoring
-- **8-Channel Clock Frequency Measurement** using dedicated measurement circuits
-- **Comprehensive Reset Management** with 16 external reset outputs
-- **Ethernet Support** (SpinexEth variant) with RGMII interface
-- **Standard Peripherals**: UART, Timer, I2C, SPI Flash (XIP)
-- **Flexible Bus Architecture** with APB3 and Wishbone support
+A parameterizable virtual-channel network-on-chip generator:
 
-## Processor Variants
+- **`NoC` / `NoCBuilder` / `NocConfig`** — top-level NoC component and a builder API for wiring
+  protocol endpoints onto network nodes with automatic address assignment.
+- **`lib/noc/topology`** — interchangeable network topologies: `Mesh`, `Ring`, `Torus`, `Tree`, `Star`.
+- **`lib/noc/virtualchannels`** — virtual-channel allocation and arbitration policy (round-robin,
+  lowest-first) used to avoid protocol-level deadlock, including escape-VC handling for cyclic
+  topologies (ring/torus).
+- **`lib/noc/protocols`** — adapters that let existing bus/stream protocols (AXI4, PipelinedMemoryBus,
+  generic data streams) ride over the NoC fabric via a common `ProtocolSpecification`.
+- **`FlitRouter` / `RouterNode` / `Flit`** — the per-node routing/switching logic and flit format.
+- **`NocDebug` / `NocGateCount`** — simulation-side deadlock/stall introspection and area estimation.
 
-### SpineX (Standard)
-- Base RISC-V SoC with essential peripherals
-- Configuration control block with frequency measurement
-- External reset control capabilities
+## Arbitration (`lib/misc/arbitration`)
 
-### SpinexEth (Ethernet-Enabled)
-- All SpineX features plus Ethernet MAC
-- RGMII interface for Gigabit Ethernet PHY
-- MDIO interface for PHY management
-- Lattice TriSpeed Ethernet MAC integration
+Generic resource-grant primitives used by the NoC and elsewhere: `GrantTable` (candidate/lane grant
+state with per-pairing allow masks), `GrantTableArbiter`, `GrantTableCrossbar`, `GrantTableStreamRouter`,
+and `ChannelSelector`.
 
-## Memory Map
+## Memory & FIFOs (`lib/memory`)
 
-### APB3 Peripherals (Base: 0xE0000000)
-- **0x0000-0x03FF**: SPI Flash Controller (XIP)
-- **0x1800-0x1BFF**: UART Controller
-- **0x2800-0x2BFF**: Timer
-- **0x3000-0x33FF**: Configuration & Control Block
+- **`HardwareMemory` / `WideHardwareMemory` / `StackedHardwareMemory` / `MemBackedHardwardMemory`** —
+  abstractions over on-chip RAM primitives with configurable read/write ports, width stacking, and
+  simulation-backed memory models.
+- **FIFOs** — `MemoryFifo`, `MemoryBackedFifo`, `PipelinedMemoryBusFIFO`, `StridedAccessFIFO(Reader)`
+  (strided/scatter access patterns), and `MemoryPoolFIFOs` (many logical FIFOs sharing one pooled
+  backing memory, with a factory for allocating them).
+- **`PriorityQueue`** — a hardware priority queue with configurable comparators.
+- **`PipelinedMemoryBusBuffer` / `PipelinedMemoryBusMemory` / `StreamToBuffer`** — buffering and
+  memory-mapped access helpers for `PipelinedMemoryBus`.
+- **`MemoryRequirement`** — a declarative way to describe a component's memory needs so backing
+  storage can be planned/allocated centrally.
 
-### Wishbone Peripherals (SpinexEth)
-- **0xE0004000**: Ethernet MAC (4KB)
-- **0xE0005000**: I2C Controller (32 bytes)
+## DMA (`lib/dma`)
 
-### Memory Regions
-- **0x40000000**: On-chip RAM (configurable size)
-- **0x20000000**: SPI Flash (XIP region, 16MB)
+Scatter-gather DMA engine building blocks: `ScatterGatherBase` (descriptor-based config/engine),
+`MemoryToStream`, and `StreamToMemory` for moving data between system memory and `Stream` interfaces.
 
-## Configuration & Control Block
+## Formal Verification Framework (`lib/formal`)
 
-The SpineX processor includes a comprehensive configuration and control peripheral that provides:
+- **`HasFormalProperties` / `ComponentWithFormalProperties`** — a trait-based convention for
+  attaching input assumptions and correctness assertions to any component/area, composable across
+  a design hierarchy.
+- **`FormalProperty` / `FormalData` / `FormalMasterSlave`** — property/state bookkeeping and
+  master/slave-relative formal contracts.
+- **`lib/formal/fillins`** — ready-made formal properties for SpinalHDL/library types that don't
+  ship their own: `Stream`, `Fragment`, `Bundle`, `Axi4`, `Wishbone`, `PipelinedMemoryBus`,
+  `StateMachine`, stream arbiters/forks, plus an `EquivalenceRegistry` for cross-checking equivalent
+  implementations.
+- **`lib/testing`** (`FormalTestSuite`) — reflection-based harness that discovers formal properties
+  on a component and generates SymbiYosys-driven ScalaTest cases for it automatically.
+- Broad formal coverage lives in `lib/tests/formal` — arbiters, crossbars, FIFOs, memories, bus
+  adapters, stream width adapters, and a `SbyTest` SymbiYosys runner.
 
-### Register Map (Base: 0xE0003000)
+## Logging & Tracing (`lib/logging`)
 
-#### Identification Block (0x00-0x0F)
-- **0x00**: Device ID - "SPNX" (0x53504E58)
-- **0x04**: Version - [31:16] Major, [15:8] Minor, [7:0] Patch
-- **0x08**: Git Hash - 32-bit commit hash (build-time)
-- **0x0C**: Build Time - Unix timestamp (build-time)
+- **`GlobalLogger` / `FlowLogger` / `SignalLogger`** — a simulation/hardware logging framework:
+  components register signals/flows against a global logger, which streams captured data out
+  (`FlowLoggerDataCapture`) to SQLite for offline analysis.
+- **`PipelinedMemoryBusLogger` / `WishboneBusLogger`** — bus-transaction tracing for the two
+  supported memory-mapped protocols.
+- **`lib/logging/FlowLoggerUtils`** — Python-side helpers (`sqlite.scala`-driven schema, `yaml.scala`,
+  `code.scala`) for decoding captured logger output.
 
-#### Reset Control Block (0x10-0x1F)
-- **0x10**: Reset Control - Main system resets with auto-clear
-- **0x14**: Peripheral Reset - [31:16] External resets, [7:0] Internal peripherals
-- **0x18**: Peripheral Reset Readback - Status readback
-- **0x1C**: Reserved
+## Clocking (`lib/clocking`)
 
-#### Status Block (0x20-0x2F)
-- **0x20**: System Status - PLL lock, system ready, reset state
-- **0x24**: Status Input - General purpose status (32-bit)
-- **0x28**: Frequency Control - [7:0] Flush bits for clock measurers
-- **0x2C**: Reserved
+`ClockSelection` (glitch-free clock muxing/selection), `PLLs` (a `PLL` trait plus a `SimulationPLL`
+model), and `ClockUtils` for clock-domain-crossing helpers. `FixedFrequencyWithError.scala` and
+`lib/misc/ClockMeasure.scala` / `ClockSpecification.scala` support frequency-with-tolerance
+specifications and runtime frequency measurement.
 
-#### Control Block (0x30-0x3F)
-- **0x30**: System Control - General system control (32-bit)
-- **0x34**: GPIO Control - General purpose control output (32-bit)
-- **0x38-0x3C**: Reserved
+## I/O, Blackboxes & Lattice Support (`lib/io`, `lib/blackbox`, `lib/lattice`)
 
-#### Frequency Measurement Block (0x40-0x5F)
-- **0x40-0x5C**: Clock 0-7 frequency readings (Hz, 32-bit each)
+- **`lib/io`** — technology-independent DDR I/O (`DDR`, `GenericDDR`) and `TristateBuffer` abstractions.
+- **`lib/blackbox/lattice/lifcl`** — SpinalHDL blackbox wrappers for Lattice CrossLink-NX (LIFCL)
+  primitives: PLL, oscillators (`OSCA`/`OSCD`), clock dividers/sync (`ECLKDIV`/`ECLKSYNC`/`DCS`),
+  delay lines (`DELAYA`/`DELAYB`/`DLLDEL`/`DDRDLL`), block/distributed RAMs (`DP16K`, `SP512K`,
+  `PDPSC16K`/`512K`, `DPSC512K`), JTAG (`JTAG`, `JTAGH19`), USB2/3 PHY (`USB23`), watchdog (`WDT`),
+  GSR, and a soft MIPI D-PHY receiver (`dphy_rx`).
+- **`lib/blackbox/memories`** — SPI flash model (`W25Q128JVxIM`).
+- **`lib/blackbox/opencores`** — wrapper for the OpenCores `i2c_master_top`.
+- **`lib/lattice`** — `IPX` (Lattice IP-core/`.ipx` metadata generation) and `LatticeMemories`
+  (technology mapping for generic memory requests onto Lattice RAM primitives).
 
-#### Debug Block (0xF0-0xFF)
-- **0xFC**: Scratch Register - For testing (default: 0x12345678)
+## MIPI CSI/DSI (`lib/mipi`)
 
-### Features
+A MIPI D-PHY/CSI-2 pixel pipeline: `MIPIConfig`/`MIPIIO` (PHY-level config and I/O), `MIPIPacketHeader`
+(CSI-2 packet parsing), `byte2pixel` (byte-stream to pixel unpacking for various RAW/YUV formats),
+`PixelFlow` (a `Flow`-based pixel bus with `PixelFlowMetaProvider`/`PixelFlow2Fragment` adapters).
+`lib/blackbox/lattice/lifcl/lattice/MIPIToPixel.scala` wires the soft D-PHY receiver into this pipeline.
 
-#### Clock Frequency Measurement
-- **8 Independent Channels**: Measure frequency of external clocks
-- **1ms Measurement Period**: Accurate frequency readings
-- **ClockMeasure Components**: Uses proven SpinalHDL frequency measurement
-- **Individual Flush Control**: Reset measurements per channel
+## Peripherals (`lib/peripherals`, `lib/soc/peripherals`)
 
-#### Reset Management
-- **System Resets**: CPU, system, peripheral reset control
-- **16 External Resets**: Configurable reset outputs for external peripherals
-- **Individual Peripheral Resets**: UART, Timer, I2C, Ethernet, SPI, GPIO, DMA, ADC
-- **Auto-Clear Support**: Pulse reset functionality
+- **`lib/peripherals/i2c`** — a full I2C master stack (`I2cMasterBitCtrl`, `I2cMasterByteCtrl`,
+  `I2cMaster`) with a simulation model.
+- **`lib/soc/peripherals`** — APB3-wrapped peripherals for SpineX: timer, UART (custom and
+  `UART16550`), I2C, a system configuration/control block (`SpinexConfigCtrl`), and QSPI XIP flash
+  (`XipFlashPlugin`).
 
-#### Status Monitoring
-- **PLL Lock Status**: Monitor clock system stability
-- **System Ready**: General system status indication
-- **Build Information**: Git hash and build timestamp for version tracking
+## SpineX SoC (`lib/soc`)
 
-## IO Ports
+A configurable RISC-V SoC (VexRiscv core) with a plugin-based peripheral architecture:
 
-### Standard SpineX
-```scala
-val uart: Uart                    // UART interface
-val i2c0_scl/sda: Analog(Bool)   // I2C interface
-val spiflash_*: ...              // SPI Flash interface
-val jtag: Jtag                   // JTAG debug interface
-val wb: Wishbone                 // External Wishbone bus (optional)
-val externalInterrupts: Bool[N]  // External interrupt inputs
-val externalResets: Bits(16)     // External reset outputs
-val clockInputs: Bits(8)         // Clock frequency measurement inputs
-val pll_lock: Bool               // PLL lock status input
-```
+- **`SpineX` / `SpinexConfig` / `SpinexIPGen`** — the top-level SoC component, its configuration
+  case class, and IP-packaging entry point.
+- **`lib/soc/spinex/plugins`** — VexRiscv-style plugins that attach peripherals to the CPU/bus:
+  `PeripheralBus`, `TimerPlugin`, `I2CPlugin`/`OpenCoresI2CPlugin`, `Uart16550CtrlPlugin`,
+  `JTagPlugin`, `EventLoggerPlugin`, `IdentificationPlugin`.
+- **`lib/soc/bus/WishbonePlugin`** — Wishbone bus attachment for the SoC.
+- **`CSREventManager`** — a control/status-register-driven event manager.
+- **`DeviceTree`** — builds a device tree blob describing the assembled SoC for firmware/Linux.
+- **`SpinexSim`** — simulation entry point for the SoC.
 
-### SpinexEth (Additional)
-```scala
-val eth_rgmii_*: ...             // RGMII Ethernet PHY interface
-val eth_mdc: Bool                // MDIO clock
-val eth_mdio: Analog(Bool)       // MDIO data (bidirectional)
-```
+## IP Generation & Build Tooling (`lib/ipgen`, `lib/impl`)
 
-## Build Information
+- **`IPGenerator`** — reads a YAML/JSON design description (via Jackson), generates the schema for
+  it, and drives SpinalHDL generation of the described design (SpineX variants, MIPI byte2pixel,
+  etc.) — the engine behind `mains/SpinalHDLExtrasIPGen.scala`.
+- **`ImplementationSpecificFactory`** — selects vendor/technology-specific implementations of a
+  component at elaboration time.
+- **`Config` / `Constraints`** — shared `SpinalConfig` defaults (target device, reset style, etc.)
+  and a constraint-collection API (clock definitions, max-skew, clock groups, false paths) that
+  downstream synthesis flows consume.
 
-The processor automatically captures build information:
-- **Git Commit Hash**: 32-bit hash of current commit
-- **Build Timestamp**: Unix timestamp when hardware was compiled
-- **Version Information**: Configurable major.minor.patch version
+## Debug (`lib/debug`)
 
-This information is accessible via the configuration control block for firmware version tracking and debugging.
+`JtagLogger` and `StreamJtagInstrCtrl` — JTAG-based instrumentation/control and logging over the
+debug port.
 
-## Usage
+## General-Purpose Utilities (`lib/misc`)
 
-### Basic SpineX
-```scala
-val spinex = Spinex(SpinexConfig.default)
-// Connect IO ports as needed
-```
+Grab-bag of hardware and host-side helpers used throughout the library: stream utilities
+(`StreamTools`, `StreamFifoExt`, `StreamFragmentWidthAdapter`, `StreamWidthAdapterWithOccupancy`,
+`StreamJaggedData`, `FragmentFIFO`), clock/reset helpers (`AsyncToSyncReset`, `ClockMeasure`,
+`ClockSpecification`, `DelayedSignal`), counters (`CounterTools`), CDC (`AsyncStream`), a global
+signal registry (`GlobalSignals`), an auto-interconnect generator (`AutoInterconnect`) that wires up
+unconnected component IOs by name, a bit-packing helper (`VariableWidthBits`), register-building
+helpers (`RegisterTools`), rate limiting (`RateLimitFlow`), a byte/bit slip encoder (`SlipEncoder`),
+math types (`Rational`, `Complex`), a maximal-length LFSR-based `RandomNumberGenerator`, and
+`Obfuscater` (renames/obfuscates a generated netlist's signal names).
 
-### SpineX with Ethernet
-```scala
-val spinexEth = SpinexEth(SpinexEthConfig.default)
-// Additional Ethernet IO connections required
-```
+## Tests & Examples
 
-### Configuration
-Both variants support extensive configuration through their respective config classes, allowing customization of:
-- CPU plugins and cache configuration
-- Peripheral selection and addressing
-- Memory sizes and mapping
-- Interrupt routing
-
-## Development
-
-Built with SpinalHDL, this project demonstrates advanced SoC design patterns including:
-- Modular peripheral architecture
-- Bus interconnect design
-- Clock domain management
-- Hardware/software co-design
-- Build-time configuration capture
-
-## License
-
-See LICENSE file for details.
+- **`lib/tests`** — ScalaTest simulation testbenches for the components above (FIFOs, memory pools,
+  bus adapters, PLL config, DDR, random-number generator, auto-interconnect, etc.).
+- **`lib/tests/noc`** and **`lib/tests/formal`** — NoC-specific and formal-property-specific test suites.
+- **`examples/`** — small standalone usage examples (e.g. `EventLoggerButtons`).
+- **`mains/`** — CLI entry points: IP generation (`SpinalHDLExtrasIPGen`), a minimal SpineX build
+  (`SpinexMinimal`), PLL generation for Lattice (`GenerateLatticePLL`), and a FIFO test case runner.
