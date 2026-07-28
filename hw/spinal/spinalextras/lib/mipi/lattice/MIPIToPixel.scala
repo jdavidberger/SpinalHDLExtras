@@ -14,7 +14,8 @@ case class MIPIToPixel(cfg : MIPIConfig,
                        byte_cd : ClockDomain = null,
                        sensor_name : String = "",
                        clock_suffix : Boolean = true,
-                       is_continous_clock : Option[Boolean] = None
+                       is_continous_clock : Option[Boolean] = None,
+                       with_lmmi : Boolean = true
                  ) extends Component {
   val io = new Bundle {
     val mipi = slave(MIPIIO(cfg.numRXLanes))
@@ -38,7 +39,15 @@ case class MIPIToPixel(cfg : MIPIConfig,
   }
 
   noIoPrefix()
-  val mipi_to_bytes = new dphy_rx(cfg, sync_cd = sync_cd, byte_cd = byte_cd, clock_suffix = clock_suffix, is_continous_clock = is_continous_clock,
+  // No-LMMI Soft-DPHY hardcodes settle / pkt delay; omit those dynamic ports.
+  val mipi_to_bytes = new dphy_rx(cfg,
+    sync_cd = sync_cd,
+    byte_cd = byte_cd,
+    clock_suffix = clock_suffix,
+    is_continous_clock = is_continous_clock,
+    with_lmmi = with_lmmi,
+    cfg_datsettle_cyc = with_lmmi,
+    cfg_fifo_read_delay = with_lmmi,
   //  enable_fifo_misc_signals = Some(true)
   )
 
