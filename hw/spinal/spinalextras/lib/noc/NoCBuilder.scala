@@ -96,8 +96,13 @@ class NoCBuilder(val cfg: NocConfig) {
   def addSpecification(protocolSpecification: ProtocolSpecification) = {
     protocols.append(protocolSpecification)
   }
-
+  def verifyAddress(address : Int): Unit = {
+    if(address != -1) {
+      assert(address < cfg.topology.nodes)
+    }
+  }
   def addInput(input: Stream[Fragment[Bits]], address: Int = -1): Unit = {
+    verifyAddress(address)
     if (input.payload.fragment.getBitsWidth != cfg.dataWidth) {
       val (header, tail) = StreamTools.takeHead(input)
       inputs.append((address, StreamFragmentWidthAdapterEncoding.encode(tail, cfg.dataWidth).insertHeader(header.resize(cfg.dataWidth bits)).setName(f"${input.name}Adapted")))
@@ -107,6 +112,7 @@ class NoCBuilder(val cfg: NocConfig) {
   }
 
   def addOutput(output: Stream[Fragment[Bits]], address: Int = -1) = {
+    verifyAddress(address)
     val outputStream = new Stream(Fragment(Bits(cfg.dataWidth bits)))
     outputs.append((address, outputStream.setName(f"${output.name}")))
     StreamFragmentWidthAdapterEncoding.decode(outputStream, output.fragment.getBitsWidth).setName(f"${output.name}Adapted") >> output

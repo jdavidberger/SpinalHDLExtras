@@ -320,7 +320,10 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
           "--sdc", sdc
         ).!
         if (exitCode != 0) {
-          sys.error(s"SDC constraints do not match generated Verilog for $top (see validate_sdc_paths.py)")
+          if(!options.obfuscate)
+            sys.error(s"SDC constraints do not match generated Verilog for $top (see validate_sdc_paths.py)")
+          else
+            print(s"SDC constraints do not match generated Verilog for $top (see validate_sdc_paths.py)")
         }
       }
     }

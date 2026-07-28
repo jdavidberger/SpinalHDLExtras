@@ -1,7 +1,7 @@
 package spinalextras.lib.soc
 
 import spinal.core.{Component, SpinalReport, SpinalTag}
-import spinal.lib.bus.misc.{BusSlaveFactory, BusSlaveFactoryDelayed, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryWrite, SizeMapping}
+import spinal.lib.bus.misc.{BusSlaveFactory, BusSlaveFactoryDelayed, BusSlaveFactoryOnReadAtAddress, BusSlaveFactoryOnWriteAtAddress, BusSlaveFactoryRead, BusSlaveFactoryWrite, SizeMapping}
 import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.bus.general.BusSlaveProvider
 
@@ -197,6 +197,10 @@ class BusSlaveFactoryDeviceTreeProvider(busSlaveFactory : BusSlaveFactoryDelayed
         //(w.documentation, SizeMapping(base + w.address.lowerBound, w.address.highestBound - w.address.lowerBound + 1))
         None
       }
+      case r : BusSlaveFactoryRead => {
+        Some((r.documentation, SizeMapping(base + r.address.lowerBound, r.address.highestBound - r.address.lowerBound + 1)))
+      }
+      case r : BusSlaveFactoryOnReadAtAddress => None
     } ++ super.regs
   }
 

@@ -26,7 +26,7 @@ class Mesh(gridSize: (Int, Int) = (0, 0)) extends Topology {
   }
   def unpackRouteableAddress(address: Int): (Int, Int) = {
     val (x, y) = addressSizeTuple
-    (address, address >> x)
+    (address & ((1 << x) - 1), address >> x)
   }
 
   def createAddress(x: Int, y: Int): Int = {
@@ -51,7 +51,9 @@ class Mesh(gridSize: (Int, Int) = (0, 0)) extends Topology {
   }
   override def routeableAddressToAddress(routeable_address : routeable_address_constant_t) : address_t = {
     val (x,y) = unpackRouteableAddress(routeable_address)
-    createAddress(x, y)
+    val address = createAddress(x, y)
+    assert(address >= 0)
+    address
   }
 
   override def resolveCanonicalDestPort(dest : routeable_address_t, curr : address_t, set_result : canonical_port => Unit): Unit = {
