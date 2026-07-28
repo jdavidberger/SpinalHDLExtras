@@ -1,7 +1,8 @@
 package spinalextras.lib.misc
 
-import spinal.core.{Bundle, Data, HardType, IntToBuilder, U, UInt, assert, log2Up}
+import spinal.core.{Bool, Bundle, Data, False, HardType, IntToBuilder, Reg, RegInit, True, U, UInt, assert, log2Up, when}
 import spinal.idslplugin.Location
+import spinal.lib.{Fragment, Stream}
 import spinalextras.lib.formal.{FormalData, FormalProperties, FormalProperty}
 
 import scala.language.postfixOps
@@ -40,16 +41,92 @@ class VariableWidthData[T <: Data](dataType : HardType[T],
 
 class VariableWidthBytes[T <: Data](dataType : HardType[T], allowZeroSize : Boolean = false) extends VariableWidthData[T](dataType, 8, allowZeroSize) {
 
-  // Re-expresses this value with allowZeroSize=false. There is no allowZeroSize=false
-  // representation for a zero-size value, so the caller must guarantee (e.g. by construction,
-  // or by guarding with a validity check upstream) that size is never zero.
-  def withoutZeroSize(): VariableWidthBytes[T] = {
-    assert(size =/= 0, "VariableWidthBytes.withoutZeroSize: cannot represent a zero-size value once allowZeroSize=false")
+}
 
-    val rtn = new VariableWidthBytes(dataType, allowZeroSize = false)
-    rtn.payload := payload
-    rtn.sizeCode := (size - 1).resized
-    rtn
+object VariableWidthBytes {
+  // Converts a Stream[Fragment[VariableWidthBytes[T]]] (which may have allowZeroSize=true) into
+  // one with allowZeroSize=false, by dropping a zero-size last beat and instead marking the
+  // immediately preceding beat (within the same packet) as last -- that beat becomes a full-size
+  // last beat instead of being followed by a separate zero-length one. A zero-size last beat with
+  // no preceding beat in the same packet (a fully empty packet) has no allowZeroSize=false
+  // representation and triggers an assertion.
+  def withoutZeroSize[T <: Data](streamIn: Stream[Fragment[VariableWidthBytes[T]]]): Stream[Fragment[VariableWidthBytes[T]]] = {
+    val dataType = HardType(streamIn.payload.fragment.payload)
+    val bytesPerBeat = dataType.getBitsWidth / 8
+
+    val inLast = streamIn.payload.last
+    val inSize = streamIn.payload.fragment.size
+    val isFullNonLast = !inLast
+    val isZeroLast = inLast && (inSize === 0)
+
+    // Holds the most recent full non-last beat until we can see whether it's actually the packet's
+    // last (fully-utilized) beat -- signaled by a following zero-size last beat -- or the packet
+    // simply continues.
+    val heldValid = RegInit(False)
+    val heldPayload = Reg(dataType())
+
+    val streamOut = Stream(Fragment(new VariableWidthBytes(dataType, allowZeroSize = false)))
+
+    streamOut.valid := False
+    streamOut.last := True
+    streamOut.fragment.payload := streamIn.payload.fragment.payload
+    streamOut.fragment.sizeCode := (inSize - 1).resized
+    streamIn.ready := False
+
+    when(streamIn.valid && inLast) {
+      assert(inSize =/= 0 || heldValid,
+        "VariableWidthBytes.withoutZeroSize: a zero-size beat with no preceding beat in the same packet has no allowZeroSize=false representation")
+    }
+
+    when(heldValid) {
+      streamOut.valid := streamIn.valid
+      streamOut.fragment.payload := heldPayload
+      streamOut.fragment.sizeCode := (bytesPerBeat - 1)
+
+      when(isZeroLast) {
+        // Merge: the held beat turns out to have been the final, fully-utilized beat.
+        streamOut.last := True
+        streamIn.ready := streamOut.ready
+        when(streamOut.fire) {
+          heldValid := False
+        }
+      } elsewhen(isFullNonLast) {
+        // The held beat wasn't the packet's last one after all -- flush it (last=false) and shift
+        // the newly-arrived beat into hold.
+        streamOut.last := False
+        streamIn.ready := streamOut.ready
+        when(streamOut.fire) {
+          heldPayload := streamIn.payload.fragment.payload
+        }
+      } elsewhen(streamIn.valid) {
+        // The packet ends with an ordinary (nonzero-size) beat: flush the held beat first: the
+        // new beat gets consumed on a later cycle, once nothing is held anymore.
+        streamOut.last := False
+        streamIn.ready := False
+        when(streamOut.fire) {
+          heldValid := False
+        }
+      } otherwise {
+        // No new beat has arrived yet -- can't tell what the held beat's last bit should be.
+        streamOut.valid := False
+      }
+    } otherwise {
+      when(isFullNonLast) {
+        // Capture silently; nothing to emit until we know how this beat's packet ends.
+        streamIn.ready := True
+        when(streamIn.valid) {
+          heldValid := True
+          heldPayload := streamIn.payload.fragment.payload
+        }
+      } otherwise {
+        // An ordinary last beat (zero-size only if this is a fully empty packet, see the
+        // assertion above) with nothing held -- pass it straight through.
+        streamOut.valid := streamIn.valid
+        streamIn.ready := streamOut.ready
+      }
+    }
+
+    streamOut
   }
 }
 

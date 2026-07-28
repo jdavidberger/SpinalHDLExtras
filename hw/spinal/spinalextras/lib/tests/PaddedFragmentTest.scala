@@ -77,15 +77,33 @@ class PaddedFragmentTest extends AnyFunSuite {
 
         StreamReadyRandomizer(dut.io.reEncoded, dut.clockDomain)
 
+        // On a last beat, only the low `validBytes` data bytes and the top (count) byte are
+        // meaningful; the bytes in between are unconstrained padding. Those padding bytes are
+        // *not* guaranteed to survive decodeAllowZeroSize=false, since withoutZeroSize buffers
+        // beats (shifting exactly what garbage happens to be in flight when a trailer is
+        // synthesized), so mask them out of the comparison rather than comparing raw bits.
+        def meaningfulBits(data: BigInt, last: Boolean): BigInt = {
+          if (!last) {
+            data
+          } else {
+            val validBytes = ((data >> (width - 8)) & 0xff).toInt
+            val lowMask = (BigInt(1) << (validBytes * 8)) - 1
+            val topByteMask = ((BigInt(1) << 8) - 1) << (width - 8)
+            data & (lowMask | topByteMask)
+          }
+        }
+
         val sco = ScoreboardInOrder[(BigInt, Boolean)]()
         var refCount = 0
 
         FlowMonitor(dut.io.padded, dut.clockDomain) { payload =>
-          sco.pushRef((payload.fragment.toBigInt, payload.last.toBoolean))
+          val last = payload.last.toBoolean
+          sco.pushRef((meaningfulBits(payload.fragment.toBigInt, last), last))
           refCount += 1
         }
         StreamMonitor(dut.io.reEncoded, dut.clockDomain) { payload =>
-          sco.pushDut((payload.fragment.toBigInt, payload.last.toBoolean))
+          val last = payload.last.toBoolean
+          sco.pushDut((meaningfulBits(payload.fragment.toBigInt, last), last))
         }
 
         var sawFragmentationError = false
@@ -114,9 +132,13 @@ class PaddedFragmentTest extends AnyFunSuite {
 
   for (width <- Seq(16, 32)) {
     test(s"DecodeDefaultAllowZeroSizeFalse_width$width") {
-      // The default (allowZeroSize=false) decode has no representation for a zero-size beat, so
-      // keep the last beat's size away from both extremes (never 0, never a full bytesPerBeat).
-      runRoundTrip(width, decodeAllowZeroSize = false, lastSizeRange = (1, width / 8 - 1))
+      // The default (allowZeroSize=false) decode drops zero-size beats via
+      // VariableWidthBytes.withoutZeroSize, merging them back into the preceding full beat -- so
+      // this still needs to exercise the fully-utilized last beat (size == bytesPerBeat), which is
+      // the case that produces that zero-size trailer in the first place. It must avoid size == 0
+      // as an *input*, though: a single-beat packet with size 0 has no preceding beat to merge
+      // into and has no allowZeroSize=false representation at all.
+      runRoundTrip(width, decodeAllowZeroSize = false, lastSizeRange = (1, width / 8))
     }
   }
 

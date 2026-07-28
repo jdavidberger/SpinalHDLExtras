@@ -80,23 +80,15 @@ object PaddedFragment {
   def decodePaddingFromStream[T <: Data](streamIn : Stream[PaddedFragment[T]], allowZeroSize : Boolean = false): Stream[Fragment[VariableWidthBytes[T]]] = {
     val dataType = HardType(streamIn.payload.fragment)
 
-    streamIn.translateWith {
-      val result = Fragment(new VariableWidthBytes(dataType, allowZeroSize))
+    val raw = streamIn.translateWith {
+      val result = Fragment(new VariableWidthBytes(dataType, allowZeroSize = true))
       result.last := streamIn.payload.last
-
-      val size = streamIn.payload.validBytes()
       result.fragment.payload := streamIn.payload.fragment
-      if (allowZeroSize) {
-        result.fragment.sizeCode := size.resized
-      } else {
-        when(streamIn.valid) {
-          assert(size =/= 0,
-            "PaddedFragment.decodePaddingFromStream: encountered a zero-size beat with allowZeroSize=false")
-        }
-        result.fragment.sizeCode := (size - 1).resized
-      }
+      result.fragment.sizeCode := streamIn.payload.validBytes().resized
       result
     }
+
+    if (allowZeroSize) raw else VariableWidthBytes.withoutZeroSize(raw)
   }
 
 }
