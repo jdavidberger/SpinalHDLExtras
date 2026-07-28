@@ -17,7 +17,10 @@ class VariableWidthData[T <: Data](dataType : HardType[T],
   val sizeCode = UInt(log2Up((width / variableGranularityBits) + (if(allowZeroSize) 1 else 0)) bits)
 
   def size = {
-    if (allowZeroSize) sizeCode else (sizeCode + 1)
+    // sizeCode is only wide enough to hold its own values (0 until 2^n); a plain `+ 1` would
+    // silently wrap back to 0 right when sizeCode is at its max (e.g. whenever width/variableGranularityBits
+    // is a power of two), so grow by a bit before adding to actually reach the full-size value.
+    if (allowZeroSize) sizeCode else (sizeCode +^ 1)
   }
   def sizeInBits = size * variableGranularityBits
 
@@ -37,6 +40,17 @@ class VariableWidthData[T <: Data](dataType : HardType[T],
 
 class VariableWidthBytes[T <: Data](dataType : HardType[T], allowZeroSize : Boolean = false) extends VariableWidthData[T](dataType, 8, allowZeroSize) {
 
+  // Re-expresses this value with allowZeroSize=false. There is no allowZeroSize=false
+  // representation for a zero-size value, so the caller must guarantee (e.g. by construction,
+  // or by guarding with a validity check upstream) that size is never zero.
+  def withoutZeroSize(): VariableWidthBytes[T] = {
+    assert(size =/= 0, "VariableWidthBytes.withoutZeroSize: cannot represent a zero-size value once allowZeroSize=false")
+
+    val rtn = new VariableWidthBytes(dataType, allowZeroSize = false)
+    rtn.payload := payload
+    rtn.sizeCode := (size - 1).resized
+    rtn
+  }
 }
 
 case class VariableWidthBits(width: Int) extends Bundle with FormalData {

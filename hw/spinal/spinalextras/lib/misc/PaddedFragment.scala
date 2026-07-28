@@ -35,7 +35,7 @@ object PaddedFragment {
     rtn
   }
 
-  def encodePaddingToStream[T <: Data](streamIn : Stream[Fragment[VariableWidthBytes[T]]], fragmentationError : Boolean): Stream[PaddedFragment[T]] = {
+  def encodePaddingToStream[T <: Data](streamIn : Stream[Fragment[VariableWidthBytes[T]]], fragmentationError : Bool): Stream[PaddedFragment[T]] = {
     // Note: the assumption is that every beat of streamIn is full width and translated as thus. When this isn't true,
     // set fragmentationError to true but otherwise proceed as if it were true.
     val dataType = HardType(streamIn.payload.fragment.payload)
@@ -44,12 +44,7 @@ object PaddedFragment {
     val inFragment = streamIn.payload.fragment
     val inLast = streamIn.payload.last
 
-    if (!fragmentationError) {
-      when(streamIn.valid && !inLast) {
-        assert(inFragment.size === bytesPerBeat,
-          "PaddedFragment.encodePaddingToStream: a non-last beat was not full width")
-      }
-    }
+    fragmentationError := streamIn.valid && !inLast && (inFragment.size =/= bytesPerBeat)
 
     // A last beat that is entirely full has no spare byte left to smuggle the valid-byte-count
     // into, so it's forwarded as an ordinary (non-last) full beat, followed by a synthetic
@@ -77,14 +72,29 @@ object PaddedFragment {
     streamOut
   }
 
-  def decodePaddingFromStream[T <: Data](streamIn : Stream[PaddedFragment[T]]): Stream[Fragment[VariableWidthBytes[T]]] = {
+  // allowZeroSize controls whether the decoded VariableWidthBytes can represent a zero-size last
+  // beat (the synthetic trailer emitted by encodePaddingToStream for a fully-utilized last beat).
+  // Defaults to false: callers that know their source never produces a fully-utilized last beat
+  // get the simpler allowZeroSize=false representation, and get an assertion instead of silently
+  // mis-decoding if that assumption doesn't hold.
+  def decodePaddingFromStream[T <: Data](streamIn : Stream[PaddedFragment[T]], allowZeroSize : Boolean = false): Stream[Fragment[VariableWidthBytes[T]]] = {
     val dataType = HardType(streamIn.payload.fragment)
 
     streamIn.translateWith {
-      val result = Fragment(new VariableWidthBytes(dataType, allowZeroSize = true))
+      val result = Fragment(new VariableWidthBytes(dataType, allowZeroSize))
       result.last := streamIn.payload.last
+
+      val size = streamIn.payload.validBytes()
       result.fragment.payload := streamIn.payload.fragment
-      result.fragment.sizeCode := streamIn.payload.validBytes().resized
+      if (allowZeroSize) {
+        result.fragment.sizeCode := size.resized
+      } else {
+        when(streamIn.valid) {
+          assert(size =/= 0,
+            "PaddedFragment.decodePaddingFromStream: encountered a zero-size beat with allowZeroSize=false")
+        }
+        result.fragment.sizeCode := (size - 1).resized
+      }
       result
     }
   }
