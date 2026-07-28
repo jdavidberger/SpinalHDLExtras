@@ -25,7 +25,9 @@ class dphy_rx(cfg : MIPIConfig,
               cfg_datsettle_cyc : Boolean = true,
               cfg_fifo_read_delay : Boolean = true,
               var ip_name : String = null,
-             is_continous_clock : Option[Boolean] = None) extends BlackBox {
+              is_continous_clock : Option[Boolean] = None,
+              /** When false, Soft-DPHY is the no-LMMI variant; encoded in [[ip_name]]. */
+              with_lmmi : Boolean = true) extends BlackBox {
   val is_soft_phy = true
   val config_for_continous_clock = is_continous_clock.getOrElse(byte_cd == null)
 
@@ -50,7 +52,8 @@ class dphy_rx(cfg : MIPIConfig,
     val byte_f = s"_byte${clockString(byte_freq)}"
     val clock_suffix_str = if(clock_suffix) s"${sync_f}${byte_f}" else ""
     val cont_string = if (config_for_continous_clock) "cont_" else ""
-    ip_name = s"dphy_rx_${cont_string}${cfg.numRXLanes}x${cfg.rxGear}${clock_suffix_str}"
+    val lmmi_string = if (with_lmmi) "" else "nolmmi_"
+    ip_name = s"dphy_rx_${cont_string}${lmmi_string}${cfg.numRXLanes}x${cfg.rxGear}${clock_suffix_str}"
   }
 
   def solve_datasettle(byte_freq : HertzNumber, ui_freq : HertzNumber): Int = {
