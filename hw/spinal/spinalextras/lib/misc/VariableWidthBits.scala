@@ -40,7 +40,10 @@ class VariableWidthData[T <: Data](dataType : HardType[T],
 }
 
 class VariableWidthBytes[T <: Data](dataType : HardType[T], allowZeroSize : Boolean = false) extends VariableWidthData[T](dataType, 8, allowZeroSize) {
-
+  def setValidSizeInBytes(validBytes : UInt): Unit = {
+    this.sizeCode := validBytes - 1
+  }
+  def validByteCount : UInt = this.sizeCode +^ 1
 }
 
 object VariableWidthBytes {
@@ -72,11 +75,6 @@ object VariableWidthBytes {
     streamOut.fragment.payload := streamIn.payload.fragment.payload
     streamOut.fragment.sizeCode := (inSize - 1).resized
     streamIn.ready := False
-
-    when(streamIn.valid && inLast) {
-      assert(inSize =/= 0 || heldValid,
-        "VariableWidthBytes.withoutZeroSize: a zero-size beat with no preceding beat in the same packet has no allowZeroSize=false representation")
-    }
 
     when(heldValid) {
       streamOut.valid := streamIn.valid

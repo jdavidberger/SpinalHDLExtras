@@ -92,7 +92,8 @@ class DataStreamSpecificationWithRegisters[T <: Data](val datatype: HardType[T],
 
   def addSourceWithInit(name : String, dst : Stream[Fragment[T]], address : Int): Stream[Fragment[T]] = {
     val src = addSource(name, address)
-    setInitRoute(src, dst)
+    if(dst != null)
+      setInitRoute(src, dst)
     src
   }
 
@@ -103,6 +104,7 @@ class DataStreamSpecificationWithRegisters[T <: Data](val datatype: HardType[T],
     super.build()
 
     for (elem <- initRoutes) {
+      println(f"Initial route for ${builder.cfg.topology.addressName(elem._1.resolvedAddress)} -> ${builder.cfg.topology.addressName(elem._2.resolvedAddress)}")
       sourceRegisters(elem._1).init(builder.cfg.topology.routeableAddressToAddress(elem._2.resolvedAddress))
     }
 

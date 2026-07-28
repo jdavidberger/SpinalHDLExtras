@@ -2,6 +2,7 @@ package spinalextras.lib.misc
 
 import spinal.core._
 import spinal.lib._
+import spinalextras.lib.misc.StreamTools.CreateFragment
 
 import scala.language.postfixOps
 
@@ -21,9 +22,62 @@ class PaddedFragment[T <: Data](dataType : HardType[T]) extends Fragment[T](data
   def setValidBytes(validByte : UInt) {
     this.fragment.assignFromBits(validByte.asBits.resized, validBytesOffset, 8 bits)
   }
+
+  def asFragment() : Fragment[T] = {
+    CreateFragment(fragment, last)
+  }
+
+  override def clone: this.type = {
+    new PaddedFragment(fragmentType).asInstanceOf[this.type]
+  }
 }
 
 object PaddedFragment {
+  implicit class PaddedFragmentStream[T <: Data](stream : Stream[PaddedFragment[T]]) {
+    def decode(allowZeroSize : Boolean = false): Stream[Fragment[VariableWidthBytes[T]]] = {
+      PaddedFragment.decodePaddingFromStream(stream, allowZeroSize)
+    }
+
+    def asFragmentStream() : Stream[Fragment[T]] = {
+      stream.map(_.asFragment())
+    }
+    def insertHeader(header: Vec[T]) = {
+      asFragmentStream().insertHeader(header).asPaddedFragmentStream()
+    }
+    def insertHeader(header: T) = {
+      asFragmentStream().insertHeader(header).asPaddedFragmentStream()
+    }
+    def dropPaddingInformation() : Stream[Fragment[T]] = {
+      PaddedFragment.decodePaddingFromStream(stream).fragmentMap(_.payload)
+    }
+    def lastFire = stream.fire && stream.last
+  }
+
+  implicit class FragmentStream[T <: Data](stream : Stream[Fragment[T]]) {
+    def fragmentMap[T2 <: Data](fn : T => T2) = {
+      stream.map(f => CreateFragment(fn(f.fragment), f.last))
+    }
+
+    def asPaddedFragmentStream() : Stream[PaddedFragment[T]] = {
+      stream.map(x => {
+        val f = new PaddedFragment(x.fragment)
+        f.fragment := x.fragment
+        f.last := x.last
+        f
+      })
+    }
+    def toPaddedFragmentStream() : Stream[PaddedFragment[T]] = {
+      StreamTools.insertFooter[T](stream.replaceFragmentLast(False),
+        Vec(StreamTools.CreateFragment(B(0, stream.fragment.getBitsWidth bits).as[T](stream.fragment), True))
+      ).map(x => {
+        val f = new PaddedFragment(stream.payload.dataType)
+        f.fragment := x.fragment
+        f.last := x.last
+        f
+      })
+    }
+  }
+
   def apply[T <: Data](dataType: HardType[T]): PaddedFragment[T] = {
     new PaddedFragment(dataType)
   }
@@ -35,7 +89,7 @@ object PaddedFragment {
     rtn
   }
 
-  def encodePaddingToStream[T <: Data](streamIn : Stream[Fragment[VariableWidthBytes[T]]], fragmentationError : Bool): Stream[PaddedFragment[T]] = {
+  def encodePaddingToStream[T <: Data](streamIn : Stream[Fragment[VariableWidthBytes[T]]], fragmentationError : Bool = null): Stream[PaddedFragment[T]] = {
     // Note: the assumption is that every beat of streamIn is full width and translated as thus. When this isn't true,
     // set fragmentationError to true but otherwise proceed as if it were true.
     val dataType = HardType(streamIn.payload.fragment.payload)
@@ -44,7 +98,8 @@ object PaddedFragment {
     val inFragment = streamIn.payload.fragment
     val inLast = streamIn.payload.last
 
-    fragmentationError := streamIn.valid && !inLast && (inFragment.size =/= bytesPerBeat)
+    if(fragmentationError != null)
+      fragmentationError := streamIn.valid && !inLast && (inFragment.size =/= bytesPerBeat)
 
     // A last beat that is entirely full has no spare byte left to smuggle the valid-byte-count
     // into, so it's forwarded as an ordinary (non-last) full beat, followed by a synthetic
@@ -60,7 +115,9 @@ object PaddedFragment {
     streamIn.ready := !sendingTrailer && streamOut.ready
 
     when(sendingTrailer) {
-      streamOut.setValidBytes(U(0))
+      //streamOut.setValidBytes(U(0))
+      streamOut.fragment.clearAll()
+      streamOut.last := True
     } elsewhen(inLast && !isFullLastBeat) {
       streamOut.setValidBytes(inFragment.size.resized)
     }

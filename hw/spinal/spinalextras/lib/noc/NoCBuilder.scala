@@ -45,12 +45,13 @@ class NoCBuilder(val cfg: NocConfig) {
       * must only be read from within a specification's own `build()` method, never at
       * registration time. */
     def createSlot(address: Int = -1): NodeSlot = {
-      if (address >= 0) {
+      if (address >= 0 && !usedAddresses.contains(address)) {
         require(address < cfg.topology.nodes, s"NoC node address $address is out of range (0 until ${cfg.topology.nodes})")
         require(!usedAddresses.contains(address), s"NoC node address $address already assigned")
         usedAddresses += address
         new NodeSlot(address)
       } else {
+        println(s"Warning: ${address} is already assigned; assigning random address")
         val handle = new NodeSlot(-1)
         pendingAutoClaims += handle
         handle
