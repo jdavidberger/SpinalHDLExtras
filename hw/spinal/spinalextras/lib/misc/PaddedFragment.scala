@@ -67,7 +67,12 @@ object PaddedFragment {
       })
     }
     def toPaddedFragmentStream() : Stream[PaddedFragment[T]] = {
-      StreamTools.insertFooter[T](stream.replaceFragmentLast(False),
+      // insertFooter needs to see the real `last` flag to detect the packet boundary and switch
+      // to emitting the footer beat -- pre-zeroing it here (as a previous version of this code did)
+      // makes that boundary undetectable, so the footer is never emitted. insertFooter already
+      // forces last=False on the beats it forwards, so the original stream can be passed through
+      // unmodified.
+      StreamTools.insertFooter[T](stream,
         Vec(StreamTools.CreateFragment(B(0, stream.fragment.getBitsWidth bits).as[T](stream.fragment), True))
       ).map(x => {
         val f = new PaddedFragment(stream.payload.dataType)

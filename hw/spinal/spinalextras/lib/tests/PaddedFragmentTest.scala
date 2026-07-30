@@ -7,6 +7,7 @@ import spinal.lib._
 import spinal.lib.sim.{FlowMonitor, ScoreboardInOrder, StreamDriver, StreamMonitor, StreamReadyRandomizer}
 import spinalextras.lib.Config
 import spinalextras.lib.misc.{PaddedFragment, VariableWidthBytes}
+import spinalextras.lib.misc.PaddedFragment._
 
 import scala.collection.mutable
 
@@ -190,5 +191,546 @@ class PaddedFragmentTest extends AnyFunSuite {
 
         dut.clockDomain.waitSampling(10)
       }
+  }
+
+  // asFragment()/asFragmentStream() should pass the fragment bits and last flag straight through
+  // with no transformation, and lastFire should pulse exactly on a fired last beat.
+  class AsFragmentStreamTest(width: Int) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(PaddedFragment(dataType)))
+      val output = master(Stream(Fragment(dataType)))
+      val lastFire = out(Bool())
+    }
+    io.output << io.input.asFragmentStream()
+    io.lastFire := io.input.lastFire
+  }
+
+  test("AsFragmentStreamAndLastFirePassThroughFragmentAndLast") {
+    val width = 32
+
+    Config.sim.doSim(new AsFragmentStreamTest(width).setDefinitionName("PaddedFragmentAsFragmentStream")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(2 ms)
+
+      case class Beat(data: BigInt, last: Boolean)
+      val beatQueue = mutable.Queue[Beat]()
+      for (_ <- 0 until 100) {
+        val beats = 1 + simRandom.nextInt(3)
+        for (b <- 0 until beats) beatQueue.enqueue(Beat(BigInt(width, simRandom), b == beats - 1))
+      }
+      val totalBeats = beatQueue.size
+      val expected = mutable.Queue[Beat]() ++= beatQueue
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (beatQueue.isEmpty) false
+        else {
+          val beat = beatQueue.dequeue()
+          payload.fragment #= beat.data
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.toBigInt == exp.data, "asFragment should pass the fragment bits through unchanged")
+        assert(payload.last.toBoolean == exp.last, "asFragment should pass last through unchanged")
+        assert(dut.io.lastFire.toBoolean == exp.last, "lastFire should be high exactly on a fired last beat")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
+  }
+
+  // insertHeader(header: T) should prepend a single non-last header beat to every packet, leaving
+  // the original beats (and their last flags) unmodified.
+  class InsertHeaderTest(width: Int, headerValue: BigInt) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(PaddedFragment(dataType)))
+      val output = master(Stream(PaddedFragment(dataType)))
+    }
+    io.output << io.input.insertHeader(B(headerValue, width bits))
+  }
+
+  test("InsertHeaderPrependsHeaderBeatToEachPacket") {
+    val width = 32
+    val headerValue = BigInt("DEADBEEF", 16)
+
+    Config.sim.doSim(new InsertHeaderTest(width, headerValue).setDefinitionName("PaddedFragmentInsertHeader")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(2 ms)
+
+      case class Beat(data: BigInt, last: Boolean)
+      val packets = for (_ <- 0 until 50) yield {
+        val beats = 1 + simRandom.nextInt(3)
+        (0 until beats).map(b => Beat(BigInt(width, simRandom), b == beats - 1))
+      }
+      val inputQueue = mutable.Queue[Beat]() ++= packets.flatten
+
+      val expected = mutable.Queue[Beat]()
+      for (packet <- packets) {
+        expected.enqueue(Beat(headerValue, last = false))
+        expected ++= packet
+      }
+      val totalBeats = expected.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (inputQueue.isEmpty) false
+        else {
+          val beat = inputQueue.dequeue()
+          payload.fragment #= beat.data
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.toBigInt == exp.data, s"expected fragment ${exp.data}, got ${payload.fragment.toBigInt}")
+        assert(payload.last.toBoolean == exp.last, "last flag mismatch")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
+  }
+
+  // insertHeader(header: Vec[T]) should prepend one non-last beat per header element, in order,
+  // before forwarding the original packet's beats unmodified.
+  class InsertHeaderVecTest(width: Int, headerValues: Seq[BigInt]) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(PaddedFragment(dataType)))
+      val output = master(Stream(PaddedFragment(dataType)))
+    }
+    val header = Vec(headerValues.map(v => B(v, width bits)))
+    io.output << io.input.insertHeader(header)
+  }
+
+  test("InsertHeaderVecPrependsEveryHeaderBeatToEachPacket") {
+    val width = 32
+    val headerValues = Seq(BigInt("CAFEF00D", 16), BigInt("F00DCAFE", 16))
+
+    Config.sim.doSim(new InsertHeaderVecTest(width, headerValues).setDefinitionName("PaddedFragmentInsertHeaderVec")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(2 ms)
+
+      case class Beat(data: BigInt, last: Boolean)
+      val packets = for (_ <- 0 until 50) yield {
+        val beats = 1 + simRandom.nextInt(3)
+        (0 until beats).map(b => Beat(BigInt(width, simRandom), b == beats - 1))
+      }
+      val inputQueue = mutable.Queue[Beat]() ++= packets.flatten
+
+      val expected = mutable.Queue[Beat]()
+      for (packet <- packets) {
+        headerValues.foreach(h => expected.enqueue(Beat(h, last = false)))
+        expected ++= packet
+      }
+      val totalBeats = expected.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (inputQueue.isEmpty) false
+        else {
+          val beat = inputQueue.dequeue()
+          payload.fragment #= beat.data
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.toBigInt == exp.data, s"expected fragment ${exp.data}, got ${payload.fragment.toBigInt}")
+        assert(payload.last.toBoolean == exp.last, "last flag mismatch")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
+  }
+
+  // dropPaddingInformation() should forward each beat's raw payload bytes (masked to the valid
+  // byte count on the last beat) and last flag, discarding the size metadata entirely.
+  class DropPaddingInformationTest(width: Int) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(Fragment(new VariableWidthBytes(dataType, allowZeroSize = true))))
+      val output = master(Stream(Fragment(dataType)))
+    }
+    val padded = PaddedFragment.encodePaddingToStream(io.input)
+    io.output << padded.dropPaddingInformation()
+  }
+
+  test("DropPaddingInformationForwardsPayloadBytesAndLast") {
+    val width = 32
+    val bytesPerBeat = width / 8
+
+    Config.sim.doSim(new DropPaddingInformationTest(width).setDefinitionName("PaddedFragmentDropPaddingInformation")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(4 ms)
+
+      case class Beat(data: BigInt, size: Int, last: Boolean)
+      val beatQueue = mutable.Queue[Beat]()
+      val fullMask = (BigInt(1) << width) - 1
+
+      // Keep the last beat's size below a full beat so encodePaddingToStream never has to
+      // synthesize a zero-size trailer beat -- that merge behavior is covered by the
+      // decodePaddingFromStream round-trip tests above, and would otherwise obscure this test's
+      // beat-for-beat comparison.
+      for (_ <- 0 until 100) {
+        val beats = 1 + simRandom.nextInt(4)
+        for (b <- 0 until beats) {
+          val isLast = b == beats - 1
+          val data = BigInt(width, simRandom) & fullMask
+          val size = if (isLast) 1 + simRandom.nextInt(bytesPerBeat - 1) else bytesPerBeat
+          beatQueue.enqueue(Beat(data, size, isLast))
+        }
+      }
+      val expected = mutable.Queue[Beat]() ++= beatQueue
+      val totalBeats = beatQueue.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (beatQueue.isEmpty) false
+        else {
+          val beat = beatQueue.dequeue()
+          payload.fragment.payload #= beat.data
+          payload.fragment.sizeCode #= beat.size
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      def meaningfulBits(data: BigInt, last: Boolean, size: Int): BigInt = {
+        if (!last) data else data & ((BigInt(1) << (size * 8)) - 1)
+      }
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        val got = meaningfulBits(payload.fragment.toBigInt, exp.last, exp.size)
+        val want = meaningfulBits(exp.data, exp.last, exp.size)
+        assert(got == want, s"beat mismatch: got $got want $want")
+        assert(payload.last.toBoolean == exp.last, "last flag mismatch")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
+  }
+
+  // decode() (the Stream[PaddedFragment[T]] extension) should be equivalent to calling
+  // decodePaddingFromStream directly: sizeCode comes from validBytes(), payload is the raw
+  // fragment, and last is preserved.
+  class DecodeExtensionTest(width: Int) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(PaddedFragment(dataType)))
+      val output = master(Stream(Fragment(new VariableWidthBytes(dataType, allowZeroSize = true))))
+    }
+    io.output << io.input.decode(allowZeroSize = true)
+  }
+
+  test("DecodeExtensionMethodComputesSizeFromValidBytes") {
+    val width = 32
+    val bytesPerBeat = width / 8
+
+    Config.sim.doSim(new DecodeExtensionTest(width).setDefinitionName("PaddedFragmentDecodeExtension")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(2 ms)
+
+      case class InBeat(data: BigInt, last: Boolean)
+      case class OutBeat(payload: BigInt, size: Int, last: Boolean)
+
+      val fullMask = (BigInt(1) << width) - 1
+      val inputQueue = mutable.Queue[InBeat]()
+      val expected = mutable.Queue[OutBeat]()
+
+      for (_ <- 0 until 100) {
+        val beats = 1 + simRandom.nextInt(3)
+        for (b <- 0 until beats) {
+          val isLast = b == beats - 1
+          if (!isLast) {
+            val data = BigInt(width, simRandom) & fullMask
+            inputQueue.enqueue(InBeat(data, last = false))
+            expected.enqueue(OutBeat(data, bytesPerBeat, last = false))
+          } else {
+            val size = simRandom.nextInt(bytesPerBeat + 1)
+            val low = BigInt(width, simRandom) & ((BigInt(1) << (width - 8)) - 1)
+            val data = low | (BigInt(size) << (width - 8))
+            inputQueue.enqueue(InBeat(data, last = true))
+            expected.enqueue(OutBeat(data, size, last = true))
+          }
+        }
+      }
+      val totalBeats = expected.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (inputQueue.isEmpty) false
+        else {
+          val beat = inputQueue.dequeue()
+          payload.fragment #= beat.data
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.payload.toBigInt == exp.payload, "decode should copy the raw fragment through")
+        assert(payload.fragment.sizeCode.toBigInt == exp.size, "decode should compute sizeCode from validBytes")
+        assert(payload.last.toBoolean == exp.last, "last should be preserved")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
+  }
+
+  // fragmentMap should apply the given function to the fragment payload while preserving last.
+  class FragmentMapTest(width: Int) extends Component {
+    val dataType = HardType(UInt(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(Fragment(dataType)))
+      val output = master(Stream(Fragment(dataType)))
+    }
+    io.output << io.input.fragmentMap(x => x + 1)
+  }
+
+  test("FragmentMapAppliesFunctionToFragmentAndKeepsLast") {
+    val width = 32
+    val mask = (BigInt(1) << width) - 1
+
+    Config.sim.doSim(new FragmentMapTest(width).setDefinitionName("PaddedFragmentFragmentMap")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(2 ms)
+
+      case class Beat(data: BigInt, last: Boolean)
+      val beatQueue = mutable.Queue[Beat]()
+      for (_ <- 0 until 100) {
+        val beats = 1 + simRandom.nextInt(3)
+        for (b <- 0 until beats) beatQueue.enqueue(Beat(BigInt(width, simRandom), b == beats - 1))
+      }
+      val expected = mutable.Queue[Beat]() ++= beatQueue
+      val totalBeats = beatQueue.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (beatQueue.isEmpty) false
+        else {
+          val beat = beatQueue.dequeue()
+          payload.fragment #= beat.data
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.toBigInt == ((exp.data + 1) & mask), "fragmentMap should apply the function to the fragment")
+        assert(payload.last.toBoolean == exp.last, "fragmentMap should preserve last")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
+  }
+
+  // asPaddedFragmentStream() should be a pure repackaging: the fragment bits and last flag come
+  // through unmodified, with no size information encoded.
+  class AsPaddedFragmentStreamTest(width: Int) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(Fragment(dataType)))
+      val output = master(Stream(PaddedFragment(dataType)))
+    }
+    io.output << io.input.asPaddedFragmentStream()
+  }
+
+  test("AsPaddedFragmentStreamPassesFragmentAndLastThrough") {
+    val width = 32
+
+    Config.sim.doSim(new AsPaddedFragmentStreamTest(width).setDefinitionName("PaddedFragmentAsPaddedFragmentStream")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(2 ms)
+
+      case class Beat(data: BigInt, last: Boolean)
+      val beatQueue = mutable.Queue[Beat]()
+      for (_ <- 0 until 100) {
+        val beats = 1 + simRandom.nextInt(3)
+        for (b <- 0 until beats) beatQueue.enqueue(Beat(BigInt(width, simRandom), b == beats - 1))
+      }
+      val expected = mutable.Queue[Beat]() ++= beatQueue
+      val totalBeats = beatQueue.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (beatQueue.isEmpty) false
+        else {
+          val beat = beatQueue.dequeue()
+          payload.fragment #= beat.data
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.toBigInt == exp.data, "asPaddedFragmentStream should preserve the fragment bits")
+        assert(payload.last.toBoolean == exp.last, "asPaddedFragmentStream should preserve last")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
+  }
+
+  // PaddedFragment.apply(f: Fragment[T]) is the other way to build a PaddedFragment from a
+  // Fragment; it should behave identically to asPaddedFragmentStream (a pure repackaging).
+  class PaddedFragmentApplyTest(width: Int) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(Fragment(dataType)))
+      val output = master(Stream(PaddedFragment(dataType)))
+    }
+    io.output << io.input.map(f => PaddedFragment(f))
+  }
+
+  test("PaddedFragmentApplyBuildsAPaddedFragmentFromAFragment") {
+    val width = 32
+
+    Config.sim.doSim(new PaddedFragmentApplyTest(width).setDefinitionName("PaddedFragmentApply")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(2 ms)
+
+      case class Beat(data: BigInt, last: Boolean)
+      val beatQueue = mutable.Queue[Beat]()
+      for (_ <- 0 until 100) {
+        val beats = 1 + simRandom.nextInt(3)
+        for (b <- 0 until beats) beatQueue.enqueue(Beat(BigInt(width, simRandom), b == beats - 1))
+      }
+      val expected = mutable.Queue[Beat]() ++= beatQueue
+      val totalBeats = beatQueue.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (beatQueue.isEmpty) false
+        else {
+          val beat = beatQueue.dequeue()
+          payload.fragment #= beat.data
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.toBigInt == exp.data, "PaddedFragment.apply(Fragment) should preserve the fragment bits")
+        assert(payload.last.toBoolean == exp.last, "PaddedFragment.apply(Fragment) should preserve last")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
+  }
+
+  // toPaddedFragmentStream() should forward every input beat with last forced low, then append a
+  // single synthetic all-zero last beat after each packet.
+  class ToPaddedFragmentStreamTest(width: Int) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(Fragment(dataType)))
+      val output = master(Stream(PaddedFragment(dataType)))
+    }
+    io.output << io.input.toPaddedFragmentStream()
+  }
+
+  test("ToPaddedFragmentStreamAppendsZeroTrailerAfterEachPacket") {
+    val width = 32
+
+    Config.sim.doSim(new ToPaddedFragmentStreamTest(width).setDefinitionName("PaddedFragmentToPaddedFragmentStream")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(4 ms)
+
+      case class OutBeat(data: BigInt, last: Boolean)
+
+      val inputQueue = mutable.Queue[(BigInt, Boolean)]()
+      val expected = mutable.Queue[OutBeat]()
+
+      for (_ <- 0 until 100) {
+        val beats = 1 + simRandom.nextInt(4)
+        for (b <- 0 until beats) {
+          val isLast = b == beats - 1
+          val data = BigInt(width, simRandom)
+          inputQueue.enqueue((data, isLast))
+          expected.enqueue(OutBeat(data, last = false))
+        }
+        expected.enqueue(OutBeat(BigInt(0), last = true))
+      }
+      val totalBeats = expected.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (inputQueue.isEmpty) false
+        else {
+          val (data, last) = inputQueue.dequeue()
+          payload.fragment #= data
+          payload.last #= last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.toBigInt == exp.data, s"expected fragment ${exp.data}, got ${payload.fragment.toBigInt}")
+        assert(payload.last.toBoolean == exp.last, "last flag mismatch")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(20)
+
+      assert(received == totalBeats)
+    }
   }
 }
