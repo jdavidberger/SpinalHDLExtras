@@ -55,7 +55,7 @@ class DataStreamSpecification[T <: Data](datatype: HardType[T], builder: NoCBuil
 
   override def build(): Unit = {
     for (s <- sources) {
-      builder.addInput(s.stream.map(x => CreateFragment(x.fragment.asBits, x.last)).insertHeader(s.hdr.resized).setName(s"${s.stream.name}Packet"), s.address.resolvedAddress)
+      builder.addInput(s.stream.toFragmentBits(s.stream.fragment.getBitsWidth).insertHeader(s.hdr.resized).setName(s"${s.stream.name}Packet"), s.address.resolvedAddress)
     }
     for (k <- sinks) {
       val o = Stream(Fragment(Bits(k.stream.fragment.getBitsWidth bits)))
@@ -105,7 +105,7 @@ class DataStreamSpecificationWithRegisters[T <: Data](val datatype: HardType[T],
 
     for (elem <- initRoutes) {
       println(f"Initial route for ${builder.cfg.topology.addressName(elem._1.resolvedAddress)} -> ${builder.cfg.topology.addressName(elem._2.resolvedAddress)}")
-      sourceRegisters(elem._1).init(builder.cfg.topology.routeableAddressToAddress(elem._2.resolvedAddress))
+      sourceRegisters(elem._1).init(builder.cfg.topology.addressToRouteableAddress(elem._2.resolvedAddress))
     }
 
     val deviceTreeProvider = new BusIfDeviceTreeProvider(busIf) {
@@ -114,7 +114,7 @@ class DataStreamSpecificationWithRegisters[T <: Data](val datatype: HardType[T],
       override def appendDeviceTree(dt: DeviceTree): Unit = {
         super.appendDeviceTree(dt)
         dt.addEntry(s"sink-names = ${sinks.map(m => '"' + m.stream.name + '"').mkString(",\n            ")};", baseEntryPath:_*)
-        dt.addEntry(s"sink-addresses = < ${sinks.map(m => '"' + builder.cfg.topology.routeableAddressToAddress(m.address.resolvedAddress) + '"').mkString("\n            ")} > ;", baseEntryPath:_*)
+        dt.addEntry(s"sink-addresses = < ${sinks.map(m => "0x" + BigInt(builder.cfg.topology.addressToRouteableAddress(m.address.resolvedAddress)).toString()).mkString("\n            ")} > ;", baseEntryPath:_*)
       }
     }
   }

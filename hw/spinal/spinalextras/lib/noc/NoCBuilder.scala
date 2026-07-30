@@ -1,6 +1,6 @@
 package spinalextras.lib.noc
 
-import spinal.core.{Bits, IntToBuilder}
+import spinal.core.{Bits, IntToBuilder, RegNextWhen}
 import spinal.lib.{Fragment, Stream}
 import spinalextras.lib.misc.{StreamFragmentWidthAdapterEncoding, StreamTools}
 import spinalextras.lib.noc.protocols.ProtocolSpecification
@@ -105,8 +105,11 @@ class NoCBuilder(val cfg: NocConfig) {
   def addInput(input: Stream[Fragment[Bits]], address: Int = -1): Unit = {
     verifyAddress(address)
     if (input.payload.fragment.getBitsWidth != cfg.dataWidth) {
-      val (header, tail) = StreamTools.takeHead(input)
-      inputs.append((address, StreamFragmentWidthAdapterEncoding.encode(tail, cfg.dataWidth).insertHeader(header.resize(cfg.dataWidth bits)).setName(f"${input.name}Adapted")))
+      val (headerFlow, tail) = StreamTools.takeHead(input)
+      val header = headerFlow.toReg()
+      val widthAdaptedEncoding = StreamFragmentWidthAdapterEncoding.encode(tail, cfg.dataWidth)
+      val widthAdapterEncodingWithHeader = widthAdaptedEncoding.insertHeader(header.resize(cfg.dataWidth bits))
+      inputs.append((address, widthAdapterEncodingWithHeader.setName(f"${input.name}Adapted")))
     } else {
       inputs.append((address, input))
     }
@@ -114,9 +117,11 @@ class NoCBuilder(val cfg: NocConfig) {
 
   def addOutput(output: Stream[Fragment[Bits]], address: Int = -1) = {
     verifyAddress(address)
-    val outputStream = new Stream(Fragment(Bits(cfg.dataWidth bits)))
-    outputs.append((address, outputStream.setName(f"${output.name}")))
-    StreamFragmentWidthAdapterEncoding.decode(outputStream, output.fragment.getBitsWidth).setName(f"${output.name}Adapted") >> output
+    val outputStreamWithHeader = new Stream(Fragment(Bits(cfg.dataWidth bits)))
+    outputs.append((address, outputStreamWithHeader.setName(f"${output.name}")))
+    val (hdrFlow, outputStream) = StreamTools.takeHead(outputStreamWithHeader)
+    val hdr = hdrFlow.toReg()
+    StreamFragmentWidthAdapterEncoding.decode(outputStream, output.fragment.getBitsWidth).insertHeader(hdr.resized).setName(f"${output.name}Adapted") >> output
   }
 
   def build(): NoC = {
@@ -133,12 +138,12 @@ class NoCBuilder(val cfg: NocConfig) {
     println("Input:")
     for (input <- inputs) {
       println(s"  - ${input._2.name}: ${cfg.topology.addressName(input._1)}")
-      noc.io.inputs(input._1) <> input._2
+      noc.io.inputs(input._1) << input._2
     }
     println("Output:")
     for (output <- outputs) {
       println(s"  - ${output._2.name}: ${cfg.topology.addressName(output._1)}")
-      noc.io.outputs(output._1) <> output._2
+      noc.io.outputs(output._1) >> output._2
     }
     noc.sealUnusedPorts()
 

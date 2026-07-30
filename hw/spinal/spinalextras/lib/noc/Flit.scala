@@ -6,8 +6,8 @@ import spinalextras.lib.formal.{FormalData, FormalProperties, FormalProperty}
 import scala.language.postfixOps
 
 case class Header(cfg : NocConfig) extends Bundle {
-  val application = Bits(cfg.headerApplicationBits bits)
   val dest = UInt(cfg.topology.addressSize bits)
+  val application = Bits(cfg.headerApplicationBits bits)
 }
 
 case class Flit(cfg: NocConfig) extends Bundle with FormalData {

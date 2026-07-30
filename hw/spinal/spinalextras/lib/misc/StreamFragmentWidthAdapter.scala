@@ -1,7 +1,9 @@
 package spinalextras.lib.misc
 
+import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib._
+import spinalextras.lib.testing.{FormalTestSuite, GeneralFormalDut}
 
 /**
  * A pair of components that convert a Stream(Fragment(Bits)) between two bit widths, in either
@@ -241,3 +243,34 @@ class StreamFragmentWidthAdapterDecoder(widthIn: Int, widthOut: Int, endianness:
     }
   }
 }
+
+
+class StreamFragmentEncoderFormalTest extends AnyFunSuite with FormalTestSuite {
+  override def defaultDepth() = 5
+
+  formalTests().foreach(t => test(t._1) {
+    t._2()
+  })
+
+  override def generateRtl() = {
+    for(x <- Seq((32,64), (64, 32))) yield {
+      (s"StreamFragmentEncoder${x._1}x${x._2}", () => GeneralFormalDut(() => new StreamFragmentWidthAdapterEncoder(x._1, x._2)))
+    }
+  }
+}
+
+class StreamFragmentDecoderFormalTest extends AnyFunSuite with FormalTestSuite {
+  override def defaultDepth() = 5
+
+  formalTests().foreach(t => test(t._1) {
+    t._2()
+  })
+
+  override def generateRtl() = {
+    for(x <- Seq((32,64), (64, 32))) yield {
+      (s"StreamFragmentDecoder${x._1}x${x._2}", () => GeneralFormalDut(() => new StreamFragmentWidthAdapterDecoder(x._1, x._2)))
+    }
+  }
+}
+
+

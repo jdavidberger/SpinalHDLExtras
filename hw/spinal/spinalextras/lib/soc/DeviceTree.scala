@@ -156,7 +156,7 @@ class BusIfDeviceTreeProvider(busIf : BusIf) extends DeviceTreeProvider(
     val base = busIf.orderdRegInsts.head.addr
 
     val set = new mutable.HashMap[String,Int]()
-    busIf.orderdRegInsts.map(r => {
+    super.regs ++ busIf.orderdRegInsts.map(r => {
       val name = if (set.contains(r.name)) {
         set(r.name) += 1
         r.name + "_" + set.get(r.name).get

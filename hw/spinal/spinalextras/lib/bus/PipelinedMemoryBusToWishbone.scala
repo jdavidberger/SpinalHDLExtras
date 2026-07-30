@@ -61,7 +61,7 @@ case class WishboneToPipelinedMemoryBus(pipelinedMemoryBusConfig : PipelinedMemo
   io.pmb.cmd.write := io.wb.WE
 
   if(io.wb.SEL != null) {
-    io.pmb.cmd.mask := io.wb.SEL
+    io.pmb.cmd.mask := io.wb.SEL.resized
   } else {
     io.pmb.cmd.mask.setAll()
   }

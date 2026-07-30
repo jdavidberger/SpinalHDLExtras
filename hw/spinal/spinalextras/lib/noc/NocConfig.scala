@@ -31,8 +31,7 @@ case class NocConfig(
   def packHeader(dest: UInt, subheader: UInt): Bits = {
     val header = Header(this)
     header.dest := dest
-    header.application := B(0, headerApplicationBits bits)
-    header.application(topology.addressSize - 1 downto 0) := subheader.asBits
+    header.application := subheader.asBits
     header.asBits.resized
   }
 }

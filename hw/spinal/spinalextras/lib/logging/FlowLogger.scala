@@ -362,7 +362,23 @@ object FlowLogger {
   def flows[T <: Data](flows: Flow[T]*): Seq[(Data, Flow[Bits])] = {
     flows.map(x => FlowLogger.asFlow(x))
   }
+  def takeFirst[T <: Data](flows: Stream[Fragment[T]]*): Seq[(Data, Flow[Bits])] = {
+    flows.map(f => {
+      FlowLogger.asFlow(f.toFlowFire.takeWhen(f.isFirst).setName(f.name))
+    })
+  }
+  def countBeats[T <: Data](flows: Stream[Fragment[T]]*): Seq[(Data, Flow[Bits])] = {
+    flows.map(f => {
+      val cnt = Counter(32 bits)
+      when(f.lastFire) {
+        cnt.clear()
+      } elsewhen (f.fire) {
+        cnt.increment()
+      }
 
+      FlowLogger.asFlow(f.toFlowFire.takeWhen(f.last).translateWith(cnt.value).setName(f.getName() + "Count"))
+    })
+  }
   def streams[T <: Data](flows: Stream[T]*): Seq[(Data, Flow[Bits])] = {
     flows.map(x => FlowLogger.asFlow(x))
   }

@@ -294,19 +294,12 @@ class StreamFragmentGather[T <: Data](dataType : HardType[T], gatherCount : Int)
 
 object StreamTools {
 
-  def takeHead(s : Stream[Fragment[Bits]]) = {
-    val header = RegInit(s.fragment)
-    val stream = cloneOf(s)
-    stream.setIdle()
-    s.ready := s.isFirst
-    when(s.first) {
-      when(s.fire) {
-        header := s.payload
-      }
-    } otherwise {
-      stream << s
-    }
-    (header, stream)
+  def takeHead[T <: Data](s : Stream[Fragment[T]]) : (Flow[T], Stream[Fragment[T]]) = {
+    val header = Flow(s.fragment)
+    header.payload := s.payload
+    header.valid := s.firstFire
+
+    (header, s.throwWhen(s.first))
   }
 
   def continueWhenUnstalled[T <: Data](s : Stream[T], cond : Bool) = {

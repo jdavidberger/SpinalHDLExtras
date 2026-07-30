@@ -4,6 +4,9 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
+import spinal.sim.SimManagerContext
+import spinalextras.lib.Config
+import spinalextras.lib.logging.{GlobalLogger, SignalLogger}
 import spinalextras.lib.noc._
 import spinalextras.lib.noc.protocols.DataStreamSpecification
 import spinalextras.lib.noc.topology.Torus
@@ -49,6 +52,7 @@ class NocPathingHarness(cfg: NocConfig) extends Component {
   }
 
   val noc = builder.build()
+  val simLog = GlobalLogger.create_simulation_logger(tags = Set("noc-headers"))
 }
 
 /**
@@ -106,8 +110,10 @@ object NocPathingTester {
     require(BigInt(maxId) < (BigInt(1) << cfg.dataWidth),
       s"packet id $maxId doesn't fit in a ${cfg.dataWidth}-bit flit; shrink the packet set or widen dataWidth")
 
-    SimConfig.withWave.compile(new NocPathingHarness(cfg)).doSim(seed = simSeed) { dut =>
+    Config.sim.compile(new NocPathingHarness(cfg)).doSim(seed = simSeed) { dut =>
       dut.clockDomain.forkStimulus(period = 10)
+
+      dut.simLog.startCapture(dut.clockDomain, SimManagerContext.current.manager.testName + ".sqlite")
 
       val n = dut.n
       for (node <- 0 until n) {

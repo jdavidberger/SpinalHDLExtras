@@ -7,6 +7,7 @@ import spinal.lib._
 import spinal.lib.bus.misc.BusSlaveFactory
 import spinal.lib.bus.regif.AccessType._
 import spinal.lib.bus.regif.{BusIf, RegInst, SymbolName}
+import spinalextras.lib.bus.LMMI
 import spinalextras.lib.logging.{FlowLogger, GlobalLogger, SignalLogger}
 import spinalextras.lib.mipi.{MIPIConfig, MIPIIO, MIPIPacketHeader}
 import spinalextras.lib.misc.{AsyncToSyncReset, ClockMeasure, GlobalSignals}
@@ -36,6 +37,10 @@ class dphy_rx(cfg : MIPIConfig,
   val rx_line_rate = cfg.rx_line_rate
   val dphy_clk_freq = rx_line_rate / 2
 
+  if(is_soft_phy && rx_line_rate > (1034 MHz)) {
+    println(s"Warning: dphy_rx rx line rate of ${rx_line_rate} is too fast for some grades of device.")
+  }
+
   val cfg_has_fifo = !config_for_continous_clock
   val _enable_fifo_misc_signals = enable_fifo_misc_signals.getOrElse(!(is_soft_phy && config_for_continous_clock))
 
@@ -52,7 +57,7 @@ class dphy_rx(cfg : MIPIConfig,
     val byte_f = s"_byte${clockString(byte_freq)}"
     val clock_suffix_str = if(clock_suffix) s"${sync_f}${byte_f}" else ""
     val cont_string = if (config_for_continous_clock) "cont_" else ""
-    val lmmi_string = if (with_lmmi) "" else "nolmmi_"
+    val lmmi_string = if (with_lmmi) "lmmi_" else ""
     ip_name = s"dphy_rx_${cont_string}${lmmi_string}${cfg.numRXLanes}x${cfg.rxGear}${clock_suffix_str}"
   }
 
@@ -67,6 +72,7 @@ class dphy_rx(cfg : MIPIConfig,
   val default_datsettlecyc = cfg.dataSettleCyc.getOrElse(solve_datasettle(byte_freq, dphy_clk_freq))
 
   val io = new Bundle {
+    val lmmi = with_lmmi generate slave(LMMI(8, 8))
     /**
      * This signal is tied to 0 when it is not exposed.
      * Drive this signal when it is exposed:
@@ -344,6 +350,7 @@ class dphy_rx(cfg : MIPIConfig,
        * Default is 1’d0.
        */
       val fifo_ovflw_err_o = out Bool()
+
     }.setPartialName("")
   }
 

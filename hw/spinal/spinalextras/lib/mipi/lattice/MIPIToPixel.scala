@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.regif.BusIf
 import spinalextras.lib.blackbox.lattice.lifcl.dphy_rx
+import spinalextras.lib.bus.LMMI
 import spinalextras.lib.mipi._
 
 import scala.language.postfixOps
@@ -33,6 +34,8 @@ case class MIPIToPixel(cfg : MIPIConfig,
 
     /** Frame-valid in pixel_cd (for PTS latch via level CDC into the UVC clock). */
     val frame_valid = out Bool()
+
+    val dphy_lmmi = with_lmmi generate slave(LMMI(8, 8))
   }
   val byte_freq = cfg.dphyByteFreq
 
@@ -53,7 +56,9 @@ case class MIPIToPixel(cfg : MIPIConfig,
     cfg_fifo_read_delay = with_lmmi,
   //  enable_fifo_misc_signals = Some(true)
   )
-
+  if(with_lmmi) {
+    io.dphy_lmmi <> mipi_to_bytes.io.lmmi
+  }
   mipi_to_bytes.assignMIPI(io.mipi)
 
   mipi_to_bytes.io.pll_lock_i := io.pll_lock

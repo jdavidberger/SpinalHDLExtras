@@ -224,7 +224,8 @@ class Axi4NocSlave(val cfg: NocConfig, val axiConfig: Axi4Config) extends Compon
   }
   val bus = io.bus
 
-  val (hdrBits, payload) = StreamTools.takeHead(io.input)
+  val (headerFlow, payload) = StreamTools.takeHead(io.input)
+  val hdrBits = headerFlow.toReg()
   val hdr = Header(cfg)
   hdr.assignFromBits(hdrBits)
   val sourceAddress = hdr.application(addressSize - 1 downto 0).asUInt

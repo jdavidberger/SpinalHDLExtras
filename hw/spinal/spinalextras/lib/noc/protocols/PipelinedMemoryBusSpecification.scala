@@ -33,7 +33,8 @@ class PipelinedMemoryNocSlave(val cfg : NocConfig, val pmbConfig : PipelinedMemo
 
   val cmdIn = io.input
 
-  val (cmdHeaderBits, cmdPayload) = StreamTools.takeHead(cmdIn)
+  val (cmdHeaderBitsFlow, cmdPayload) = StreamTools.takeHead(cmdIn)
+  val cmdHeaderBits = cmdHeaderBitsFlow.toReg()
   val cmdHeader = Header(cfg)
   cmdHeader.assignFromBits(cmdHeaderBits)
   val sourceAddress = cmdHeader.application(addressSize - 1 downto 0).asUInt

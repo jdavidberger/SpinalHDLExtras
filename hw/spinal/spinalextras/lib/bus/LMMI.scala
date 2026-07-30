@@ -3,7 +3,9 @@ package spinalextras.lib.bus
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
+import spinal.lib.bus.wishbone.{AddressGranularity, Wishbone, WishboneConfig}
 import spinal.lib.{Flow, IMasterSlave, master, slave, traversableOncePimped}
+import spinalextras.lib.formal.fillins.PipelinedMemoryBusFormal.PipelinedMemoryBusFormalExt
 
 import scala.language.postfixOps
 
@@ -40,6 +42,14 @@ class LMMI(config: LMMIConfig) extends Bundle with IMasterSlave {
   override def asMaster(): Unit = {
     master(cmd)
     slave(rsp)
+  }
+
+  def toWishbone(config: WishboneConfig = WishboneConfig(addressWidth = 32, dataWidth = 32, selWidth = 4, addressGranularity = AddressGranularity.BYTE, useERR = true)): Wishbone  = {
+    val bus = toPipelinedMemoryBus()
+    if (globalData.config.formalAsserts) {
+      bus.formalIsConsumerValid().foreach(x => assume(x.condition)(x.loc))
+    }
+    PipelinedMemoryBusToWishbone.createDriver(bus, config)
   }
 
   def toPipelinedMemoryBus() : PipelinedMemoryBus = {

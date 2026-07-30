@@ -45,7 +45,8 @@ class DataStreamSpecificationHarness(nocCfg: NocConfig, datatype: HardType[Bits]
   for ((s, i) <- sources.zipWithIndex) {
     val destSlot = spec.sinkSlot(sinks(destSinkOf(i))).get
     val destRouteable = nocCfg.topology.addressToRouteableAddress(destSlot.resolvedAddress)
-    hdrs(i) := nocCfg.packHeader(U(destRouteable, nocCfg.topology.addressSize bits), U(0, nocCfg.topology.addressSize bits))
+    val applicationBits = ~U(i, nocCfg.headerApplicationBits bits)
+    hdrs(i) := nocCfg.packHeader(U(destRouteable, nocCfg.topology.addressSize bits), applicationBits)
   }
 }
 
@@ -61,7 +62,7 @@ class DataStreamSpecificationTest extends AnyFunSuite {
   def runTest(numSources: Int, numSinks: Int, destSinkOf: Int => Int,
               sourceAddresses: Int => Int = _ => -1, sinkAddresses: Int => Int = _ => -1): Unit = {
     val nocCfg = NocConfig(topology = new Mesh(2, 2), dataWidth = 32)
-    val datatype = HardType(Bits(32 bits))
+    val datatype = HardType(Bits(64 bits))
 
     Config.sim.compile(new DataStreamSpecificationHarness(nocCfg, datatype, numSources, numSinks,
       destSinkOf, sourceAddresses, sinkAddresses)).doSim(seed = 42) { dut =>
