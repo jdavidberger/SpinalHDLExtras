@@ -733,4 +733,60 @@ class PaddedFragmentTest extends AnyFunSuite {
       assert(received == totalBeats)
     }
   }
+
+  // toPaddedFragmentStream() marks every original beat as full-width (no partial last beat), so
+  // routing it through dropPaddingInformation() -- which merges the synthetic zero-size trailer
+  // back into that full last beat -- should exactly reconstruct the original stream: same
+  // fragment bits, same last positions, no masking needed (unlike the encode/decode round trip
+  // above, where a genuinely partial last beat loses its padding bytes).
+  class ToPaddedFragmentStreamThenDropPaddingInformationTest(width: Int) extends Component {
+    val dataType = HardType(Bits(width bits))
+    val io = new Bundle {
+      val input = slave(Stream(Fragment(dataType)))
+      val output = master(Stream(Fragment(dataType)))
+    }
+    io.output << io.input.toPaddedFragmentStream().dropPaddingInformation()
+  }
+
+  test("ToPaddedFragmentStreamThenDropPaddingInformationIsIdentity") {
+    val width = 32
+
+    Config.sim.doSim(new ToPaddedFragmentStreamThenDropPaddingInformationTest(width).setDefinitionName("PaddedFragmentToPaddedThenDropIdentity")) { dut =>
+      dut.clockDomain.forkStimulus(100 MHz)
+      SimTimeout(4 ms)
+
+      case class Beat(data: BigInt, last: Boolean)
+      val beatQueue = mutable.Queue[Beat]()
+      for (_ <- 0 until 100) {
+        val beats = 1 + simRandom.nextInt(4)
+        for (b <- 0 until beats) beatQueue.enqueue(Beat(BigInt(width, simRandom), b == beats - 1))
+      }
+      val expected = mutable.Queue[Beat]() ++= beatQueue
+      val totalBeats = beatQueue.size
+
+      StreamDriver(dut.io.input, dut.clockDomain) { payload =>
+        if (beatQueue.isEmpty) false
+        else {
+          val beat = beatQueue.dequeue()
+          payload.fragment #= beat.data
+          payload.last #= beat.last
+          true
+        }
+      }
+      StreamReadyRandomizer(dut.io.output, dut.clockDomain)
+
+      var received = 0
+      StreamMonitor(dut.io.output, dut.clockDomain) { payload =>
+        val exp = expected.dequeue()
+        assert(payload.fragment.toBigInt == exp.data, s"expected identity fragment ${exp.data}, got ${payload.fragment.toBigInt}")
+        assert(payload.last.toBoolean == exp.last, "toPaddedFragmentStream + dropPaddingInformation should preserve last")
+        received += 1
+      }
+
+      dut.clockDomain.waitSamplingWhere(expected.isEmpty)
+      dut.clockDomain.waitSampling(50)
+
+      assert(received == totalBeats)
+    }
+  }
 }
