@@ -30,7 +30,7 @@ case class IPGeneratorOptions(device: Device = Device(vendor = "lattice", family
                               yosys_cmd : String = "yosys",
                               yosys_opt : Boolean = true,
                               generate_sim: Boolean = false) {
-  def sanitized_instance_name = instance_name.replace(" ", "_")
+  def sanitized_instance_name = instance_name.replace(" ", "_").replace("-", "_")
 
   def with_defaults(instance_name_hint : String) : IPGeneratorOptions = {
     val this_instance_name = if (instance_name.isEmpty) instance_name_hint else instance_name
@@ -208,6 +208,8 @@ abstract class IPGenerator_[CFG : ClassTag] extends IPGenerator {
       processConfig(options, config)
     } catch {
       case ex: UnrecognizedPropertyException => {
+        println(s"Can't process as config / options: ${ex}")
+
         reader = new FileReader(filePath)
         val config: CFG = mapper.treeToValue(
           root,

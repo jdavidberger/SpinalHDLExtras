@@ -2,6 +2,7 @@ package spinalextras.lib.bus
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.amba4.axi.Axi4.resp.OKAY
 import spinal.lib.bus.amba4.axi._
 import spinal.lib.bus.misc._
 import spinalextras.lib.logging.{FlowLogger, SignalLogger}
@@ -51,6 +52,28 @@ object AXIBusLogger {
       }
 
     }, axis:_*)
+  }
+
+  def errors(axis: Axi4Bus*): Seq[(Data, Flow[Bits])] = {
+    axis.flatMap(axi => {
+      val (_, aw, ar, r, w, b) = decompose(axi)
+
+      // Technically this should track id's but thats expensive
+      val errored_aw = Flow(aw.payload)
+      errored_aw.payload := RegNextWhen(aw.payload, aw.fire)
+      errored_aw.valid := b.resp =/= OKAY && b.fire
+
+      val errored_ar = Flow(ar.payload)
+      errored_ar.payload := RegNextWhen(ar.payload, aw.fire)
+      errored_ar.valid := r.resp =/= OKAY && r.fire
+
+      Seq(
+        errored_aw.setName(aw.name + "Errors"),
+        errored_ar.setName(ar.name + "Errors"),
+        r.toFlowFire.takeWhen(r.resp =/= OKAY).setName(r.name + "Errors"),
+        b.toFlowFire.takeWhen(b.resp =/= OKAY).setName(b.name + "Errors")
+      )
+    }).map(x => FlowLogger.asFlow(x))
   }
 
   def flows(addressMapping: UInt => Bool, axis: Axi4Bus*): Seq[(Data, Flow[Bits])] = {
