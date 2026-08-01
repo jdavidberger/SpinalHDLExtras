@@ -10,9 +10,9 @@ import spinalextras.lib.misc.ClockSpecification
 
 import scala.language.postfixOps
 
-class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false) extends Component {
+class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false, refClockPassthrough : Boolean = true) extends Component {
   val inputClockFrequency = ClockDomain.current.frequency.getValue
-  val outputClocksRefIdx = outputClocks.indexWhere(c => c.phaseOffset == 0 && c.freq == inputClockFrequency)
+  val outputClocksRefIdx = if (refClockPassthrough) outputClocks.indexWhere(c => c.phaseOffset == 0 && c.freq == inputClockFrequency) else -1
   val refClockIsOutput = outputClocksRefIdx != -1
   val outputClocksWithoutRef = if (outputClocksRefIdx == -1) outputClocks else outputClocks.patch(outputClocksRefIdx, Nil, 1)
 
@@ -87,7 +87,7 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
 }
 
 object ClockSelection {
-  def apply(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false, requirePLL : Boolean = true) = {
+  def apply(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false, requirePLL : Boolean = true, refClockPassthrough : Boolean = true) = {
     if(!requirePLL && ClockDomain.current.frequency.getValue == outputClocks.head.freq && outputClocks.size == 1) {
       val reset = ResetCtrl.asyncAssertSyncDeassert(
         input = ClockDomain.current.isResetActive,
@@ -97,7 +97,7 @@ object ClockSelection {
       (True, Seq(ClockDomain.current.copy(reset = reset, config = ClockDomain.current.config.copy(resetActiveLevel = HIGH))))
     } else {
       ClockUtils.makeActiveHighClock(ClockDomain.current) on {
-        val selection = new ClockSelection(outputClocks, bootstrap)
+        val selection = new ClockSelection(outputClocks, bootstrap, refClockPassthrough = refClockPassthrough)
         (selection.io.pll_lock, selection.ClockDomains)
       }
     }
