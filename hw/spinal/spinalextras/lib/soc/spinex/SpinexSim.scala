@@ -20,7 +20,7 @@ case class SpinexSim(memoryFile : String = "") extends Component {
   val oscd = new OSCD(OSCDConfig.create(ClockSpecification(60 MHz)))
   ClockDomain.push(oscd.hf_clk().get.withBootReset())
 
-  val (locks, clocks) = ClockSelection(Seq(ClockSpecification(70 MHz), ClockSpecification(133 MHz)))
+  val (locks, clocks, _) = ClockSelection(Seq(ClockSpecification(70 MHz), ClockSpecification(133 MHz)))
   val spinexClockDomain = clocks.head
 
   var connectionArea = new ClockingArea(clockDomain = spinexClockDomain) {

@@ -1,9 +1,11 @@
 package spinalextras.lib.clocking
 
-import spinal.core.{Bool, ClockDomain, Data, Device, False, FixedFrequency, crossClockDomain, out}
-import spinal.lib.Counter
+import spinal.core.{Bool, Bundle, ClockDomain, Data, Device, False, FixedFrequency, Nameable, crossClockDomain, out}
+import spinal.lib.bus.misc.AddressMapping
+import spinal.lib.{Counter, IMasterSlave}
 import spinalextras.lib.blackbox.ClockGenerator
 import spinalextras.lib.blackbox.lattice.lifcl.PLLConfig
+import spinalextras.lib.bus.GlobalBus
 import spinalextras.lib.impl.ImplementationSpecificFactory
 import spinalextras.lib.misc.ClockSpecification
 
@@ -13,6 +15,7 @@ trait PLL {
 
   val lock : Bool
   val ClockDomains : Seq[ClockDomain]
+  def attach_bus[T <: IMasterSlave with Nameable with Bundle](bus : GlobalBus[T], mapping : AddressMapping): Unit = {}
 }
 
 class SimulationPLL(input: ClockSpecification, outputs: Seq[ClockSpecification]) extends PLL {

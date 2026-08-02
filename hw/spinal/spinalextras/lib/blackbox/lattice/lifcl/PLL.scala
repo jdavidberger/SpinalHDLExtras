@@ -2,15 +2,19 @@ package spinalextras.lib.blackbox.lattice.lifcl
 
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.misc.AddressMapping
+import spinal.lib.bus.simple.PipelinedMemoryBus
+import spinal.lib.bus.wishbone.Wishbone
 import spinalextras.lib
 import spinalextras.lib.{Config, FixedFrequencyWithError, FixedRangeFrequency}
 import spinalextras.lib.blackbox.lattice.lifcl.PLLConfig.to_bin_string
 import spinalextras.lib.misc._
 import spinalextras.lib.tests.TestClockGen
 import spinalextras.lib.Constraints
+import spinalextras.lib.bus.{GlobalBus, LMMI, LMMIConfig, WishboneGlobalBus}
+import spinalextras.lib.soc.{BusSlaveFactoryDeviceTreeProvider, DeviceTreeProvider}
 
 import java.io.FileReader
-
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
@@ -522,7 +526,7 @@ class PLL(val cfg: PLLConfig) extends BlackBox with spinalextras.lib.clocking.PL
     // LMMI Write High / Read Low from Fabric
     val LMMIWRRD_N = in Bool() default (False)
     // LMMI Offset Address from Fabric, not all bits are required for an IP
-    val LMMIOFFSET = in Bits (7 bits) default (0)
+    val LMMIOFFSET = in UInt (7 bits) default (0)
     // LMMI Write Data from Fabric, not all bits are required for an IP
     // LMMI Write Data from Fabric, not all bits are required for an IP
     val LMMIWDATA = in Bits (8 bits) default (0)
@@ -663,6 +667,33 @@ class PLL(val cfg: PLLConfig) extends BlackBox with spinalextras.lib.clocking.PL
   })
   override def inputSpecification: ClockSpecification = ???
   override def outputSpectifications: Seq[ClockSpecification] = this.cfg.OUTPUT_CLKS.map(_.specification)
+
+  override def attach_bus[T <: IMasterSlave with Nameable with Bundle](bus : GlobalBus[T], mapping : AddressMapping): Unit = {
+    val lmmi = LMMI(LMMIConfig(io.LMMIOFFSET.getBitsWidth, io.LMMIRDATA.getBitsWidth))
+    io.LMMICLK := ClockDomain.current.readClockWire
+    io.LMMIRESET_N := !ClockDomain.current.readResetWire
+
+    io.LMMIOFFSET := lmmi.cmd.payload.offset
+    io.LMMIREQUEST := lmmi.cmd.valid
+    io.LMMIWDATA := lmmi.cmd.data
+    io.LMMIWRRD_N := lmmi.cmd.write
+
+    lmmi.cmd.ready := io.LMMIREADY
+    lmmi.rsp.payload := io.LMMIRDATA
+    lmmi.rsp.valid := io.LMMIRDATAVALID
+
+    bus match {
+      case bus : WishboneGlobalBus => {
+        bus.add_slave("lattice_pll", mapping, "cpu") >> lmmi.toWishbone()
+      }
+    }
+
+    new DeviceTreeProvider(mapping.lowerBound, (mapping.highestBound - mapping.lowerBound).toLong) {
+      override def entryName: String = "PLL"
+
+      override def compatible: Seq[String] = Seq("lattice,pll")
+    }
+  }
 }
 
 case class IoI2(io: Double, i2: Double, IPP_CTRL: Double, BW_CTL_BIAS: Double, IPP_SEL: Int)

@@ -3,9 +3,10 @@ package spinalextras.lib.clocking
 import spinal.core.ClockDomain.{ClockFrequency, FixedFrequency}
 import spinal.core._
 import spinal.lib._
+import spinal.lib.bus.misc.AddressMapping
 import spinalextras.lib.Config
-
 import spinalextras.lib.blackbox.lattice.lifcl.{DCS, OSCD, OSCDConfig}
+import spinalextras.lib.bus.GlobalBus
 import spinalextras.lib.misc.ClockSpecification
 
 import scala.language.postfixOps
@@ -83,22 +84,30 @@ class ClockSelection(outputClocks: Seq[ClockSpecification], bootstrap : Boolean 
     io.resets(out_idx).setPartialName(s"clk_${name}_reset", weak = true)
   }
 
+  def attach_bus[T <: IMasterSlave with Nameable with Bundle](bus : GlobalBus[T], mapping : AddressMapping): Unit = {
+    val restore = Component.push(this)
+    pll.attach_bus(bus, mapping)
+    restore.restore()
+  }
+
   lazy val ClockDomains = clockDomains
 }
 
 object ClockSelection {
-  def apply(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false, requirePLL : Boolean = true, refClockPassthrough : Boolean = true) = {
+  def apply(outputClocks: Seq[ClockSpecification], bootstrap : Boolean = false, requirePLL : Boolean = true, refClockPassthrough : Boolean = true
+                                                        ) = {
     if(!requirePLL && ClockDomain.current.frequency.getValue == outputClocks.head.freq && outputClocks.size == 1) {
       val reset = ResetCtrl.asyncAssertSyncDeassert(
         input = ClockDomain.current.isResetActive,
         clockDomain = ClockDomain.current
       ).setCompositeName(Component.current, "filteredReset")
 
-      (True, Seq(ClockDomain.current.copy(reset = reset, config = ClockDomain.current.config.copy(resetActiveLevel = HIGH))))
+      (True, Seq(ClockDomain.current.copy(reset = reset, config = ClockDomain.current.config.copy(resetActiveLevel = HIGH))), null)
     } else {
       ClockUtils.makeActiveHighClock(ClockDomain.current) on {
         val selection = new ClockSelection(outputClocks, bootstrap, refClockPassthrough = refClockPassthrough)
-        (selection.io.pll_lock, selection.ClockDomains)
+
+        (selection.io.pll_lock, selection.ClockDomains, selection)
       }
     }
   }

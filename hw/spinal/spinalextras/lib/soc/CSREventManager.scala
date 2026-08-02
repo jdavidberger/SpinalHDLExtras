@@ -2,7 +2,7 @@ package spinalextras.lib.soc
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.misc.BusSlaveFactory
+import spinal.lib.bus.misc.{BusSlaveFactory, BusSlaveFactoryDelayed}
 import spinal.lib.bus.regif.{BusIf, SymbolName}
 
 import scala.collection.mutable
